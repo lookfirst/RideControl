@@ -31,8 +31,9 @@ export function useTrainer() {
 	const [controlPoint, setControlPoint] = useState<BluetoothRemoteGATTCharacteristic>();
 	const [metrics, setMetrics] = useState<Metrics>(emptyMetrics);
 	const [resistance, setResistance] = useState(storedResistance);
-	const [status, setStatus] = useState('Ready to pair');
+	const [status, setStatus] = useState('Ready to connect');
 	const [notice, setNotice] = useState('');
+	const [connectionBusy, setConnectionBusy] = useState(false);
 	const [resistanceRange, setResistanceRange] = useState<Range>({
 		max: 100,
 		min: 0,
@@ -43,8 +44,10 @@ export function useTrainer() {
 	const appliedResistance = useRef(storedResistance());
 	const resistanceTarget = useRef(storedResistance());
 	const connecting = useRef(false);
+	const connectionCancelled = useRef(false);
 	const disconnectRequested = useRef(false);
 	const autoReconnect = useRef(true);
+	const pendingDevice = useRef<BluetoothDevice | undefined>(undefined);
 	const unloading = useRef(false);
 	const lastCrank = useRef<{ revolutions: number; time: number } | undefined>(undefined);
 	const lastPedalingAt = useRef(0);
@@ -135,6 +138,45 @@ export function useTrainer() {
 		}
 	}
 
+	function connectionStopped(rediscover: boolean) {
+		return connectionCancelled.current || (rediscover && !autoReconnect.current);
+	}
+
+	function handleConnectionError(error: unknown, rediscover: boolean) {
+		if (rediscover && autoReconnect.current && !connectionCancelled.current) {
+			setStatus('Reconnecting…');
+		} else if (connectionCancelled.current) {
+			setStatus('Ready to connect');
+		} else {
+			setStatus('Connection failed');
+			setNotice(error instanceof Error ? error.message : String(error));
+		}
+	}
+
+	function handleTrainerDisconnected(selected: BluetoothDevice) {
+		const shouldReconnect =
+			!(disconnectRequested.current || unloading.current) && autoReconnect.current;
+		disconnectRequested.current = false;
+		setDevice(undefined);
+		setControlPoint(undefined);
+		setMetrics(emptyMetrics);
+		lastPedalingAt.current = 0;
+		trainerReportsDistance.current = false;
+		if (shouldReconnect) {
+			pendingDevice.current = selected;
+			setConnectionBusy(true);
+			setStatus('Reconnecting…');
+			setNotice('Trainer disconnected. Reconnecting automatically…');
+			window.setTimeout(() => reconnectDevice(selected), 700);
+		} else if (connectionCancelled.current) {
+			setStatus('Ready to connect');
+			setNotice('Connection attempt stopped.');
+		} else {
+			setStatus('Disconnected');
+			setNotice('Trainer disconnected.');
+		}
+	}
+
 	async function connectDevice(selected: BluetoothDevice, rediscover = false): Promise<boolean> {
 		if (connecting.current) {
 			return false;
@@ -142,32 +184,10 @@ export function useTrainer() {
 		connecting.current = true;
 		try {
 			const server = await connectGatt(selected, rediscover, setStatus);
-			selected.addEventListener(
-				'gattserverdisconnected',
-				() => {
-					const shouldReconnect =
-						!(disconnectRequested.current || unloading.current) &&
-						autoReconnect.current;
-					disconnectRequested.current = false;
-					setStatus('Disconnected');
-					setDevice(undefined);
-					setControlPoint(undefined);
-					setMetrics(emptyMetrics);
-					lastPedalingAt.current = 0;
-					trainerReportsDistance.current = false;
-					if (shouldReconnect) {
-						setNotice('Trainer disconnected. Reconnecting automatically…');
-						window.setTimeout(() => reconnectDevice(selected), 700);
-					} else {
-						setNotice('Trainer disconnected.');
-					}
-				},
-				{ once: true }
-			);
-			localStorage.setItem('trainer-device-id', selected.id);
-			setDevice(selected);
-			setStatus('Connected');
-			setNotice(`${selected.name ?? 'Trainer'} is connected and ready.`);
+			if (connectionStopped(rediscover)) {
+				selected.gatt?.disconnect();
+				return false;
+			}
 			const service = await server.getPrimaryService(FITNESS_MACHINE);
 			const bikeData = await service.getCharacteristic(INDOOR_BIKE_DATA);
 			bikeData.addEventListener('characteristicvaluechanged', (event) => {
@@ -219,17 +239,28 @@ export function useTrainer() {
 			await writeControl(point, [0]);
 			await new Promise((resolve) => window.setTimeout(resolve, 150));
 			await writeControl(point, resistanceCommand(restored, activeRange));
+			if (connectionStopped(rediscover)) {
+				selected.gatt?.disconnect();
+				return false;
+			}
+			selected.addEventListener(
+				'gattserverdisconnected',
+				() => handleTrainerDisconnected(selected),
+				{ once: true }
+			);
+			localStorage.setItem('trainer-device-id', selected.id);
+			setDevice(selected);
+			setStatus('Connected');
+			setNotice(`${selected.name ?? 'Trainer'} is connected and ready.`);
 			subscribeToPowerAndCadence(server).catch((error: unknown) =>
 				setNotice(error instanceof Error ? error.message : String(error))
 			);
 			return true;
 		} catch (error) {
 			if (selected.gatt?.connected) {
-				disconnectRequested.current = true;
 				selected.gatt.disconnect();
 			}
-			setStatus('Connection failed');
-			setNotice(error instanceof Error ? error.message : String(error));
+			handleConnectionError(error, rediscover);
 			return false;
 		} finally {
 			connecting.current = false;
@@ -237,15 +268,29 @@ export function useTrainer() {
 	}
 
 	async function reconnectDevice(selected: BluetoothDevice) {
+		if (!autoReconnect.current || unloading.current || connectionCancelled.current) {
+			return;
+		}
+		pendingDevice.current = selected;
+		setConnectionBusy(true);
 		let attempt = 0;
-		while (autoReconnect.current && !unloading.current) {
-			if (await connectDevice(selected, true)) {
-				return;
+		try {
+			while (autoReconnect.current && !unloading.current && !connectionCancelled.current) {
+				if (await connectDevice(selected, true)) {
+					return;
+				}
+				if (!autoReconnect.current || unloading.current || connectionCancelled.current) {
+					return;
+				}
+				attempt += 1;
+				setStatus('Reconnecting…');
+				await new Promise((resolve) =>
+					window.setTimeout(resolve, Math.min(5000, 700 * attempt))
+				);
 			}
-			attempt += 1;
-			await new Promise((resolve) =>
-				window.setTimeout(resolve, Math.min(5000, 700 * attempt))
-			);
+		} finally {
+			pendingDevice.current = undefined;
+			setConnectionBusy(false);
 		}
 	}
 
@@ -254,21 +299,47 @@ export function useTrainer() {
 			setNotice('Web Bluetooth requires current Chrome or Edge on localhost or HTTPS.');
 			return;
 		}
+		connectionCancelled.current = false;
+		disconnectRequested.current = false;
+		setConnectionBusy(true);
 		try {
-			setStatus('Looking for trainer…');
+			setStatus('Choose a trainer…');
 			const selected = await navigator.bluetooth.requestDevice({
 				filters: [{ namePrefix: 'KICKR' }],
 				optionalServices,
 			});
+			pendingDevice.current = selected;
 			autoReconnect.current = true;
 			await connectDevice(selected);
 		} catch (error) {
-			setStatus('Connection failed');
-			setNotice(error instanceof Error ? error.message : String(error));
+			if (
+				connectionCancelled.current ||
+				(error instanceof DOMException && error.name === 'NotFoundError')
+			) {
+				setStatus('Ready to connect');
+			} else {
+				setStatus('Connection failed');
+				setNotice(error instanceof Error ? error.message : String(error));
+			}
+		} finally {
+			pendingDevice.current = undefined;
+			setConnectionBusy(false);
 		}
 	}
 
+	const cancelConnection = useCallback(() => {
+		connectionCancelled.current = true;
+		autoReconnect.current = false;
+		disconnectRequested.current = true;
+		pendingDevice.current?.gatt?.disconnect();
+		pendingDevice.current = undefined;
+		setConnectionBusy(false);
+		setStatus('Ready to connect');
+		setNotice('Connection attempt stopped.');
+	}, []);
+
 	const disconnect = useCallback(() => {
+		connectionCancelled.current = false;
 		autoReconnect.current = false;
 		disconnectRequested.current = true;
 		device?.gatt?.disconnect();
@@ -336,6 +407,9 @@ export function useTrainer() {
 	useEffect(() => {
 		let cancelled = false;
 		async function restore() {
+			autoReconnect.current = true;
+			connectionCancelled.current = false;
+			disconnectRequested.current = false;
 			if (!navigator.bluetooth?.getDevices) {
 				setStatus('Browser setup required');
 				setNotice(CHROME_BLUETOOTH_PERMISSION_MESSAGE);
@@ -357,6 +431,7 @@ export function useTrainer() {
 		);
 		return () => {
 			cancelled = true;
+			autoReconnect.current = false;
 		};
 	}, []);
 
@@ -385,8 +460,10 @@ export function useTrainer() {
 	}, [updateResistance]);
 
 	return {
+		cancelConnection,
 		connect,
 		connected,
+		connectionBusy,
 		deviceName: device?.name,
 		disconnect,
 		lastPedalingAt,
