@@ -1,7 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { emptyMetrics, emptySession, RECORDING_PAUSE_DELAY_MS } from '../constants';
 import { addMetricAggregates, loadStoredSession } from '../lib/session';
-import type { MetricSample, Metrics, SessionAggregates, StoredSession } from '../types';
+import type {
+	MetricSample,
+	Metrics,
+	SessionAggregates,
+	SessionSnapshot,
+	StoredSession,
+} from '../types';
 
 interface ActivityRef {
 	current: number;
@@ -17,20 +23,27 @@ export function useSession(
 	trainerReportsDistance: FlagRef
 ) {
 	const restored = useMemo(loadStoredSession, []);
+	const initialStartedAt = useMemo(() => restored.startedAt || Date.now(), [restored.startedAt]);
 	const [isRiding, setIsRiding] = useState(false);
 	const [manuallyPaused, setManuallyPaused] = useState(false);
+	const [ended, setEnded] = useState(restored.ended);
 	const [elapsedSeconds, setElapsedSeconds] = useState(restored.elapsedSeconds);
 	const [rideDistance, setRideDistance] = useState(restored.distance);
 	const [rideCalories, setRideCalories] = useState(restored.calories);
 	const [history, setHistory] = useState<MetricSample[]>(restored.history);
 	const [maximums, setMaximums] = useState<Metrics>(restored.maximums);
 	const [aggregates, setAggregates] = useState<SessionAggregates>(restored.aggregates);
+	const [savedSessionId, setSavedSessionId] = useState(restored.savedSessionId);
+	const [startedAt, setStartedAt] = useState(initialStartedAt);
 	const latestMetrics = useRef(metrics);
 	const elapsedRef = useRef(restored.elapsedSeconds);
 	const lastTrainerDistance = useRef<number | undefined>(undefined);
 
 	useEffect(() => {
 		latestMetrics.current = metrics;
+		if (ended) {
+			return;
+		}
 		setMaximums((current) => ({
 			...current,
 			cadence: Math.max(current.cadence, metrics.cadence),
@@ -38,7 +51,7 @@ export function useSession(
 			power: Math.max(current.power, metrics.power),
 			speed: Math.max(current.speed, metrics.speed),
 		}));
-	}, [metrics]);
+	}, [ended, metrics]);
 
 	useEffect(() => {
 		localStorage.setItem(
@@ -48,21 +61,34 @@ export function useSession(
 				calories: rideCalories,
 				distance: rideDistance,
 				elapsedSeconds,
-				history,
+				ended,
+				history: history.slice(-3600),
 				maximums,
+				savedSessionId,
+				startedAt,
 			} satisfies StoredSession)
 		);
-	}, [aggregates, elapsedSeconds, history, maximums, rideCalories, rideDistance]);
+	}, [
+		aggregates,
+		elapsedSeconds,
+		ended,
+		history,
+		maximums,
+		rideCalories,
+		rideDistance,
+		savedSessionId,
+		startedAt,
+	]);
 
 	useEffect(() => {
 		const interval = window.setInterval(() => {
 			const recentlyPedaling =
 				lastPedalingAt.current > 0 &&
 				performance.now() - lastPedalingAt.current <= RECORDING_PAUSE_DELAY_MS;
-			setIsRiding(!manuallyPaused && recentlyPedaling);
+			setIsRiding(!(ended || manuallyPaused) && recentlyPedaling);
 		}, 500);
 		return () => window.clearInterval(interval);
-	}, [lastPedalingAt, manuallyPaused]);
+	}, [ended, lastPedalingAt, manuallyPaused]);
 
 	useEffect(() => {
 		if (!isRiding) {
@@ -89,18 +115,16 @@ export function useSession(
 			} else {
 				setRideDistance((value) => value + (live.speed * seconds) / 3600);
 			}
-			setHistory((samples) =>
-				[
-					...samples,
-					{
-						cadence: live.cadence,
-						elapsedSeconds: elapsedRef.current,
-						heartRate: live.heartRate,
-						power: live.power,
-						speed: live.speed,
-					},
-				].slice(-3600)
-			);
+			setHistory((samples) => [
+				...samples,
+				{
+					cadence: live.cadence,
+					elapsedSeconds: elapsedRef.current,
+					heartRate: live.heartRate,
+					power: live.power,
+					speed: live.speed,
+				},
+			]);
 			setAggregates((current) => addMetricAggregates(current, live));
 			if (live.power > 0) {
 				setRideCalories((value) => value + (live.power * seconds) / (4184 * 0.24));
@@ -110,6 +134,9 @@ export function useSession(
 	}, [isRiding, trainerReportsDistance]);
 
 	const togglePause = useCallback(() => {
+		if (ended) {
+			return;
+		}
 		if (manuallyPaused) {
 			setManuallyPaused(false);
 			setIsRiding(
@@ -120,30 +147,65 @@ export function useSession(
 			setManuallyPaused(true);
 			setIsRiding(false);
 		}
-	}, [lastPedalingAt, manuallyPaused]);
+	}, [ended, lastPedalingAt, manuallyPaused]);
 
-	const reset = useCallback(() => {
+	const endSession = useCallback(() => {
+		setEnded(true);
+		setIsRiding(false);
+		setManuallyPaused(false);
+	}, []);
+
+	const markSaved = useCallback((id: string) => {
+		setSavedSessionId(id);
+	}, []);
+
+	const startNew = useCallback(() => {
 		elapsedRef.current = 0;
 		lastTrainerDistance.current = latestMetrics.current.distance;
+		lastPedalingAt.current = 0;
+		setEnded(false);
 		setElapsedSeconds(0);
 		setRideDistance(0);
 		setRideCalories(0);
 		setHistory([]);
+		setIsRiding(false);
+		setManuallyPaused(false);
 		setMaximums(emptyMetrics);
 		setAggregates(emptySession.aggregates);
+		setSavedSessionId(undefined);
+		setStartedAt(Date.now());
 		localStorage.removeItem('trainer-session');
-	}, []);
+	}, [lastPedalingAt]);
+
+	const snapshot = useMemo<SessionSnapshot>(
+		() => ({
+			aggregates,
+			calories: rideCalories,
+			distance: rideDistance,
+			elapsedSeconds,
+			history,
+			maximums,
+			startedAt,
+		}),
+		[aggregates, elapsedSeconds, history, maximums, rideCalories, rideDistance, startedAt]
+	);
 
 	return {
 		aggregates,
 		elapsedSeconds,
+		ended,
+		endSession,
 		history,
 		isRiding,
 		manuallyPaused,
+		markSaved,
 		maximums,
-		reset,
 		rideCalories,
 		rideDistance,
+		savedSessionId,
+		snapshot,
+		startedAt,
+		startNew,
 		togglePause,
 	};
 }

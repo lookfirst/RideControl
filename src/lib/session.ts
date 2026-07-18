@@ -75,6 +75,7 @@ export function loadStoredSession(storage: ReadableStorage = localStorage): Stor
 			calories: nonNegativeNumber(parsed.calories),
 			distance: nonNegativeNumber(parsed.distance),
 			elapsedSeconds: nonNegativeNumber(parsed.elapsedSeconds),
+			ended: parsed.ended === true,
 			history,
 			maximums: {
 				cadence: nonNegativeNumber(maximums.cadence),
@@ -84,6 +85,9 @@ export function loadStoredSession(storage: ReadableStorage = localStorage): Stor
 				power: nonNegativeNumber(maximums.power),
 				speed: nonNegativeNumber(maximums.speed),
 			},
+			savedSessionId:
+				typeof parsed.savedSessionId === 'string' ? parsed.savedSessionId : undefined,
+			startedAt: nonNegativeNumber(parsed.startedAt),
 		};
 	} catch {
 		return emptySession;

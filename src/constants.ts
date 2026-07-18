@@ -42,6 +42,8 @@ export const emptySession: StoredSession = {
 	calories: 0,
 	distance: 0,
 	elapsedSeconds: 0,
+	ended: false,
 	history: [],
 	maximums: emptyMetrics,
+	startedAt: 0,
 };
