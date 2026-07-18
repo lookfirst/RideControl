@@ -1,7 +1,9 @@
 import type { ReactNode } from 'react';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { formatAggregateAverage, formatDuration } from '../lib/format';
+import { type HistoryShortcut, historyShortcutForKey } from '../lib/keyboard';
 import {
+	adjacentSession,
 	countSavedSessions,
 	deleteSavedSession,
 	formatSessionTime,
@@ -9,6 +11,7 @@ import {
 	getSavedSession,
 	groupSessionsByDate,
 	listSavedSessions,
+	sessionListAfterDelete,
 } from '../lib/saved-sessions';
 import type { SavedSession, SavedSessionSummary, SessionFeeling, SpeedUnit } from '../types';
 import {
@@ -20,8 +23,23 @@ import { SessionChart } from './session-chart';
 
 const PAGE_SIZE = 30;
 const EMPTY_ROUTE: [] = [];
+
+function shouldIgnoreHistoryAction(event: KeyboardEvent) {
+	const target = event.target as HTMLElement | null;
+	return (
+		event.defaultPrevented ||
+		event.altKey ||
+		event.ctrlKey ||
+		event.metaKey ||
+		target?.matches("input, textarea, select, [contenteditable='true']")
+	);
+}
+
 export const HISTORY_KEYBOARD_SHORTCUTS: KeyboardShortcutDescription[] = [
+	{ keys: ['↑', '↓'], label: 'Select the previous or next session' },
 	{ keys: ['←', '→'], label: 'Change the session chart view' },
+	{ keys: ['D'], label: 'Delete the selected session' },
+	{ keys: ['Enter'], label: 'Confirm session deletion' },
 	{ keys: ['?'], label: 'Show history keyboard controls' },
 	{ keys: ['Esc'], label: 'Close help or session history' },
 ];
@@ -44,6 +62,14 @@ export function DeleteSessionDialog({
 	onConfirm: () => void;
 	open: boolean;
 }) {
+	const confirmButton = useRef<HTMLButtonElement>(null);
+
+	useEffect(() => {
+		if (open) {
+			confirmButton.current?.focus();
+		}
+	}, [open]);
+
 	if (!open) {
 		return null;
 	}
@@ -75,6 +101,7 @@ export function DeleteSessionDialog({
 					className="rounded-lg bg-rose-400 px-3 py-2 font-bold text-ink text-xs hover:bg-rose-300 disabled:opacity-50"
 					disabled={deleting}
 					onClick={onConfirm}
+					ref={confirmButton}
 					type="button"
 				>
 					{deleting ? 'Deleting…' : 'Delete permanently'}
@@ -226,6 +253,7 @@ export function SessionHistory({
 	const [rendered, setRendered] = useState(open);
 	const [trayVisible, setTrayVisible] = useState(open);
 	const [error, setError] = useState('');
+	const deleteInProgress = useRef(false);
 	const groups = useMemo(() => groupSessionsByDate(summaries), [summaries]);
 	const unitFactor = speedUnit === 'mph' ? 0.621_371 : 1;
 	const distanceUnit = speedUnit === 'mph' ? 'mi' : 'km';
@@ -302,23 +330,49 @@ export function SessionHistory({
 		};
 	}, [open, selectSession]);
 
+	const deleteSelectedSession = useCallback(async () => {
+		if (!selected || deleteInProgress.current) {
+			return;
+		}
+		deleteInProgress.current = true;
+		setDeleting(true);
+		try {
+			await deleteSavedSession(selected.id);
+			setDeleteConfirmationOpen(false);
+			const updated = sessionListAfterDelete(summaries, selected.id);
+			setSummaries(updated.sessions);
+			setTotal((current) => Math.max(0, current - 1));
+			setError('');
+			if (updated.next) {
+				await selectSession(updated.next.id);
+			} else {
+				setSelected(undefined);
+				setSelectedId(undefined);
+			}
+		} catch (deleteError) {
+			setError(deleteError instanceof Error ? deleteError.message : String(deleteError));
+		} finally {
+			deleteInProgress.current = false;
+			setDeleting(false);
+		}
+	}, [selected, selectSession, summaries]);
+
 	useEffect(() => {
 		if (!open) {
 			return;
 		}
-		const handleHistoryKeys = (event: KeyboardEvent) => {
-			const target = event.target as HTMLElement | null;
-			if (
-				event.key === '?' &&
-				!deleteConfirmationOpen &&
-				!(event.altKey || event.ctrlKey || event.metaKey) &&
-				!target?.matches("input, textarea, select, [contenteditable='true']")
-			) {
-				event.preventDefault();
-				setHistoryHelpOpen(true);
+		const selectAdjacent = (event: KeyboardEvent, direction: 'next' | 'previous') => {
+			if (deleteConfirmationOpen || historyHelpOpen) {
 				return;
 			}
-			if (event.key === 'Escape') {
+			event.preventDefault();
+			const next = adjacentSession(summaries, selectedId, direction);
+			if (next) {
+				selectSession(next.id);
+			}
+		};
+		const shortcutHandlers: Record<HistoryShortcut, (event: KeyboardEvent) => void> = {
+			close: (event) => {
 				event.preventDefault();
 				if (historyHelpOpen) {
 					setHistoryHelpOpen(false);
@@ -327,11 +381,55 @@ export function SessionHistory({
 				} else {
 					onClose();
 				}
+			},
+			confirmDelete: (event) => {
+				const target = event.target as HTMLElement | null;
+				if (
+					!deleteConfirmationOpen ||
+					target?.matches("button, a, input, textarea, select, [contenteditable='true']")
+				) {
+					return;
+				}
+				event.preventDefault();
+				deleteSelectedSession();
+			},
+			deleteSession: (event) => {
+				if (deleteConfirmationOpen || historyHelpOpen || !selected) {
+					return;
+				}
+				event.preventDefault();
+				setDeleteConfirmationOpen(true);
+			},
+			help: (event) => {
+				if (deleteConfirmationOpen || historyHelpOpen) {
+					return;
+				}
+				event.preventDefault();
+				setHistoryHelpOpen(true);
+			},
+			nextSession: (event) => selectAdjacent(event, 'next'),
+			previousSession: (event) => selectAdjacent(event, 'previous'),
+		};
+		const handleHistoryKeys = (event: KeyboardEvent) => {
+			const shortcut = historyShortcutForKey(event.key);
+			if (!shortcut || (shortcut !== 'close' && shouldIgnoreHistoryAction(event))) {
+				return;
 			}
+			shortcutHandlers[shortcut](event);
 		};
 		window.addEventListener('keydown', handleHistoryKeys);
 		return () => window.removeEventListener('keydown', handleHistoryKeys);
-	}, [deleteConfirmationOpen, historyHelpOpen, onClose, open]);
+	}, [
+		deleteConfirmationOpen,
+		deleteSelectedSession,
+		historyHelpOpen,
+		onClose,
+		open,
+		selectSession,
+		selected,
+		selectedId,
+		summaries,
+	]);
 
 	if (!rendered) {
 		return null;
@@ -344,33 +442,6 @@ export function SessionHistory({
 		}
 		const more = await listSavedSessions(PAGE_SIZE, last.endedAt);
 		setSummaries((current) => [...current, ...more]);
-	}
-
-	async function deleteSelectedSession() {
-		if (!selected) {
-			return;
-		}
-		setDeleting(true);
-		try {
-			await deleteSavedSession(selected.id);
-			setDeleteConfirmationOpen(false);
-			const deletedIndex = summaries.findIndex((session) => session.id === selected.id);
-			const remaining = summaries.filter((session) => session.id !== selected.id);
-			const next = remaining[Math.min(Math.max(0, deletedIndex), remaining.length - 1)];
-			setSummaries(remaining);
-			setTotal((current) => Math.max(0, current - 1));
-			setError('');
-			if (next) {
-				await selectSession(next.id);
-			} else {
-				setSelected(undefined);
-				setSelectedId(undefined);
-			}
-		} catch (deleteError) {
-			setError(deleteError instanceof Error ? deleteError.message : String(deleteError));
-		} finally {
-			setDeleting(false);
-		}
 	}
 
 	let detail: ReactNode = null;

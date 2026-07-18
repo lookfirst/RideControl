@@ -46,8 +46,16 @@ describe('session utilities', () => {
 	});
 
 	test('aggregates recorded resistance samples and ignores missing legacy data', () => {
-		expect(aggregateResistance([{}, { resistance: 25 }, { resistance: 125 }])).toEqual({
-			count: 2,
+		expect(
+			aggregateResistance([
+				{},
+				{ resistance: 25 },
+				{ resistance: 125 },
+				{ resistance: -10 },
+				{ resistance: Number.NaN },
+			])
+		).toEqual({
+			count: 3,
 			sum: 125,
 		});
 	});
@@ -68,6 +76,8 @@ describe('session utilities', () => {
 			calories: -10,
 			distance: 12,
 			elapsedSeconds: 65,
+			ended: true,
+			endedAt: 5000,
 			history: [
 				{
 					cadence: 90,
@@ -79,15 +89,21 @@ describe('session utilities', () => {
 				},
 			],
 			maximums: { cadence: 95, heartRate: 160, power: 250, speed: 35 },
+			savedSessionId: 'saved-session',
+			startedAt: 1000,
 		});
 		const session = loadStoredSession(storageWith(stored));
 		expect(session.calories).toBe(0);
 		expect(session.distance).toBe(12);
+		expect(session.ended).toBe(true);
+		expect(session.endedAt).toBe(5000);
 		expect(session.history[0]?.speed).toBe(0);
 		expect(session.history[0]?.resistance).toBe(42);
 		expect(session.aggregates.power).toEqual({ count: 1, sum: 200 });
 		expect(session.aggregates.resistance).toEqual({ count: 1, sum: 42 });
 		expect(session.maximums.speed).toBe(35);
+		expect(session.savedSessionId).toBe('saved-session');
+		expect(session.startedAt).toBe(1000);
 	});
 
 	test('uses an empty session for absent or malformed storage', () => {

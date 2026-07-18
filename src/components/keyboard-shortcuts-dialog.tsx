@@ -9,6 +9,7 @@ export const dashboardKeyboardShortcuts: KeyboardShortcutDescription[] = [
 	{ keys: ['Space'], label: 'Pause or resume the session' },
 	{ keys: ['↑', '↓'], label: 'Increase or decrease resistance' },
 	{ keys: ['←', '→'], label: 'Change the chart view' },
+	{ keys: ['N'], label: 'Start a new session after ending' },
 	{ keys: ['H'], label: 'Open session history' },
 	{ keys: ['?'], label: 'Show keyboard shortcuts' },
 	{ keys: ['Esc'], label: 'Close an open dialog' },

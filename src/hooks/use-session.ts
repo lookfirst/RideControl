@@ -35,7 +35,9 @@ export function useSession(
 	const [history, setHistory] = useState<MetricSample[]>(restored.history);
 	const [maximums, setMaximums] = useState<Metrics>(restored.maximums);
 	const [aggregates, setAggregates] = useState<SessionAggregates>(restored.aggregates);
-	const [savedSessionId, setSavedSessionId] = useState(restored.savedSessionId);
+	const [savedSessionId, setSavedSessionId] = useState<string | undefined>(
+		restored.savedSessionId
+	);
 	const [startedAt, setStartedAt] = useState(initialStartedAt);
 	const latestMetrics = useRef(metrics);
 	const latestResistance = useRef(resistance);

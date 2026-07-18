@@ -78,12 +78,29 @@ export function sessionSummary(session: SavedSession): SavedSessionSummary {
 	};
 }
 
+type StoreGetter<T> = (name: string) => T;
+
+export function saveSessionRecords(
+	getStore: StoreGetter<Pick<IDBObjectStore, 'put'>>,
+	session: SavedSession
+): void {
+	getStore(SESSION_STORE).put(session);
+	getStore(SUMMARY_STORE).put(sessionSummary(session));
+}
+
+export function deleteSessionRecords(
+	getStore: StoreGetter<Pick<IDBObjectStore, 'delete'>>,
+	id: string
+): void {
+	getStore(SESSION_STORE).delete(id);
+	getStore(SUMMARY_STORE).delete(id);
+}
+
 export async function saveSession(session: SavedSession): Promise<void> {
 	const database = await openDatabase();
 	const transaction = database.transaction([SESSION_STORE, SUMMARY_STORE], 'readwrite');
 	const completed = transactionComplete(transaction);
-	transaction.objectStore(SESSION_STORE).put(session);
-	transaction.objectStore(SUMMARY_STORE).put(sessionSummary(session));
+	saveSessionRecords((name) => transaction.objectStore(name), session);
 	await completed;
 }
 
@@ -91,8 +108,7 @@ export async function deleteSavedSession(id: string): Promise<void> {
 	const database = await openDatabase();
 	const transaction = database.transaction([SESSION_STORE, SUMMARY_STORE], 'readwrite');
 	const completed = transactionComplete(transaction);
-	transaction.objectStore(SESSION_STORE).delete(id);
-	transaction.objectStore(SUMMARY_STORE).delete(id);
+	deleteSessionRecords((name) => transaction.objectStore(name), id);
 	await completed;
 }
 
@@ -107,6 +123,10 @@ export async function getSavedSession(id: string): Promise<SavedSession | undefi
 	if (!session) {
 		return;
 	}
+	return normalizeSavedSession(session);
+}
+
+export function normalizeSavedSession(session: SavedSession): SavedSession {
 	return {
 		...session,
 		aggregates: {
@@ -179,6 +199,33 @@ export function groupSessionsByDate(sessions: SavedSessionSummary[]): SessionGro
 		}
 	}
 	return [...groups.values()];
+}
+
+export function sessionListAfterDelete(
+	sessions: SavedSessionSummary[],
+	deletedId: string
+): { next?: SavedSessionSummary; sessions: SavedSessionSummary[] } {
+	const deletedIndex = sessions.findIndex((session) => session.id === deletedId);
+	if (deletedIndex < 0) {
+		return { next: sessions[0], sessions };
+	}
+	const remaining = sessions.filter((session) => session.id !== deletedId);
+	return {
+		next: remaining[Math.min(deletedIndex, remaining.length - 1)],
+		sessions: remaining,
+	};
+}
+
+export function adjacentSession(
+	sessions: SavedSessionSummary[],
+	selectedId: string | undefined,
+	direction: 'next' | 'previous'
+): SavedSessionSummary | undefined {
+	const selectedIndex = sessions.findIndex((session) => session.id === selectedId);
+	if (selectedIndex < 0) {
+		return sessions[0];
+	}
+	return sessions[selectedIndex + (direction === 'next' ? 1 : -1)];
 }
 
 export function formatSessionTime(timestamp: number): string {

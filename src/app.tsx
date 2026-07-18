@@ -11,7 +11,7 @@ import { SessionSaveDialog } from './components/session-save-dialog';
 import { useSession } from './hooks/use-session';
 import { useTrainer } from './hooks/use-trainer';
 import { formatAggregateAverage, formatDuration } from './lib/format';
-import { appShortcutForKey } from './lib/keyboard';
+import { type AppShortcut, appShortcutForKey } from './lib/keyboard';
 import {
 	createSavedSession,
 	requestPersistentSessionStorage,
@@ -20,6 +20,17 @@ import {
 import type { RoutePoint, SessionMetadata, SpeedUnit } from './types';
 
 const EMPTY_ROUTE: RoutePoint[] = [];
+
+function shouldIgnoreShortcut(event: KeyboardEvent) {
+	const target = event.target as HTMLElement | null;
+	return (
+		event.defaultPrevented ||
+		event.altKey ||
+		event.ctrlKey ||
+		event.metaKey ||
+		target?.matches("button, a, input, textarea, select, [contenteditable='true']")
+	);
+}
 
 export function App() {
 	const trainer = useTrainer();
@@ -40,6 +51,25 @@ export function App() {
 		() => session.ended && !session.savedSessionId
 	);
 	const [saving, setSaving] = useState(false);
+	const startNewSession = useCallback(() => {
+		session.startNew();
+		setSaveDialogOpen(false);
+		trainer.setNotice('New session ready.');
+	}, [session.startNew, trainer.setNotice]);
+	const handleNewSessionShortcut = useCallback(
+		(event: KeyboardEvent) => {
+			if (!session.ended) {
+				return;
+			}
+			event.preventDefault();
+			if (session.savedSessionId) {
+				startNewSession();
+			} else {
+				setSaveDialogOpen(true);
+			}
+		},
+		[session.ended, session.savedSessionId, startNewSession]
+	);
 
 	useEffect(() => {
 		requestPersistentSessionStorage().catch(() => false);
@@ -50,37 +80,51 @@ export function App() {
 	}, [historyOpen, shortcutsOpen, trainer.setKeyboardControlsEnabled]);
 
 	useEffect(() => {
+		const shortcutHandlers: Record<AppShortcut, (event: KeyboardEvent) => void> = {
+			history: (event) => {
+				if (saveDialogOpen) {
+					return;
+				}
+				event.preventDefault();
+				setShortcutsOpen(false);
+				setHistoryOpen(true);
+			},
+			newSession: (event) => {
+				if (!(saveDialogOpen || shortcutsOpen)) {
+					handleNewSessionShortcut(event);
+				}
+			},
+			pause: (event) => {
+				if (saveDialogOpen || shortcutsOpen) {
+					return;
+				}
+				event.preventDefault();
+				session.togglePause();
+			},
+			shortcuts: (event) => {
+				if (saveDialogOpen) {
+					return;
+				}
+				event.preventDefault();
+				setHistoryOpen(false);
+				setShortcutsOpen(true);
+			},
+		};
 		const handleShortcut = (event: KeyboardEvent) => {
-			const target = event.target as HTMLElement | null;
-			if (
-				event.defaultPrevented ||
-				event.altKey ||
-				event.ctrlKey ||
-				event.metaKey ||
-				target?.matches("button, a, input, textarea, select, [contenteditable='true']")
-			) {
+			if (shouldIgnoreShortcut(event)) {
 				return;
 			}
 			if (historyOpen) {
 				return;
 			}
 			const shortcut = appShortcutForKey(event);
-			if (shortcut === 'history' && !saveDialogOpen) {
-				event.preventDefault();
-				setShortcutsOpen(false);
-				setHistoryOpen(true);
-			} else if (shortcut === 'shortcuts' && !saveDialogOpen) {
-				event.preventDefault();
-				setHistoryOpen(false);
-				setShortcutsOpen(true);
-			} else if (shortcut === 'pause' && !(historyOpen || saveDialogOpen || shortcutsOpen)) {
-				event.preventDefault();
-				session.togglePause();
+			if (shortcut) {
+				shortcutHandlers[shortcut](event);
 			}
 		};
 		window.addEventListener('keydown', handleShortcut);
 		return () => window.removeEventListener('keydown', handleShortcut);
-	}, [historyOpen, saveDialogOpen, session.togglePause, shortcutsOpen]);
+	}, [handleNewSessionShortcut, historyOpen, saveDialogOpen, session.togglePause, shortcutsOpen]);
 
 	function selectSpeedUnit(unit: SpeedUnit) {
 		setSpeedUnit(unit);
@@ -107,12 +151,6 @@ export function App() {
 		} finally {
 			setSaving(false);
 		}
-	}
-
-	function startNewSession() {
-		session.startNew();
-		setSaveDialogOpen(false);
-		trainer.setNotice('New session ready.');
 	}
 
 	const closeHistory = useCallback(() => setHistoryOpen(false), []);
@@ -144,10 +182,6 @@ export function App() {
 					<div className="flex flex-wrap items-center gap-2">
 						{session.ended ? (
 							<>
-								<span className="inline-flex h-10 items-center gap-2 rounded-lg border border-line bg-[#12171d] px-3 font-semibold text-slate-300 text-xs">
-									<span className="h-2 w-2 rounded-full bg-slate-500" />
-									Session ended
-								</span>
 								{session.savedSessionId ? null : (
 									<button
 										className="h-10 rounded-lg border border-mint/40 bg-mint/10 px-3 font-semibold text-mint text-xs hover:bg-mint/15"
