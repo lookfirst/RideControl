@@ -116,7 +116,7 @@ describe('view components', () => {
 		});
 		const html = render(<App />);
 		expect(html).toContain('Resistance control');
-		expect(html).toContain('Ride a route');
+		expect(html).not.toContain('Import GPX');
 		expect(html).toContain('Connect trainer');
 	});
 });

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { ConnectionControl } from './components/connection-control';
 import { Icon } from './components/icon';
 import { Metric, SmallMetric } from './components/metrics';
@@ -8,8 +8,9 @@ import { SessionChart } from './components/session-chart';
 import { useSession } from './hooks/use-session';
 import { useTrainer } from './hooks/use-trainer';
 import { formatAggregateAverage, formatDuration } from './lib/format';
-import { parseGpx } from './lib/gpx';
 import type { RoutePoint, SpeedUnit } from './types';
+
+const EMPTY_ROUTE: RoutePoint[] = [];
 
 export function App() {
 	const trainer = useTrainer();
@@ -23,9 +24,6 @@ export function App() {
 	const [speedUnit, setSpeedUnit] = useState<SpeedUnit>(() =>
 		localStorage.getItem('speed-unit') === 'kmh' ? 'kmh' : 'mph'
 	);
-	const [route, setRoute] = useState<RoutePoint[]>([]);
-	const fileRef = useRef<HTMLInputElement>(null);
-
 	useEffect(() => {
 		const handlePauseKey = (event: KeyboardEvent) => {
 			const target = event.target as HTMLElement | null;
@@ -49,16 +47,6 @@ export function App() {
 	function selectSpeedUnit(unit: SpeedUnit) {
 		setSpeedUnit(unit);
 		localStorage.setItem('speed-unit', unit);
-	}
-
-	function importGpx(file: File) {
-		const reader = new FileReader();
-		reader.onload = () => {
-			const parsed = parseGpx(String(reader.result));
-			setRoute(parsed);
-			trainer.setNotice(`${file.name} loaded — ${parsed.length} route points.`);
-		};
-		reader.readAsText(file);
 	}
 
 	const unitFactor = speedUnit === 'mph' ? 0.621_371 : 1;
@@ -192,7 +180,7 @@ export function App() {
 						</div>
 						<SessionChart
 							history={session.history}
-							route={route}
+							route={EMPTY_ROUTE}
 							speedUnit={speedUnit}
 						/>
 					</div>
@@ -213,37 +201,6 @@ export function App() {
 							value={trainer.resistance}
 						/>
 					</div>
-				</section>
-
-				<section className="mt-6 rounded-2xl border border-slate-600 border-dashed bg-[#151a20] p-5 sm:flex sm:items-center sm:justify-between">
-					<div className="flex gap-3">
-						<div className="grid h-10 w-10 shrink-0 place-items-center rounded-lg bg-slate-800 text-mint">
-							<Icon name="route" />
-						</div>
-						<div>
-							<h2 className="font-semibold">Ride a route</h2>
-							<p className="mt-1 text-slate-400 text-sm">
-								Import a GPX track to view its elevation profile during your ride.
-							</p>
-						</div>
-					</div>
-					<button
-						className="mt-4 inline-flex items-center gap-2 rounded-lg border border-slate-500 px-4 py-2 font-semibold text-sm hover:border-mint hover:text-mint sm:mt-0"
-						onClick={() => fileRef.current?.click()}
-						type="button"
-					>
-						<Icon className="h-4 w-4" name="upload" />
-						Import GPX
-					</button>
-					<input
-						accept=".gpx,application/gpx+xml"
-						className="hidden"
-						onChange={(event) =>
-							event.target.files?.[0] && importGpx(event.target.files[0])
-						}
-						ref={fileRef}
-						type="file"
-					/>
 				</section>
 			</div>
 			<Notification
