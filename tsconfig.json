@@ -12,7 +12,7 @@
 		"moduleDetection": "force",
 		"noEmit": true,
 		"strict": true,
-		"types": ["@types/web-bluetooth", "vite/client"]
+		"types": ["@types/web-bluetooth", "bun", "vite/client"]
 	},
-	"include": ["src"]
+	"include": ["src", "tests"]
 }
