@@ -2,11 +2,13 @@ import { describe, expect, test } from 'bun:test';
 import { appShortcutForKey, historyShortcutForKey } from '../src/lib/keyboard';
 
 describe('keyboard shortcuts', () => {
-	test('maps history, help, new session, and pause keys', () => {
+	test('maps history, help, session, and pause keys', () => {
 		expect(appShortcutForKey({ code: 'KeyH', key: 'h' })).toBe('history');
 		expect(appShortcutForKey({ code: 'KeyH', key: 'H' })).toBe('history');
 		expect(appShortcutForKey({ code: 'KeyN', key: 'n' })).toBe('newSession');
 		expect(appShortcutForKey({ code: 'KeyN', key: 'N' })).toBe('newSession');
+		expect(appShortcutForKey({ code: 'KeyQ', key: 'q' })).toBe('endSession');
+		expect(appShortcutForKey({ code: 'KeyQ', key: 'Q' })).toBe('endSession');
 		expect(appShortcutForKey({ code: 'Slash', key: '?' })).toBe('shortcuts');
 		expect(appShortcutForKey({ code: 'Space', key: ' ' })).toBe('pause');
 	});

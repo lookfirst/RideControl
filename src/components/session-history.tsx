@@ -104,6 +104,7 @@ export function SessionDetail({
 	onCancelDelete,
 	onConfirmDelete,
 	onDelete,
+	onStartNew,
 	session,
 	speedUnit,
 }: {
@@ -113,6 +114,7 @@ export function SessionDetail({
 	onCancelDelete?: () => void;
 	onConfirmDelete?: () => void;
 	onDelete?: () => void;
+	onStartNew?: () => void;
 	session: SavedSession;
 	speedUnit: SpeedUnit;
 }) {
@@ -130,15 +132,26 @@ export function SessionDetail({
 					</p>
 					<h3 className="mt-1 font-bold text-2xl">{formatSessionTimeRange(session)}</h3>
 				</div>
-				{onDelete ? (
-					<button
-						className="shrink-0 rounded-lg border border-rose-400/30 px-3 py-2 font-semibold text-rose-300 text-xs transition hover:border-rose-400/60 hover:bg-rose-400/5"
-						onClick={onDelete}
-						type="button"
-					>
-						Delete session
-					</button>
-				) : null}
+				<div className="flex shrink-0 items-center gap-2">
+					{onStartNew ? (
+						<button
+							className="rounded-lg border border-mint/30 px-3 py-2 font-semibold text-mint text-xs transition hover:border-mint/60 hover:bg-mint/5"
+							onClick={onStartNew}
+							type="button"
+						>
+							Start new session
+						</button>
+					) : null}
+					{onDelete ? (
+						<button
+							className="rounded-lg border border-rose-400/30 px-3 py-2 font-semibold text-rose-300 text-xs transition hover:border-rose-400/60 hover:bg-rose-400/5"
+							onClick={onDelete}
+							type="button"
+						>
+							Delete session
+						</button>
+					) : null}
+				</div>
 				{onCancelDelete && onConfirmDelete ? (
 					<DeleteSessionDialog
 						deleting={deleting}
@@ -221,10 +234,12 @@ export function SessionDetail({
 
 export function SessionHistory({
 	onClose,
+	onStartNew,
 	open,
 	speedUnit,
 }: {
 	onClose: () => void;
+	onStartNew: (session: SavedSession) => void;
 	open: boolean;
 	speedUnit: SpeedUnit;
 }) {
@@ -447,6 +462,7 @@ export function SessionHistory({
 				onCancelDelete={() => setDeleteConfirmationOpen(false)}
 				onConfirmDelete={() => deleteSelectedSession()}
 				onDelete={() => setDeleteConfirmationOpen(true)}
+				onStartNew={() => onStartNew(selected)}
 				session={selected}
 				speedUnit={speedUnit}
 			/>

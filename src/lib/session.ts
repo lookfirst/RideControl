@@ -4,6 +4,7 @@ import type {
 	MetricSample,
 	Metrics,
 	SessionAggregates,
+	SessionSnapshot,
 	StoredSession,
 } from '../types';
 
@@ -11,6 +12,20 @@ type ReadableStorage = Pick<Storage, 'getItem'>;
 
 export function nonNegativeNumber(value: unknown): number {
 	return typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : 0;
+}
+
+export function sessionContinuation(snapshot: SessionSnapshot): StoredSession {
+	return {
+		aggregates: snapshot.aggregates,
+		calories: snapshot.calories,
+		distance: snapshot.distance,
+		elapsedSeconds: snapshot.elapsedSeconds,
+		ended: false,
+		endedAt: 0,
+		history: snapshot.history,
+		maximums: snapshot.maximums,
+		startedAt: snapshot.startedAt,
+	};
 }
 
 export function addAggregate(

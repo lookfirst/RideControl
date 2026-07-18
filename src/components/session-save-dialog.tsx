@@ -13,6 +13,7 @@ const feelings: { label: string; value: SessionFeeling }[] = [
 ];
 
 export function SessionSaveDialog({
+	continuing = false,
 	open,
 	onClose,
 	onSave,
@@ -21,6 +22,7 @@ export function SessionSaveDialog({
 	session,
 	speedUnit,
 }: {
+	continuing?: boolean;
 	open: boolean;
 	onClose: () => void;
 	onSave: (metadata: SessionMetadata) => Promise<void>;
@@ -121,7 +123,7 @@ export function SessionSaveDialog({
 						onClick={onStartWithoutSaving}
 						type="button"
 					>
-						Start new without saving
+						{continuing ? 'Continue without saving' : 'Start new without saving'}
 					</button>
 					<button
 						className="rounded-lg bg-lime px-5 py-2.5 font-bold text-ink text-sm hover:bg-[#e4ff9c] disabled:opacity-50"

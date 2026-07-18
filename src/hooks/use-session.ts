@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { emptyMetrics, emptySession, RECORDING_PAUSE_DELAY_MS } from '../constants';
-import { addMetricAggregates, loadStoredSession } from '../lib/session';
+import { addMetricAggregates, loadStoredSession, sessionContinuation } from '../lib/session';
 import type {
 	MetricSample,
 	Metrics,
@@ -194,6 +194,29 @@ export function useSession(
 		localStorage.removeItem('trainer-session');
 	}, [lastPedalingAt]);
 
+	const continueFrom = useCallback(
+		(sourceSession: SessionSnapshot) => {
+			const continued = sessionContinuation(sourceSession);
+			elapsedRef.current = continued.elapsedSeconds;
+			lastTrainerDistance.current = latestMetrics.current.distance;
+			lastPedalingAt.current = 0;
+			setEnded(false);
+			setEndedAt(0);
+			setElapsedSeconds(continued.elapsedSeconds);
+			setRideDistance(continued.distance);
+			setRideCalories(continued.calories);
+			setHistory(continued.history);
+			setIsRiding(false);
+			setManuallyPaused(false);
+			setMaximums(continued.maximums);
+			setAggregates(continued.aggregates);
+			setSavedSessionId(undefined);
+			setStartedAt(continued.startedAt);
+			localStorage.removeItem('trainer-session');
+		},
+		[lastPedalingAt]
+	);
+
 	const snapshot = useMemo<SessionSnapshot>(
 		() => ({
 			aggregates,
@@ -219,6 +242,7 @@ export function useSession(
 
 	return {
 		aggregates,
+		continueFrom,
 		elapsedSeconds,
 		ended,
 		endSession,

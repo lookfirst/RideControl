@@ -7,6 +7,7 @@ import {
 	loadStoredSession,
 	nonNegativeNumber,
 	restoreAggregate,
+	sessionContinuation,
 	storedResistance,
 } from '../src/lib/session';
 
@@ -20,6 +21,31 @@ describe('session utilities', () => {
 		expect(nonNegativeNumber(-1)).toBe(0);
 		expect(nonNegativeNumber(Number.NaN)).toBe(0);
 		expect(nonNegativeNumber('4')).toBe(0);
+	});
+
+	test('creates an active unsaved continuation with all recorded data', () => {
+		const snapshot = {
+			aggregates: emptySession.aggregates,
+			calories: 120,
+			distance: 14,
+			elapsedSeconds: 1800,
+			endedAt: 5000,
+			history: [
+				{
+					cadence: 80,
+					elapsedSeconds: 1800,
+					heartRate: 140,
+					power: 200,
+					resistance: 40,
+					speed: 30,
+				},
+			],
+			maximums: emptySession.maximums,
+			startedAt: 1000,
+		};
+		const continued = sessionContinuation(snapshot);
+		expect(continued).toMatchObject({ ...snapshot, ended: false, endedAt: 0 });
+		expect(continued.savedSessionId).toBeUndefined();
 	});
 
 	test('adds aggregate samples according to zero policy', () => {

@@ -7,6 +7,7 @@ export interface KeyboardShortcutDescription {
 
 export const dashboardKeyboardShortcuts: KeyboardShortcutDescription[] = [
 	{ keys: ['Space'], label: 'Pause or resume the session' },
+	{ keys: ['Q'], label: 'End the current session' },
 	{ keys: ['↑', '↓'], label: 'Increase or decrease resistance' },
 	{ keys: ['←', '→'], label: 'Change the chart view' },
 	{ keys: ['N'], label: 'Start a new session after ending' },

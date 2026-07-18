@@ -17,7 +17,7 @@ import {
 	requestPersistentSessionStorage,
 	saveSession,
 } from './lib/saved-sessions';
-import type { RoutePoint, SessionMetadata, SpeedUnit } from './types';
+import type { RoutePoint, SavedSession, SessionMetadata, SpeedUnit } from './types';
 
 const EMPTY_ROUTE: RoutePoint[] = [];
 
@@ -42,33 +42,75 @@ export function App() {
 	);
 	const { connected } = trainer;
 	const { isRiding, manuallyPaused } = session;
+	const sessionIsSaved = Boolean(session.savedSessionId);
 	const [speedUnit, setSpeedUnit] = useState<SpeedUnit>(() =>
 		localStorage.getItem('speed-unit') === 'kmh' ? 'kmh' : 'mph'
 	);
 	const [historyOpen, setHistoryOpen] = useState(false);
 	const [shortcutsOpen, setShortcutsOpen] = useState(false);
-	const [saveDialogOpen, setSaveDialogOpen] = useState(
-		() => session.ended && !session.savedSessionId
-	);
+	const [saveDialogOpen, setSaveDialogOpen] = useState(() => session.ended && !sessionIsSaved);
 	const [saving, setSaving] = useState(false);
+	const [startAfterSave, setStartAfterSave] = useState(false);
+	const [continuationAfterSave, setContinuationAfterSave] = useState<SavedSession>();
+	const endSession = useCallback(() => {
+		session.endSession();
+		setStartAfterSave(false);
+		setContinuationAfterSave(undefined);
+		setSaveDialogOpen(true);
+	}, [session.endSession]);
 	const startNewSession = useCallback(() => {
 		session.startNew();
 		setSaveDialogOpen(false);
+		setStartAfterSave(false);
+		setContinuationAfterSave(undefined);
 		trainer.setNotice('New session ready.');
 	}, [session.startNew, trainer.setNotice]);
+	const continueSession = useCallback(
+		(savedSession: SavedSession) => {
+			session.continueFrom(savedSession);
+			setHistoryOpen(false);
+			setSaveDialogOpen(false);
+			setStartAfterSave(false);
+			setContinuationAfterSave(undefined);
+			trainer.setNotice('Session continued.');
+		},
+		[session.continueFrom, trainer.setNotice]
+	);
+	const requestNewSession = useCallback(() => {
+		if (session.ended) {
+			if (sessionIsSaved) {
+				startNewSession();
+			} else {
+				setStartAfterSave(true);
+				setContinuationAfterSave(undefined);
+				setSaveDialogOpen(true);
+			}
+			return;
+		}
+		if (session.elapsedSeconds > 0) {
+			session.endSession();
+			setStartAfterSave(true);
+			setContinuationAfterSave(undefined);
+			setSaveDialogOpen(true);
+			return;
+		}
+		startNewSession();
+	}, [
+		session.elapsedSeconds,
+		session.endSession,
+		session.ended,
+		sessionIsSaved,
+		startNewSession,
+	]);
 	const handleNewSessionShortcut = useCallback(
 		(event: KeyboardEvent) => {
 			if (!session.ended) {
 				return;
 			}
 			event.preventDefault();
-			if (session.savedSessionId) {
-				startNewSession();
-			} else {
-				setSaveDialogOpen(true);
-			}
+			requestNewSession();
 		},
-		[session.ended, session.savedSessionId, startNewSession]
+		[requestNewSession, session.ended]
 	);
 
 	useEffect(() => {
@@ -81,6 +123,13 @@ export function App() {
 
 	useEffect(() => {
 		const shortcutHandlers: Record<AppShortcut, (event: KeyboardEvent) => void> = {
+			endSession: (event) => {
+				if (saveDialogOpen || shortcutsOpen || session.ended) {
+					return;
+				}
+				event.preventDefault();
+				endSession();
+			},
 			history: (event) => {
 				if (saveDialogOpen) {
 					return;
@@ -124,16 +173,25 @@ export function App() {
 		};
 		window.addEventListener('keydown', handleShortcut);
 		return () => window.removeEventListener('keydown', handleShortcut);
-	}, [handleNewSessionShortcut, historyOpen, saveDialogOpen, session.togglePause, shortcutsOpen]);
+	}, [
+		endSession,
+		handleNewSessionShortcut,
+		historyOpen,
+		saveDialogOpen,
+		session.ended,
+		session.togglePause,
+		shortcutsOpen,
+	]);
 
 	function selectSpeedUnit(unit: SpeedUnit) {
 		setSpeedUnit(unit);
 		localStorage.setItem('speed-unit', unit);
 	}
 
-	function endSession() {
-		session.endSession();
-		setSaveDialogOpen(true);
+	function closeSaveDialog() {
+		setSaveDialogOpen(false);
+		setStartAfterSave(false);
+		setContinuationAfterSave(undefined);
 	}
 
 	async function saveCurrentSession(metadata: SessionMetadata) {
@@ -142,8 +200,18 @@ export function App() {
 			const saved = createSavedSession(session.snapshot, metadata);
 			await saveSession(saved);
 			session.markSaved(saved.id);
-			setSaveDialogOpen(false);
-			trainer.setNotice('Session saved.');
+			if (startAfterSave) {
+				if (continuationAfterSave) {
+					continueSession(continuationAfterSave);
+					trainer.setNotice('Session saved. Selected session continued.');
+				} else {
+					startNewSession();
+					trainer.setNotice('Session saved. New session ready.');
+				}
+			} else {
+				setSaveDialogOpen(false);
+				trainer.setNotice('Session saved.');
+			}
 		} catch (error) {
 			trainer.setNotice(
 				`Session could not be saved: ${error instanceof Error ? error.message : String(error)}`
@@ -155,6 +223,32 @@ export function App() {
 
 	const closeHistory = useCallback(() => setHistoryOpen(false), []);
 	const closeShortcuts = useCallback(() => setShortcutsOpen(false), []);
+	const startNewSessionFromHistory = useCallback(
+		(savedSession: SavedSession) => {
+			setHistoryOpen(false);
+			const currentNeedsSave =
+				(session.ended && !sessionIsSaved) ||
+				(!session.ended && session.elapsedSeconds > 0);
+			if (currentNeedsSave) {
+				if (!session.ended) {
+					session.endSession();
+				}
+				setContinuationAfterSave(savedSession);
+				setStartAfterSave(true);
+				setSaveDialogOpen(true);
+				return;
+			}
+			continueSession(savedSession);
+		},
+		[continueSession, session.elapsedSeconds, session.endSession, session.ended, sessionIsSaved]
+	);
+	const proceedWithoutSaving = useCallback(() => {
+		if (continuationAfterSave) {
+			continueSession(continuationAfterSave);
+		} else {
+			startNewSession();
+		}
+	}, [continuationAfterSave, continueSession, startNewSession]);
 
 	const unitFactor = speedUnit === 'mph' ? 0.621_371 : 1;
 	const distanceUnit = speedUnit === 'mph' ? 'mi' : 'km';
@@ -182,10 +276,13 @@ export function App() {
 					<div className="flex flex-wrap items-center gap-2">
 						{session.ended ? (
 							<>
-								{session.savedSessionId ? null : (
+								{sessionIsSaved ? null : (
 									<button
 										className="h-10 rounded-lg border border-mint/40 bg-mint/10 px-3 font-semibold text-mint text-xs hover:bg-mint/15"
-										onClick={() => setSaveDialogOpen(true)}
+										onClick={() => {
+											setStartAfterSave(false);
+											setSaveDialogOpen(true);
+										}}
 										type="button"
 									>
 										Save session
@@ -193,11 +290,7 @@ export function App() {
 								)}
 								<button
 									className="h-10 rounded-lg border border-line bg-[#12171d] px-3 font-semibold text-slate-300 text-xs hover:border-slate-500 hover:text-white"
-									onClick={() =>
-										session.savedSessionId
-											? startNewSession()
-											: setSaveDialogOpen(true)
-									}
+									onClick={requestNewSession}
 									type="button"
 								>
 									Start new session
@@ -354,21 +447,48 @@ export function App() {
 					</div>
 				</section>
 			</div>
+			<footer className="fixed bottom-3 left-4 z-20 flex items-center gap-1.5 text-[11px] text-slate-600">
+				<span className="font-semibold tracking-wide">Ride Control</span>
+				<span aria-hidden="true">·</span>
+				<a
+					className="transition hover:text-slate-400"
+					href="https://github.com/lookfirst"
+					rel="noreferrer"
+					target="_blank"
+				>
+					GitHub
+				</a>
+				<span aria-hidden="true">·</span>
+				<a
+					className="transition hover:text-slate-400"
+					href="https://github.com/sponsors/lookfirst"
+					rel="noreferrer"
+					target="_blank"
+				>
+					Sponsor
+				</a>
+			</footer>
 			<Notification
 				connected={connected}
 				notice={trainer.notice}
 				onDismiss={() => trainer.setNotice('')}
 			/>
 			<SessionSaveDialog
-				onClose={() => setSaveDialogOpen(false)}
+				continuing={Boolean(continuationAfterSave)}
+				onClose={closeSaveDialog}
 				onSave={saveCurrentSession}
-				onStartWithoutSaving={startNewSession}
+				onStartWithoutSaving={proceedWithoutSaving}
 				open={saveDialogOpen}
 				saving={saving}
 				session={session.snapshot}
 				speedUnit={speedUnit}
 			/>
-			<SessionHistory onClose={closeHistory} open={historyOpen} speedUnit={speedUnit} />
+			<SessionHistory
+				onClose={closeHistory}
+				onStartNew={startNewSessionFromHistory}
+				open={historyOpen}
+				speedUnit={speedUnit}
+			/>
 			<KeyboardShortcutsDialog onClose={closeShortcuts} open={shortcutsOpen} />
 		</main>
 	);

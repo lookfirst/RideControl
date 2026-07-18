@@ -199,6 +199,10 @@ describe('view components', () => {
 		expect(html).toContain('Connect trainer');
 		expect(html).toContain('History');
 		expect(html).toContain('Show keyboard controls');
+		expect(html).toContain('Ride Control');
+		expect(html).toContain('href="https://github.com/lookfirst"');
+		expect(html).toContain('href="https://github.com/sponsors/lookfirst"');
+		expect(html).toContain('Sponsor');
 		expect(html.indexOf('KM/H')).toBeLessThan(html.indexOf('Show keyboard controls'));
 		expect(html).toMatch(enabledEndSessionButton);
 	});
@@ -208,6 +212,7 @@ describe('view components', () => {
 		const html = render(<KeyboardShortcutsDialog onClose={() => undefined} open />);
 		expect(html).toContain('Keyboard controls');
 		expect(html).toContain('Open session history');
+		expect(html).toContain('End the current session');
 		expect(html).toContain('Start a new session after ending');
 		expect(html).toContain('Increase or decrease resistance');
 		expect(html).toContain('Change the chart view');
@@ -273,6 +278,7 @@ describe('view components', () => {
 		).toBe('');
 		const html = render(
 			<SessionSaveDialog
+				continuing
 				onClose={() => undefined}
 				onSave={async () => undefined}
 				onStartWithoutSaving={() => undefined}
@@ -293,11 +299,18 @@ describe('view components', () => {
 		);
 		expect(html).toContain('Save this session?');
 		expect(html).toContain('How did it feel?');
-		expect(html).toContain('Start new without saving');
+		expect(html).toContain('Continue without saving');
 	});
 
 	test('renders an empty session history', () => {
-		const html = render(<SessionHistory onClose={() => undefined} open speedUnit="kmh" />);
+		const html = render(
+			<SessionHistory
+				onClose={() => undefined}
+				onStartNew={() => undefined}
+				open
+				speedUnit="kmh"
+			/>
+		);
 		expect(html).toContain('Session history');
 		expect(html).toContain('No saved sessions yet');
 		expect(html).toContain('ml-auto');
@@ -348,6 +361,7 @@ describe('view components', () => {
 				onCancelDelete={() => undefined}
 				onConfirmDelete={() => undefined}
 				onDelete={() => undefined}
+				onStartNew={() => undefined}
 				session={{
 					aggregates: emptySession.aggregates,
 					calories: 0,
@@ -365,6 +379,7 @@ describe('view components', () => {
 		);
 		expect(html).toContain('FELT');
 		expect(html).toContain('Delete session');
+		expect(html).toContain('Start new session');
 		expect(html).toContain('role="alertdialog"');
 		expect(html).not.toContain('until');
 		expect(html).toContain(

@@ -1,4 +1,4 @@
-export type AppShortcut = 'history' | 'newSession' | 'pause' | 'shortcuts';
+export type AppShortcut = 'endSession' | 'history' | 'newSession' | 'pause' | 'shortcuts';
 export type HistoryShortcut =
 	| 'close'
 	| 'confirmDelete'
@@ -32,6 +32,9 @@ export function appShortcutForKey({ code, key }: Pick<KeyboardEvent, 'code' | 'k
 	}
 	if (key.toLowerCase() === 'n') {
 		return 'newSession' satisfies AppShortcut;
+	}
+	if (key.toLowerCase() === 'q') {
+		return 'endSession' satisfies AppShortcut;
 	}
 	if (key === '?') {
 		return 'shortcuts' satisfies AppShortcut;
