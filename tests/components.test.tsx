@@ -4,10 +4,22 @@ import { App } from '../src/app';
 import { ConnectionControl } from '../src/components/connection-control';
 import { Icon } from '../src/components/icon';
 import { KeyboardShortcutsDialog } from '../src/components/keyboard-shortcuts-dialog';
-import { Metric, metricAccentClass, metricIconClass, SmallMetric } from '../src/components/metrics';
+import {
+	Metric,
+	metricAccentClass,
+	metricIconClass,
+	SessionMetric,
+	SmallMetric,
+} from '../src/components/metrics';
 import { Notification } from '../src/components/notification';
 import { ResistanceControl } from '../src/components/resistance-control';
-import { SessionDetail, SessionHistory } from '../src/components/session-history';
+import { SessionChart } from '../src/components/session-chart';
+import {
+	DeleteSessionDialog,
+	HISTORY_KEYBOARD_SHORTCUTS,
+	SessionDetail,
+	SessionHistory,
+} from '../src/components/session-history';
 import { SessionSaveDialog } from '../src/components/session-save-dialog';
 import { CHROME_BLUETOOTH_PERMISSION_MESSAGE, emptyMetrics, emptySession } from '../src/constants';
 
@@ -41,6 +53,19 @@ describe('view components', () => {
 
 	test('renders a compact session metric', () => {
 		expect(render(<SmallMetric label="TIME" value="01:02:03" />)).toContain('01:02:03');
+		const html = render(
+			<SessionMetric
+				accent="yellow"
+				average="185"
+				icon="bolt"
+				label="POWER"
+				maximum="300"
+				unit="W"
+			/>
+		);
+		expect(html).toContain('text-3xl');
+		expect(html).toContain('bg-yellow-400');
+		expect(html).toContain('<title>bolt</title>');
 	});
 
 	test('renders enabled and disabled resistance controls', () => {
@@ -146,6 +171,7 @@ describe('view components', () => {
 		expect(html).toContain('Connect trainer');
 		expect(html).toContain('History');
 		expect(html).toContain('Show keyboard controls');
+		expect(html.indexOf('KM/H')).toBeLessThan(html.indexOf('Show keyboard controls'));
 		expect(html).toMatch(enabledEndSessionButton);
 	});
 
@@ -155,6 +181,46 @@ describe('view components', () => {
 		expect(html).toContain('Open session history');
 		expect(html).toContain('Increase or decrease resistance');
 		expect(html).toContain('Change the chart view');
+		const historyHtml = render(
+			<KeyboardShortcutsDialog
+				onClose={() => undefined}
+				open
+				shortcuts={HISTORY_KEYBOARD_SHORTCUTS}
+				title="History keyboard controls"
+			/>
+		);
+		expect(historyHtml).toContain('History keyboard controls');
+		expect(historyHtml).toContain('Change the session chart view');
+		expect(historyHtml).not.toContain('Increase or decrease resistance');
+		expect(historyHtml).not.toContain('Pause or resume');
+	});
+
+	test('graphs resistance with the other session data', () => {
+		Object.defineProperty(globalThis, 'localStorage', {
+			configurable: true,
+			value: {
+				getItem: () => null,
+				setItem: () => undefined,
+			},
+		});
+		const html = render(
+			<SessionChart
+				history={[
+					{
+						cadence: 85,
+						elapsedSeconds: 1,
+						heartRate: 140,
+						power: 180,
+						resistance: 42,
+						speed: 30,
+					},
+				]}
+				route={[]}
+				speedUnit="kmh"
+			/>
+		);
+		expect(html).toContain('Resistance over time');
+		expect(html).toContain('Resistance</button>');
 	});
 
 	test('renders the session save workflow', () => {
@@ -170,6 +236,7 @@ describe('view components', () => {
 					calories: 100,
 					distance: 10,
 					elapsedSeconds: 3600,
+					endedAt: Date.now(),
 					history: [],
 					maximums: emptyMetrics,
 					startedAt: Date.now(),
@@ -186,11 +253,30 @@ describe('view components', () => {
 		const html = render(<SessionHistory onClose={() => undefined} open speedUnit="kmh" />);
 		expect(html).toContain('Session history');
 		expect(html).toContain('No saved sessions yet');
+		expect(html).toContain('ml-auto');
+		expect(html).toContain('translate-x-0');
+	});
+
+	test('renders session deletion confirmation as a modal', () => {
+		const html = render(
+			<DeleteSessionDialog
+				deleting={false}
+				onCancel={() => undefined}
+				onConfirm={() => undefined}
+				open
+			/>
+		);
+		expect(html).toContain('role="alertdialog"');
+		expect(html).toContain('Delete this session?');
+		expect(html).toContain('Delete permanently');
+		expect(html).toContain('absolute top-0 right-0');
+		expect(html).not.toContain('bg-black/65');
 	});
 
 	test('styles an unrecorded feeling like the comments value', () => {
 		const html = render(
 			<SessionDetail
+				onDelete={() => undefined}
 				session={{
 					aggregates: emptySession.aggregates,
 					calories: 0,
@@ -207,6 +293,8 @@ describe('view components', () => {
 			/>
 		);
 		expect(html).toContain('FELT');
+		expect(html).toContain('Delete session');
+		expect(html).not.toContain('until');
 		expect(html).toContain(
 			'<p class="mt-1 whitespace-pre-wrap text-slate-300 text-sm">Not recorded</p>'
 		);

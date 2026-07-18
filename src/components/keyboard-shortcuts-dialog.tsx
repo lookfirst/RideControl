@@ -1,6 +1,11 @@
 import { useEffect } from 'react';
 
-const shortcuts = [
+export interface KeyboardShortcutDescription {
+	keys: string[];
+	label: string;
+}
+
+export const dashboardKeyboardShortcuts: KeyboardShortcutDescription[] = [
 	{ keys: ['Space'], label: 'Pause or resume the session' },
 	{ keys: ['↑', '↓'], label: 'Increase or decrease resistance' },
 	{ keys: ['←', '→'], label: 'Change the chart view' },
@@ -9,9 +14,21 @@ const shortcuts = [
 	{ keys: ['Esc'], label: 'Close an open dialog' },
 ];
 
-export function KeyboardShortcutsDialog({ onClose, open }: { onClose: () => void; open: boolean }) {
+export function KeyboardShortcutsDialog({
+	handleEscape = true,
+	onClose,
+	open,
+	shortcuts = dashboardKeyboardShortcuts,
+	title = 'Keyboard controls',
+}: {
+	handleEscape?: boolean;
+	onClose: () => void;
+	open: boolean;
+	shortcuts?: KeyboardShortcutDescription[];
+	title?: string;
+}) {
 	useEffect(() => {
-		if (!open) {
+		if (!(handleEscape && open)) {
 			return;
 		}
 		const closeOnEscape = (event: KeyboardEvent) => {
@@ -22,7 +39,7 @@ export function KeyboardShortcutsDialog({ onClose, open }: { onClose: () => void
 		};
 		window.addEventListener('keydown', closeOnEscape);
 		return () => window.removeEventListener('keydown', closeOnEscape);
-	}, [onClose, open]);
+	}, [handleEscape, onClose, open]);
 
 	if (!open) {
 		return null;
@@ -37,12 +54,9 @@ export function KeyboardShortcutsDialog({ onClose, open }: { onClose: () => void
 				role="dialog"
 			>
 				<div className="flex items-start justify-between gap-4">
-					<div>
-						<p className="font-bold text-[11px] text-mint tracking-[.14em]">HELP</p>
-						<h2 className="mt-1 font-bold text-2xl" id="keyboard-shortcuts-title">
-							Keyboard controls
-						</h2>
-					</div>
+					<h2 className="font-bold text-2xl" id="keyboard-shortcuts-title">
+						{title}
+					</h2>
 					<button
 						aria-label="Close keyboard controls"
 						className="grid h-8 w-8 place-items-center rounded-lg text-slate-400 hover:bg-slate-700 hover:text-white"

@@ -3,17 +3,28 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { formatAggregateAverage, formatDuration } from '../lib/format';
 import {
 	countSavedSessions,
+	deleteSavedSession,
 	formatSessionTime,
+	formatSessionTimeRange,
 	getSavedSession,
 	groupSessionsByDate,
 	listSavedSessions,
 } from '../lib/saved-sessions';
 import type { SavedSession, SavedSessionSummary, SessionFeeling, SpeedUnit } from '../types';
-import { SmallMetric } from './metrics';
+import {
+	type KeyboardShortcutDescription,
+	KeyboardShortcutsDialog,
+} from './keyboard-shortcuts-dialog';
+import { SessionMetric, SmallMetric } from './metrics';
 import { SessionChart } from './session-chart';
 
 const PAGE_SIZE = 30;
 const EMPTY_ROUTE: [] = [];
+export const HISTORY_KEYBOARD_SHORTCUTS: KeyboardShortcutDescription[] = [
+	{ keys: ['←', '→'], label: 'Change the session chart view' },
+	{ keys: ['?'], label: 'Show history keyboard controls' },
+	{ keys: ['Esc'], label: 'Close help or session history' },
+];
 
 export function feelingLabel(feeling?: SessionFeeling): string {
 	if (!feeling) {
@@ -22,68 +33,151 @@ export function feelingLabel(feeling?: SessionFeeling): string {
 	return feeling[0].toUpperCase() + feeling.slice(1);
 }
 
+export function DeleteSessionDialog({
+	deleting,
+	onCancel,
+	onConfirm,
+	open,
+}: {
+	deleting: boolean;
+	onCancel: () => void;
+	onConfirm: () => void;
+	open: boolean;
+}) {
+	if (!open) {
+		return null;
+	}
+
+	return (
+		<section
+			aria-describedby="delete-session-description"
+			aria-labelledby="delete-session-title"
+			aria-modal="true"
+			className="absolute top-0 right-0 z-30 w-full max-w-sm rounded-xl border border-rose-400/40 bg-panel/95 p-4 shadow-2xl shadow-black/60 backdrop-blur-sm"
+			role="alertdialog"
+		>
+			<h2 className="font-bold text-lg" id="delete-session-title">
+				Delete this session?
+			</h2>
+			<p className="mt-1 text-slate-400 text-sm" id="delete-session-description">
+				This cannot be undone.
+			</p>
+			<div className="mt-4 flex justify-end gap-2">
+				<button
+					className="rounded-lg px-3 py-2 font-semibold text-slate-400 text-xs hover:bg-slate-800 hover:text-white"
+					disabled={deleting}
+					onClick={onCancel}
+					type="button"
+				>
+					Cancel
+				</button>
+				<button
+					className="rounded-lg bg-rose-400 px-3 py-2 font-bold text-ink text-xs hover:bg-rose-300 disabled:opacity-50"
+					disabled={deleting}
+					onClick={onConfirm}
+					type="button"
+				>
+					{deleting ? 'Deleting…' : 'Delete permanently'}
+				</button>
+			</div>
+		</section>
+	);
+}
+
 export function SessionDetail({
+	chartKeyboardEnabled = true,
+	deleteConfirmationOpen = false,
+	deleting = false,
+	onCancelDelete,
+	onConfirmDelete,
+	onDelete,
 	session,
 	speedUnit,
 }: {
+	chartKeyboardEnabled?: boolean;
+	deleteConfirmationOpen?: boolean;
+	deleting?: boolean;
+	onCancelDelete?: () => void;
+	onConfirmDelete?: () => void;
+	onDelete?: () => void;
 	session: SavedSession;
 	speedUnit: SpeedUnit;
 }) {
 	const unitFactor = speedUnit === 'mph' ? 0.621_371 : 1;
 	const distanceUnit = speedUnit === 'mph' ? 'mi' : 'km';
+
 	return (
 		<div className="min-w-0 flex-1 overflow-y-auto p-5 sm:p-6">
-			<p className="font-bold text-[11px] text-mint tracking-[.14em]">
-				{new Intl.DateTimeFormat(undefined, { dateStyle: 'full' }).format(
-					session.startedAt
-				)}
-			</p>
-			<h3 className="mt-1 font-bold text-2xl">
-				{formatSessionTime(session.startedAt)} session
-			</h3>
+			<div className="relative flex items-start justify-between gap-4">
+				<div>
+					<p className="font-bold text-[11px] text-mint tracking-[.14em]">
+						{new Intl.DateTimeFormat(undefined, { dateStyle: 'full' }).format(
+							session.startedAt
+						)}
+					</p>
+					<h3 className="mt-1 font-bold text-2xl">{formatSessionTimeRange(session)}</h3>
+				</div>
+				{onDelete ? (
+					<button
+						className="shrink-0 rounded-lg border border-rose-400/30 px-3 py-2 font-semibold text-rose-300 text-xs transition hover:border-rose-400/60 hover:bg-rose-400/5"
+						onClick={onDelete}
+						type="button"
+					>
+						Delete session
+					</button>
+				) : null}
+				{onCancelDelete && onConfirmDelete ? (
+					<DeleteSessionDialog
+						deleting={deleting}
+						onCancel={onCancelDelete}
+						onConfirm={onConfirmDelete}
+						open={deleteConfirmationOpen}
+					/>
+				) : null}
+			</div>
 			<div className="mt-5 grid grid-cols-3 divide-x divide-line rounded-xl border border-line bg-[#12171d]">
-				<SmallMetric label="TIME" value={formatDuration(session.elapsedSeconds)} />
+				<SmallMetric label="RECORDED" value={formatDuration(session.elapsedSeconds)} />
 				<SmallMetric
 					label="DISTANCE"
 					value={`${(session.distance * unitFactor).toFixed(2)} ${distanceUnit}`}
 				/>
 				<SmallMetric label="CALORIES" value={`${Math.round(session.calories)} kcal`} />
 			</div>
-			<div className="mt-5 grid gap-3 sm:grid-cols-3">
+			<div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
 				{[
 					{
+						accent: 'yellow',
 						average: formatAggregateAverage(session.aggregates.power, 0),
-						label: 'Power',
-						maximum: Math.round(session.maximums.power),
+						icon: 'bolt',
+						label: 'POWER',
+						maximum: String(Math.round(session.maximums.power)),
 						unit: 'W',
 					},
 					{
+						accent: 'violet',
 						average: formatAggregateAverage(session.aggregates.cadence, 0),
-						label: 'Cadence',
-						maximum: Math.round(session.maximums.cadence),
+						icon: 'cadence',
+						label: 'CADENCE',
+						maximum: String(Math.round(session.maximums.cadence)),
 						unit: 'rpm',
 					},
 					{
+						accent: 'rose',
 						average: formatAggregateAverage(session.aggregates.heartRate, 0),
-						label: 'Heart rate',
-						maximum: Math.round(session.maximums.heartRate),
+						icon: 'heart',
+						label: 'HEART RATE',
+						maximum: String(Math.round(session.maximums.heartRate)),
 						unit: 'bpm',
 					},
+					{
+						accent: 'mint',
+						average: formatAggregateAverage(session.aggregates.resistance, 0),
+						icon: 'resistance',
+						label: 'RESISTANCE',
+						unit: '%',
+					},
 				].map((metric) => (
-					<div
-						className="rounded-xl border border-line bg-[#12171d] p-3"
-						key={metric.label}
-					>
-						<p className="font-bold text-[10px] text-slate-500 tracking-[.12em]">
-							{metric.label.toUpperCase()}
-						</p>
-						<p className="mt-1 font-semibold text-lg">
-							{metric.average} <span className="text-slate-500 text-xs">avg</span>
-						</p>
-						<p className="text-slate-400 text-xs">
-							{metric.maximum} {metric.unit} max
-						</p>
-					</div>
+					<SessionMetric key={metric.label} {...metric} />
 				))}
 			</div>
 			<div className="mt-5 grid gap-4 sm:grid-cols-[.35fr_.65fr]">
@@ -102,7 +196,12 @@ export function SessionDetail({
 					</p>
 				</div>
 			</div>
-			<SessionChart history={session.history} route={EMPTY_ROUTE} speedUnit={speedUnit} />
+			<SessionChart
+				history={session.history}
+				keyboardEnabled={chartKeyboardEnabled}
+				route={EMPTY_ROUTE}
+				speedUnit={speedUnit}
+			/>
 		</div>
 	);
 }
@@ -121,12 +220,41 @@ export function SessionHistory({
 	const [selected, setSelected] = useState<SavedSession>();
 	const [selectedId, setSelectedId] = useState<string>();
 	const [loading, setLoading] = useState(false);
+	const [deleting, setDeleting] = useState(false);
+	const [deleteConfirmationOpen, setDeleteConfirmationOpen] = useState(false);
+	const [historyHelpOpen, setHistoryHelpOpen] = useState(false);
+	const [rendered, setRendered] = useState(open);
+	const [trayVisible, setTrayVisible] = useState(open);
 	const [error, setError] = useState('');
 	const groups = useMemo(() => groupSessionsByDate(summaries), [summaries]);
 	const unitFactor = speedUnit === 'mph' ? 0.621_371 : 1;
 	const distanceUnit = speedUnit === 'mph' ? 'mi' : 'km';
 
+	useEffect(() => {
+		let frame: number | undefined;
+		let timeout: number | undefined;
+		if (open) {
+			setRendered(true);
+			frame = window.requestAnimationFrame(() => setTrayVisible(true));
+		} else {
+			setTrayVisible(false);
+			setDeleteConfirmationOpen(false);
+			setHistoryHelpOpen(false);
+			timeout = window.setTimeout(() => setRendered(false), 200);
+		}
+		return () => {
+			if (frame !== undefined) {
+				window.cancelAnimationFrame(frame);
+			}
+			if (timeout !== undefined) {
+				window.clearTimeout(timeout);
+			}
+		};
+	}, [open]);
+
 	const selectSession = useCallback(async (id: string) => {
+		setDeleteConfirmationOpen(false);
+		setHistoryHelpOpen(false);
 		setSelectedId(id);
 		setLoading(true);
 		try {
@@ -145,6 +273,8 @@ export function SessionHistory({
 		}
 		let cancelled = false;
 		async function loadHistory() {
+			setDeleteConfirmationOpen(false);
+			setHistoryHelpOpen(false);
 			const [sessions, count] = await Promise.all([
 				listSavedSessions(PAGE_SIZE),
 				countSavedSessions(),
@@ -176,16 +306,34 @@ export function SessionHistory({
 		if (!open) {
 			return;
 		}
-		const closeOnEscape = (event: KeyboardEvent) => {
+		const handleHistoryKeys = (event: KeyboardEvent) => {
+			const target = event.target as HTMLElement | null;
+			if (
+				event.key === '?' &&
+				!deleteConfirmationOpen &&
+				!(event.altKey || event.ctrlKey || event.metaKey) &&
+				!target?.matches("input, textarea, select, [contenteditable='true']")
+			) {
+				event.preventDefault();
+				setHistoryHelpOpen(true);
+				return;
+			}
 			if (event.key === 'Escape') {
-				onClose();
+				event.preventDefault();
+				if (historyHelpOpen) {
+					setHistoryHelpOpen(false);
+				} else if (deleteConfirmationOpen) {
+					setDeleteConfirmationOpen(false);
+				} else {
+					onClose();
+				}
 			}
 		};
-		window.addEventListener('keydown', closeOnEscape);
-		return () => window.removeEventListener('keydown', closeOnEscape);
-	}, [onClose, open]);
+		window.addEventListener('keydown', handleHistoryKeys);
+		return () => window.removeEventListener('keydown', handleHistoryKeys);
+	}, [deleteConfirmationOpen, historyHelpOpen, onClose, open]);
 
-	if (!open) {
+	if (!rendered) {
 		return null;
 	}
 
@@ -198,6 +346,33 @@ export function SessionHistory({
 		setSummaries((current) => [...current, ...more]);
 	}
 
+	async function deleteSelectedSession() {
+		if (!selected) {
+			return;
+		}
+		setDeleting(true);
+		try {
+			await deleteSavedSession(selected.id);
+			setDeleteConfirmationOpen(false);
+			const deletedIndex = summaries.findIndex((session) => session.id === selected.id);
+			const remaining = summaries.filter((session) => session.id !== selected.id);
+			const next = remaining[Math.min(Math.max(0, deletedIndex), remaining.length - 1)];
+			setSummaries(remaining);
+			setTotal((current) => Math.max(0, current - 1));
+			setError('');
+			if (next) {
+				await selectSession(next.id);
+			} else {
+				setSelected(undefined);
+				setSelectedId(undefined);
+			}
+		} catch (deleteError) {
+			setError(deleteError instanceof Error ? deleteError.message : String(deleteError));
+		} finally {
+			setDeleting(false);
+		}
+	}
+
 	let detail: ReactNode = null;
 	if (loading) {
 		detail = (
@@ -206,7 +381,19 @@ export function SessionHistory({
 			</div>
 		);
 	} else if (selected) {
-		detail = <SessionDetail session={selected} speedUnit={speedUnit} />;
+		detail = (
+			<SessionDetail
+				chartKeyboardEnabled={open && !(deleteConfirmationOpen || historyHelpOpen)}
+				deleteConfirmationOpen={deleteConfirmationOpen}
+				deleting={deleting}
+				key={selected.id}
+				onCancelDelete={() => setDeleteConfirmationOpen(false)}
+				onConfirmDelete={() => deleteSelectedSession()}
+				onDelete={() => setDeleteConfirmationOpen(true)}
+				session={selected}
+				speedUnit={speedUnit}
+			/>
+		);
 	} else if (summaries.length > 0) {
 		detail = (
 			<div className="grid min-h-64 flex-1 place-items-center text-slate-500 text-sm">
@@ -216,11 +403,19 @@ export function SessionHistory({
 	}
 
 	return (
-		<div className="fixed inset-0 z-40 bg-black/70 p-3 backdrop-blur-sm sm:p-6">
+		<div
+			className={`fixed inset-0 z-40 bg-black/35 transition-opacity duration-200 ${trayVisible ? 'opacity-100' : 'pointer-events-none opacity-0'}`}
+		>
+			<button
+				aria-label="Close session history"
+				className="absolute inset-0 cursor-default"
+				onClick={onClose}
+				type="button"
+			/>
 			<section
 				aria-labelledby="session-history-title"
 				aria-modal="true"
-				className="mx-auto flex h-full max-w-6xl flex-col overflow-hidden rounded-2xl border border-slate-600 bg-panel shadow-2xl shadow-black/60"
+				className={`relative z-10 ml-auto flex h-full w-full max-w-6xl flex-col overflow-hidden border-slate-600 border-l bg-panel shadow-2xl shadow-black/60 transition-transform duration-200 ease-out sm:w-[min(72rem,calc(100vw-2rem))] ${trayVisible ? 'translate-x-0' : 'translate-x-full'}`}
 				role="dialog"
 			>
 				<header className="flex items-center justify-between border-line border-b px-5 py-4">
@@ -232,14 +427,27 @@ export function SessionHistory({
 							Saved on this device · {total} {total === 1 ? 'session' : 'sessions'}
 						</p>
 					</div>
-					<button
-						aria-label="Close session history"
-						className="grid h-9 w-9 place-items-center rounded-lg text-slate-400 hover:bg-slate-700 hover:text-white"
-						onClick={onClose}
-						type="button"
-					>
-						×
-					</button>
+					<div className="flex items-center gap-1">
+						<button
+							aria-label="Show history keyboard controls"
+							className="grid h-9 w-9 place-items-center rounded-lg font-bold text-slate-400 text-sm hover:bg-slate-700 hover:text-white"
+							onClick={() => {
+								setDeleteConfirmationOpen(false);
+								setHistoryHelpOpen(true);
+							}}
+							type="button"
+						>
+							?
+						</button>
+						<button
+							aria-label="Close session history"
+							className="grid h-9 w-9 place-items-center rounded-lg text-slate-400 hover:bg-slate-700 hover:text-white"
+							onClick={onClose}
+							type="button"
+						>
+							×
+						</button>
+					</div>
 				</header>
 				<div className="flex min-h-0 flex-1 flex-col md:flex-row">
 					<aside className="max-h-64 shrink-0 overflow-y-auto border-line border-b bg-[#12171d] p-3 md:max-h-none md:w-80 md:border-r md:border-b-0">
@@ -297,10 +505,14 @@ export function SessionHistory({
 					</aside>
 					{detail}
 				</div>
-				<footer className="border-line border-t px-5 py-3 text-slate-600 text-xs">
-					Browser storage can still be removed by clearing this site's data.
-				</footer>
 			</section>
+			<KeyboardShortcutsDialog
+				handleEscape={false}
+				onClose={() => setHistoryHelpOpen(false)}
+				open={historyHelpOpen}
+				shortcuts={HISTORY_KEYBOARD_SHORTCUTS}
+				title="History keyboard controls"
+			/>
 		</div>
 	);
 }

@@ -25,6 +25,7 @@ export function App() {
 	const trainer = useTrainer();
 	const session = useSession(
 		trainer.metrics,
+		trainer.resistance,
 		trainer.lastPedalingAt,
 		trainer.trainerReportsDistance
 	);
@@ -45,6 +46,10 @@ export function App() {
 	}, []);
 
 	useEffect(() => {
+		trainer.setKeyboardControlsEnabled(!(historyOpen || shortcutsOpen));
+	}, [historyOpen, shortcutsOpen, trainer.setKeyboardControlsEnabled]);
+
+	useEffect(() => {
 		const handleShortcut = (event: KeyboardEvent) => {
 			const target = event.target as HTMLElement | null;
 			if (
@@ -54,6 +59,9 @@ export function App() {
 				event.metaKey ||
 				target?.matches("button, a, input, textarea, select, [contenteditable='true']")
 			) {
+				return;
+			}
+			if (historyOpen) {
 				return;
 			}
 			const shortcut = appShortcutForKey(event);
@@ -136,13 +144,13 @@ export function App() {
 					<div className="flex flex-wrap items-center gap-2">
 						{session.ended ? (
 							<>
-								<span className="inline-flex min-h-10 items-center gap-2 rounded-lg border border-line bg-[#12171d] px-3 font-semibold text-slate-300 text-xs">
+								<span className="inline-flex h-10 items-center gap-2 rounded-lg border border-line bg-[#12171d] px-3 font-semibold text-slate-300 text-xs">
 									<span className="h-2 w-2 rounded-full bg-slate-500" />
 									Session ended
 								</span>
 								{session.savedSessionId ? null : (
 									<button
-										className="rounded-lg border border-mint/40 bg-mint/10 px-3 py-2 font-semibold text-mint text-xs hover:bg-mint/15"
+										className="h-10 rounded-lg border border-mint/40 bg-mint/10 px-3 font-semibold text-mint text-xs hover:bg-mint/15"
 										onClick={() => setSaveDialogOpen(true)}
 										type="button"
 									>
@@ -150,7 +158,7 @@ export function App() {
 									</button>
 								)}
 								<button
-									className="rounded-lg border border-line bg-[#12171d] px-3 py-2 font-semibold text-slate-300 text-xs hover:border-slate-500 hover:text-white"
+									className="h-10 rounded-lg border border-line bg-[#12171d] px-3 font-semibold text-slate-300 text-xs hover:border-slate-500 hover:text-white"
 									onClick={() =>
 										session.savedSessionId
 											? startNewSession()
@@ -164,7 +172,7 @@ export function App() {
 						) : (
 							<>
 								<button
-									className={`inline-flex items-center gap-2 rounded-lg border px-3 py-2 font-semibold text-xs transition ${isRiding ? 'border-mint/40 bg-mint/10 text-mint' : 'border-line bg-[#12171d] text-slate-400'}`}
+									className={`inline-flex h-10 items-center gap-2 rounded-lg border px-3 font-semibold text-xs transition ${isRiding ? 'border-mint/40 bg-mint/10 text-mint' : 'border-line bg-[#12171d] text-slate-400'}`}
 									onClick={session.togglePause}
 									type="button"
 								>
@@ -172,7 +180,7 @@ export function App() {
 									{sessionControlLabel}
 								</button>
 								<button
-									className="rounded-lg border border-line bg-[#12171d] px-3 py-2 font-semibold text-slate-400 text-xs hover:border-rose-400/50 hover:text-rose-300"
+									className="h-10 rounded-lg border border-line bg-[#12171d] px-3 font-semibold text-slate-400 text-xs hover:border-rose-400/50 hover:text-rose-300"
 									onClick={endSession}
 									type="button"
 								>
@@ -183,7 +191,7 @@ export function App() {
 					</div>
 					<div className="flex items-center gap-3">
 						<button
-							className="rounded-lg border border-line bg-[#12171d] px-3 py-2 font-semibold text-slate-300 text-xs hover:border-slate-500 hover:text-white"
+							className="h-10 rounded-lg border border-line bg-[#12171d] px-3 font-semibold text-slate-300 text-xs hover:border-slate-500 hover:text-white"
 							onClick={() => {
 								setShortcutsOpen(false);
 								setHistoryOpen(true);
@@ -192,18 +200,7 @@ export function App() {
 						>
 							History
 						</button>
-						<button
-							aria-label="Show keyboard controls"
-							className="grid h-10 w-10 place-items-center rounded-lg border border-line bg-[#12171d] font-bold text-slate-400 text-sm hover:border-slate-500 hover:text-white"
-							onClick={() => {
-								setHistoryOpen(false);
-								setShortcutsOpen(true);
-							}}
-							type="button"
-						>
-							?
-						</button>
-						<div className="flex rounded-lg border border-line bg-[#10151a] p-1">
+						<div className="flex h-10 rounded-lg border border-line bg-[#10151a] p-1">
 							<button
 								className={`rounded px-2.5 py-1 font-bold text-[11px] ${speedUnit === 'kmh' ? 'bg-slate-700 text-white' : 'text-slate-500'}`}
 								onClick={() => selectSpeedUnit('kmh')}
@@ -219,6 +216,17 @@ export function App() {
 								MPH
 							</button>
 						</div>
+						<button
+							aria-label="Show keyboard controls"
+							className="grid h-10 w-10 place-items-center rounded-lg border border-line bg-[#12171d] font-bold text-slate-400 text-sm hover:border-slate-500 hover:text-white"
+							onClick={() => {
+								setHistoryOpen(false);
+								setShortcutsOpen(true);
+							}}
+							type="button"
+						>
+							?
+						</button>
 						<ConnectionControl
 							busy={trainer.connectionBusy}
 							connected={connected}
@@ -288,6 +296,7 @@ export function App() {
 						</div>
 						<SessionChart
 							history={session.history}
+							keyboardEnabled={!(historyOpen || shortcutsOpen)}
 							route={EMPTY_ROUTE}
 							speedUnit={speedUnit}
 						/>

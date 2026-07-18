@@ -48,6 +48,7 @@ export function useTrainer() {
 	const disconnectRequested = useRef(false);
 	const autoReconnect = useRef(true);
 	const pendingDevice = useRef<BluetoothDevice | undefined>(undefined);
+	const keyboardControlsEnabled = useRef(true);
 	const unloading = useRef(false);
 	const lastCrank = useRef<{ revolutions: number; time: number } | undefined>(undefined);
 	const lastPedalingAt = useRef(0);
@@ -447,6 +448,9 @@ export function useTrainer() {
 			) {
 				return;
 			}
+			if (!keyboardControlsEnabled.current) {
+				return;
+			}
 			if (event.key === 'ArrowUp') {
 				event.preventDefault();
 				updateResistance(resistanceTarget.current + 1);
@@ -459,6 +463,10 @@ export function useTrainer() {
 		return () => window.removeEventListener('keydown', handleKeys);
 	}, [updateResistance]);
 
+	const setKeyboardControlsEnabled = useCallback((enabled: boolean) => {
+		keyboardControlsEnabled.current = enabled;
+	}, []);
+
 	return {
 		cancelConnection,
 		connect,
@@ -470,6 +478,7 @@ export function useTrainer() {
 		metrics,
 		notice,
 		resistance,
+		setKeyboardControlsEnabled,
 		setNotice,
 		status,
 		trainerReportsDistance,
