@@ -1,6 +1,6 @@
 import { useSelector } from '@tanstack/react-store';
 import { useCallback, useRef } from 'react';
-import { errorMessage } from '../lib/errors';
+import { errorMessage, unreachable } from '../lib/errors';
 import {
 	createSavedSession,
 	requestPersistentSessionStorage,
@@ -19,9 +19,9 @@ export function useSessionWorkflow(
 	session: SessionWorkflowController,
 	setNotice: (notice: string) => void
 ) {
-	const sessionIsSaved = Boolean(session.savedSessionId);
+	const sessionIsResolved = Boolean(session.savedSessionId) || session.discarded;
 	const storeRef = useRef<ReturnType<typeof createSessionWorkflowStore> | undefined>(undefined);
-	storeRef.current ??= createSessionWorkflowStore(session.ended && !sessionIsSaved);
+	storeRef.current ??= createSessionWorkflowStore(session.ended && !sessionIsResolved);
 	const store = storeRef.current;
 	const state = useSelector(store);
 
@@ -42,20 +42,31 @@ export function useSessionWorkflow(
 
 	const completeIntent = useCallback(
 		(intent: SessionWorkflowIntent, saved: boolean) => {
-			if (intent.kind === SESSION_WORKFLOW_INTENT.CONTINUE) {
-				session.continueFrom(intent.session);
-				setNotice(
-					saved ? 'Session saved. Selected session continued.' : 'Session continued.'
-				);
-			} else if (intent.kind === SESSION_WORKFLOW_INTENT.NEW || !saved) {
-				session.startNew();
-				setNotice(saved ? 'Session saved. New session ready.' : 'New session ready.');
-			} else {
-				setNotice('Session saved.');
+			switch (intent.kind) {
+				case SESSION_WORKFLOW_INTENT.CONTINUE:
+					session.continueFrom(intent.session);
+					setNotice(
+						saved ? 'Session saved. Selected session continued.' : 'Session continued.'
+					);
+					break;
+				case SESSION_WORKFLOW_INTENT.NEW:
+					session.startNew();
+					setNotice(saved ? 'Session saved. New session ready.' : 'New session ready.');
+					break;
+				case SESSION_WORKFLOW_INTENT.END:
+					if (saved) {
+						setNotice('Session saved.');
+					} else {
+						session.markDiscarded();
+						setNotice('Session ended without saving.');
+					}
+					break;
+				default:
+					unreachable(intent);
 			}
 			store.actions.close();
 		},
-		[session.continueFrom, session.startNew, setNotice, store]
+		[session.continueFrom, session.markDiscarded, session.startNew, setNotice, store]
 	);
 
 	const endSession = useCallback(() => {
@@ -65,7 +76,7 @@ export function useSessionWorkflow(
 
 	const requestNewSession = useCallback(() => {
 		if (session.ended) {
-			if (sessionIsSaved) {
+			if (sessionIsResolved) {
 				startNewSession();
 			} else {
 				store.actions.open({ kind: SESSION_WORKFLOW_INTENT.NEW });
@@ -82,7 +93,7 @@ export function useSessionWorkflow(
 		session.elapsedSeconds,
 		session.endSession,
 		session.ended,
-		sessionIsSaved,
+		sessionIsResolved,
 		startNewSession,
 		store,
 	]);
@@ -90,7 +101,7 @@ export function useSessionWorkflow(
 	const requestContinuation = useCallback(
 		(savedSession: SavedSession) => {
 			const currentNeedsSave =
-				(session.ended && !sessionIsSaved) ||
+				(session.ended && !sessionIsResolved) ||
 				(!session.ended && session.elapsedSeconds > 0);
 			if (!currentNeedsSave) {
 				continueSession(savedSession);
@@ -106,7 +117,7 @@ export function useSessionWorkflow(
 			session.elapsedSeconds,
 			session.endSession,
 			session.ended,
-			sessionIsSaved,
+			sessionIsResolved,
 			store,
 		]
 	);
@@ -148,9 +159,6 @@ export function useSessionWorkflow(
 
 	return {
 		closeSaveDialog,
-		continuing:
-			state.phase !== SESSION_WORKFLOW_PHASE.CLOSED &&
-			state.intent.kind === SESSION_WORKFLOW_INTENT.CONTINUE,
 		endSession,
 		openSaveDialog,
 		proceedWithoutSaving,
@@ -158,8 +166,12 @@ export function useSessionWorkflow(
 		requestNewSession,
 		requestPersistentStorage,
 		saveCurrentSession,
+		saveDialogIntent:
+			state.phase === SESSION_WORKFLOW_PHASE.CLOSED
+				? SESSION_WORKFLOW_INTENT.END
+				: state.intent.kind,
 		saveDialogOpen: state.phase !== SESSION_WORKFLOW_PHASE.CLOSED,
 		saving: state.phase === SESSION_WORKFLOW_PHASE.SAVING,
-		sessionIsSaved,
+		sessionIsResolved,
 	};
 }

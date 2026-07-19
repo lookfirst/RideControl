@@ -34,12 +34,14 @@ interface SessionController {
 	aggregates: SessionAggregates;
 	continueFrom: (sourceSession: SessionSnapshot) => void;
 	controlMode: ControlMode;
+	discarded: boolean;
 	elapsedSeconds: number;
 	ended: boolean;
 	endSession: () => void;
 	history: MetricSample[];
 	isRiding: boolean;
 	manuallyPaused: boolean;
+	markDiscarded: () => void;
 	markSaved: (id: string) => void;
 	maximums: Metrics;
 	rideCalories: number;
@@ -137,6 +139,9 @@ export function useSession(
 		},
 		[store]
 	);
+	const markDiscarded = useCallback(() => {
+		store.actions.markDiscarded();
+	}, [store]);
 
 	const startNew = useCallback(() => {
 		lastTrainerDistance.current = latestMetrics.current.distance;
@@ -161,12 +166,14 @@ export function useSession(
 		aggregates: state.aggregates,
 		continueFrom,
 		controlMode: state.controlMode,
+		discarded: state.discarded,
 		elapsedSeconds: state.elapsedSeconds,
 		ended: state.ended,
 		endSession,
 		history: state.history,
 		isRiding: state.isRiding,
 		manuallyPaused: state.manuallyPaused,
+		markDiscarded,
 		markSaved,
 		maximums: state.maximums,
 		rideCalories: state.calories,

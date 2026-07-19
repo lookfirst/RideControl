@@ -2,9 +2,11 @@ import type { SavedSession, SessionSnapshot } from '../types';
 
 export interface SessionWorkflowController {
 	continueFrom: (snapshot: SessionSnapshot) => void;
+	discarded: boolean;
 	elapsedSeconds: number;
 	ended: boolean;
 	endSession: () => void;
+	markDiscarded: () => void;
 	markSaved: (id: string) => void;
 	savedSessionId?: string;
 	snapshot: SessionSnapshot;

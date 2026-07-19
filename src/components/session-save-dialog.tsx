@@ -1,10 +1,37 @@
 import { useEffect, useState } from 'react';
+import { unreachable } from '../lib/errors';
 import { formatSessionTime, SESSION_FEELING_OPTIONS } from '../lib/saved-sessions';
+import { SESSION_WORKFLOW_INTENT, type SessionWorkflowIntent } from '../lib/session-workflow';
 import type { SessionFeeling, SessionMetadata, SessionSnapshot, SpeedUnit } from '../types';
 import { SessionSummary } from './session-summary';
 
+function actionLabels(intent: SessionWorkflowIntent['kind']) {
+	switch (intent) {
+		case SESSION_WORKFLOW_INTENT.CONTINUE:
+			return {
+				primary: 'Save & continue',
+				secondary: 'Continue without saving',
+				secondaryClass: 'text-slate-400 hover:bg-slate-800 hover:text-slate-200',
+			};
+		case SESSION_WORKFLOW_INTENT.NEW:
+			return {
+				primary: 'Save & start new',
+				secondary: 'Start new without saving',
+				secondaryClass: 'text-slate-400 hover:bg-slate-800 hover:text-slate-200',
+			};
+		case SESSION_WORKFLOW_INTENT.END:
+			return {
+				primary: 'Save session',
+				secondary: 'End without saving',
+				secondaryClass: 'text-rose-300 hover:bg-rose-400/5 hover:text-rose-200',
+			};
+		default:
+			return unreachable(intent);
+	}
+}
+
 export function SessionSaveDialog({
-	continuing = false,
+	intent,
 	open,
 	onClose,
 	onSave,
@@ -13,7 +40,7 @@ export function SessionSaveDialog({
 	session,
 	speedUnit,
 }: {
-	continuing?: boolean;
+	intent: SessionWorkflowIntent['kind'];
 	open: boolean;
 	onClose: () => void;
 	onSave: (metadata: SessionMetadata) => Promise<void>;
@@ -24,6 +51,7 @@ export function SessionSaveDialog({
 }) {
 	const [comments, setComments] = useState('');
 	const [feeling, setFeeling] = useState<SessionFeeling>();
+	const labels = actionLabels(intent);
 
 	useEffect(() => {
 		if (open) {
@@ -106,12 +134,12 @@ export function SessionSaveDialog({
 
 				<div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
 					<button
-						className="rounded-lg px-4 py-2.5 font-semibold text-slate-400 text-sm hover:bg-slate-800 hover:text-slate-200"
+						className={`rounded-lg px-4 py-2.5 font-semibold text-sm ${labels.secondaryClass}`}
 						disabled={saving}
 						onClick={onStartWithoutSaving}
 						type="button"
 					>
-						{continuing ? 'Continue without saving' : 'Start new without saving'}
+						{labels.secondary}
 					</button>
 					<button
 						className="rounded-lg bg-lime px-5 py-2.5 font-bold text-ink text-sm hover:bg-[#e4ff9c] disabled:opacity-50"
@@ -119,7 +147,7 @@ export function SessionSaveDialog({
 						onClick={() => onSave({ comments, feeling })}
 						type="button"
 					>
-						{saving ? 'Saving…' : 'Save session'}
+						{saving ? 'Saving…' : labels.primary}
 					</button>
 				</div>
 			</section>

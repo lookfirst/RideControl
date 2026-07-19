@@ -23,6 +23,7 @@ import {
 } from '../src/constants';
 import { historyKeyboardShortcuts } from '../src/lib/keyboard';
 import { metricAccentClass, metricIconClass } from '../src/lib/metric-presentation';
+import { SESSION_WORKFLOW_INTENT } from '../src/lib/session-workflow';
 
 const render = (element: React.ReactNode) => renderToStaticMarkup(element);
 const enabledEndSessionButton = /<button(?![^>]*disabled)[^>]*>End session<\/button>/;
@@ -583,6 +584,7 @@ describe('view components', () => {
 		expect(
 			render(
 				<SessionSaveDialog
+					intent={SESSION_WORKFLOW_INTENT.END}
 					onClose={() => undefined}
 					onSave={async () => undefined}
 					onStartWithoutSaving={() => undefined}
@@ -595,7 +597,7 @@ describe('view components', () => {
 		).toBe('');
 		const html = render(
 			<SessionSaveDialog
-				continuing
+				intent={SESSION_WORKFLOW_INTENT.CONTINUE}
 				onClose={() => undefined}
 				onSave={async () => undefined}
 				onStartWithoutSaving={() => undefined}
@@ -618,6 +620,35 @@ describe('view components', () => {
 		expect(html).toContain('Save this session?');
 		expect(html).toContain('How did it feel?');
 		expect(html).toContain('Continue without saving');
+		expect(html).toContain('Save &amp; continue');
+		const endSession = render(
+			<SessionSaveDialog
+				intent={SESSION_WORKFLOW_INTENT.END}
+				onClose={() => undefined}
+				onSave={async () => undefined}
+				onStartWithoutSaving={() => undefined}
+				open
+				saving={false}
+				session={{ ...emptySession, maximums: emptyMetrics }}
+				speedUnit="kmh"
+			/>
+		);
+		expect(endSession).toContain('End without saving');
+		expect(endSession).toContain('Save session');
+		const newSession = render(
+			<SessionSaveDialog
+				intent={SESSION_WORKFLOW_INTENT.NEW}
+				onClose={() => undefined}
+				onSave={async () => undefined}
+				onStartWithoutSaving={() => undefined}
+				open
+				saving={false}
+				session={{ ...emptySession, maximums: emptyMetrics }}
+				speedUnit="kmh"
+			/>
+		);
+		expect(newSession).toContain('Start new without saving');
+		expect(newSession).toContain('Save &amp; start new');
 	});
 
 	test('renders an empty session history', () => {

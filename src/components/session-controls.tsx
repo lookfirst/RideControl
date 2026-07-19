@@ -8,7 +8,7 @@ export function SessionControls({
 	onRequestNew,
 	onSave,
 	onTogglePause,
-	saved,
+	saveResolved,
 }: {
 	ended: boolean;
 	isRiding: boolean;
@@ -17,12 +17,12 @@ export function SessionControls({
 	onRequestNew: () => void;
 	onSave: () => void;
 	onTogglePause: () => void;
-	saved: boolean;
+	saveResolved: boolean;
 }) {
 	if (ended) {
 		return (
 			<div className="flex flex-wrap items-center gap-2">
-				{saved ? null : (
+				{saveResolved ? null : (
 					<button
 						className="h-10 rounded-lg border border-mint/40 bg-mint/10 px-3 font-semibold text-mint text-xs hover:bg-mint/15"
 						onClick={onSave}

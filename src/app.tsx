@@ -214,7 +214,7 @@ export function App() {
 						onRequestNew={workflow.requestNewSession}
 						onSave={workflow.openSaveDialog}
 						onTogglePause={session.togglePause}
-						saved={workflow.sessionIsSaved}
+						saveResolved={workflow.sessionIsResolved}
 					/>
 					<DashboardTools
 						connectedDeviceCount={connectedDeviceCount}
@@ -273,7 +273,7 @@ export function App() {
 				onDismiss={() => trainer.setNotice('')}
 			/>
 			<SessionSaveDialog
-				continuing={workflow.continuing}
+				intent={workflow.saveDialogIntent}
 				onClose={workflow.closeSaveDialog}
 				onSave={workflow.saveCurrentSession}
 				onStartWithoutSaving={workflow.proceedWithoutSaving}

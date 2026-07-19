@@ -156,6 +156,7 @@ describe('session utilities', () => {
 		const session = loadStoredSession(storageWith(stored));
 		expect(session.calories).toBe(0);
 		expect(session.distance).toBe(12);
+		expect(session.discarded).toBe(false);
 		expect(session.ended).toBe(true);
 		expect(session.endedAt).toBe(5000);
 		expect(session.history[0]?.speed).toBe(0);

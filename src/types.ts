@@ -59,6 +59,7 @@ export interface StoredSession {
 	aggregates: SessionAggregates;
 	calories: number;
 	controlMode: ControlMode;
+	discarded: boolean;
 	distance: number;
 	elapsedSeconds: number;
 	ended: boolean;

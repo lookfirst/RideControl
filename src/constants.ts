@@ -49,6 +49,7 @@ export const emptySession: StoredSession = {
 	},
 	calories: 0,
 	controlMode: CONTROL_MODE.RESISTANCE,
+	discarded: false,
 	distance: 0,
 	elapsedSeconds: 0,
 	ended: false,

@@ -52,6 +52,7 @@ export function storedSessionFromState(state: SessionStoreState): StoredSession 
 		aggregates: state.aggregates,
 		calories: state.calories,
 		controlMode: state.controlMode,
+		discarded: state.discarded,
 		distance: state.distance,
 		elapsedSeconds: state.elapsedSeconds,
 		ended: state.ended,
@@ -89,8 +90,11 @@ export function createSessionStore(restored: StoredSession, now = Date.now()) {
 				manuallyPaused: false,
 			}));
 		},
+		markDiscarded: () => {
+			setState((current) => ({ ...current, discarded: true, savedSessionId: undefined }));
+		},
 		markSaved: (savedSessionId: string) => {
-			setState((current) => ({ ...current, savedSessionId }));
+			setState((current) => ({ ...current, discarded: false, savedSessionId }));
 		},
 		observeControlMode: (controlMode: ControlMode) => {
 			setState((current) =>

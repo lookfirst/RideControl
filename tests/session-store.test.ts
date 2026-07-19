@@ -132,6 +132,22 @@ describe('session store', () => {
 		expect(store.get().savedSessionId).toBeUndefined();
 	});
 
+	test('records an intentional discard until the session is reset or saved', () => {
+		const store = createSessionStore(restoredSession(), 1000);
+		store.actions.endSession(5000);
+		store.actions.markDiscarded();
+		expect(store.get()).toMatchObject({ discarded: true, savedSessionId: undefined });
+		expect(storedSessionFromState(store.get()).discarded).toBe(true);
+
+		store.actions.markSaved('saved-session');
+		expect(store.get()).toMatchObject({ discarded: false, savedSessionId: 'saved-session' });
+
+		store.actions.markDiscarded();
+		store.actions.reset('resistance', 6000);
+		expect(store.get().discarded).toBe(false);
+		expect(store.get().savedSessionId).toBeUndefined();
+	});
+
 	test('updates maxima without publishing unchanged snapshots or ended rides', () => {
 		const store = createSessionStore(restoredSession(), 1000);
 		let updates = 0;
