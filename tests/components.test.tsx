@@ -2,6 +2,8 @@ import { describe, expect, test } from 'bun:test';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { App } from '../src/app';
 import { ConnectionControl } from '../src/components/connection-control';
+import { DevicePairingButton, DevicePairingPanel } from '../src/components/device-pairing';
+import { GearControl } from '../src/components/gear-control';
 import { Icon } from '../src/components/icon';
 import { KeyboardShortcutsDialog } from '../src/components/keyboard-shortcuts-dialog';
 import {
@@ -50,6 +52,10 @@ describe('view components', () => {
 		);
 		expect(html).toContain('POWER');
 		expect(html).toContain('200');
+		expect(html).toContain('grid grid-cols-2 gap-3 border-line border-t pt-3');
+		expect(html).toContain('font-semibold text-2xl text-white tabular-nums tracking-tight');
+		expect(html).toContain('<span>180</span>');
+		expect(html).toContain('<span>300</span>');
 		expect(metricAccentClass('rose')).toBe('bg-rose-400');
 		expect(metricAccentClass('other')).toBe('bg-mint');
 		expect(metricIconClass('violet')).toBe('text-violet-400');
@@ -88,9 +94,11 @@ describe('view components', () => {
 		const enabled = render(
 			<ResistanceControl
 				disabled={false}
+				keyboardFlash="increase"
 				max={100}
 				min={0}
 				onChange={() => undefined}
+				ramp={{ current: 35, from: 20, phase: 'ramping', progress: 0.4, to: 60 }}
 				step={1}
 				value={20}
 			/>
@@ -101,13 +109,55 @@ describe('view components', () => {
 				max={100}
 				min={0}
 				onChange={() => undefined}
+				ramp={{ current: 20, from: 20, phase: 'holding', progress: 0, to: 20 }}
 				step={1}
 				value={20}
 			/>
 		);
 		expect(enabled).toContain('aria-label="Resistance"');
 		expect(enabled).toContain('value="20"');
+		expect(enabled).toContain('class="resistance-slider w-full min-w-0 disabled:opacity-40"');
+		expect(enabled).toContain('grid h-9 w-9 shrink-0 place-items-center rounded-lg');
+		expect(enabled).toContain('data-ramp-active="true"');
+		expect(enabled).toContain('data-ramp-progress="40"');
+		expect(enabled).toContain('data-resistance-control="true"');
+		expect(enabled).toContain('--ramp-progress:144deg');
+		expect(enabled).toContain('--resistance-position:20%');
+		expect(enabled).not.toContain('Ramping');
+		expect(enabled).not.toContain('>20%<');
+		expect(enabled).not.toContain('>60%<');
+		expect(enabled).toContain('data-keyboard-flash="true"');
+		expect(enabled).toContain('scale-105 border-mint bg-mint/15 text-mint');
+		expect(disabled).toContain('data-ramp-progress="0"');
 		expect(disabled).toContain('disabled');
+		const queued = render(
+			<ResistanceControl
+				disabled={false}
+				max={100}
+				min={0}
+				onChange={() => undefined}
+				ramp={{ current: 20, from: 20, phase: 'queued', progress: 0, to: 60 }}
+				step={1}
+				value={60}
+			/>
+		);
+		const settled = render(
+			<ResistanceControl
+				disabled={false}
+				max={100}
+				min={0}
+				onChange={() => undefined}
+				ramp={{ current: 60, from: 20, phase: 'settled', progress: 1, to: 60 }}
+				step={1}
+				value={60}
+			/>
+		);
+		expect(queued).toContain('data-ramp-progress="0"');
+		expect(settled).toContain('data-ramp-progress="100"');
+		expect(queued).not.toContain('data-ramp-active');
+		expect(settled).not.toContain('data-ramp-active');
+		expect(queued).not.toContain('Queued');
+		expect(settled).not.toContain('Settled');
 	});
 
 	test('renders connection, busy, and connected states', () => {
@@ -167,6 +217,103 @@ describe('view components', () => {
 		).toContain('Disconnect');
 	});
 
+	test('renders the multi-device pairing entry point and panel', () => {
+		expect(
+			render(
+				<DevicePairingButton connectedCount={0} onClick={() => undefined} pairedCount={0} />
+			)
+		).toContain('Pair devices');
+		expect(
+			render(
+				<DevicePairingButton connectedCount={2} onClick={() => undefined} pairedCount={3} />
+			)
+		).toContain('2/3');
+		const connectingButton = render(
+			<DevicePairingButton
+				connectedCount={1}
+				connecting
+				onClick={() => undefined}
+				pairedCount={3}
+			/>
+		);
+		expect(connectingButton).toContain('aria-busy="true"');
+		expect(connectingButton).toContain('animate-pulse bg-sky-400');
+		const connectedButton = render(
+			<DevicePairingButton connectedCount={3} onClick={() => undefined} pairedCount={3} />
+		);
+		expect(connectedButton).toContain('bg-mint');
+		expect(connectedButton).not.toContain('bg-sky-400');
+		const common = {
+			busy: false,
+			connected: false,
+			onDisconnect: () => undefined,
+			onForget: () => undefined,
+			onPair: () => undefined,
+			onReconnect: () => undefined,
+			paired: false,
+			status: 'Not paired',
+		};
+		const panel = render(
+			<DevicePairingPanel
+				click={{
+					...common,
+					connectedCount: 1,
+					controllers: [
+						{
+							active: false,
+							connected: false,
+							connecting: true,
+							id: 'minus-click',
+							label: '− Controller',
+						},
+						{
+							active: true,
+							connected: true,
+							connecting: false,
+							id: 'plus-click',
+							label: '+ Controller',
+						},
+					],
+					onForgetController: () => undefined,
+					pairedCount: 2,
+					pairing: false,
+				}}
+				heartRate={common}
+				onClose={() => undefined}
+				open
+				trainer={{ ...common, connected: true, name: 'KICKR CORE 2', paired: true }}
+			/>
+		);
+		expect(panel).toContain('Paired devices');
+		expect(panel).toContain('Smart trainer');
+		expect(panel).toContain('Heart rate');
+		expect(panel).toContain('Zwift Click V2');
+		expect(panel).toContain('+ Controller');
+		expect(panel.indexOf('+ Controller')).toBeLessThan(panel.indexOf('− Controller'));
+		expect(panel).toContain('animate-pulse');
+		expect(panel).toContain('bg-mint/10');
+		expect(panel).not.toContain('shadow-[inset_0_0_18px');
+		expect(panel).not.toContain('divide-y');
+	});
+
+	test('renders a focused 1–24 gear control', () => {
+		const html = render(
+			<GearControl
+				disabled={false}
+				gear={12}
+				onChange={() => undefined}
+				shiftFlash="increase"
+			/>
+		);
+		expect(html).toContain('data-gear-control="true"');
+		expect(html).toContain('Shift to an easier gear');
+		expect(html).toContain('Shift to a harder gear');
+		expect(html).toContain('EASIER');
+		expect(html).toContain('HARDER');
+		expect(html).toContain('grid h-9 w-9 shrink-0 place-items-center rounded-lg');
+		expect(html).toContain('scale-105 border-mint bg-mint/15 text-mint');
+	});
+
 	test('hides empty notifications and expands setup guidance', () => {
 		expect(
 			render(<Notification connected={false} notice="" onDismiss={() => undefined} />)
@@ -201,7 +348,7 @@ describe('view components', () => {
 		const html = render(<App />);
 		expect(html).toContain('Resistance control');
 		expect(html).not.toContain('Import GPX');
-		expect(html).toContain('Connect trainer');
+		expect(html).toContain('Pair devices');
 		expect(html).toContain('History');
 		expect(html).toContain('Show keyboard controls');
 		expect(html).toContain('Ride Control');
@@ -301,6 +448,29 @@ describe('view components', () => {
 		expect(html).not.toContain('absolute top-[11%] bottom-[8%] left-1');
 	});
 
+	test('graphs gear instead of resistance during virtual shifting', () => {
+		const html = render(
+			<SessionChart
+				controlMode="gear"
+				history={[
+					{
+						cadence: 85,
+						elapsedSeconds: 1,
+						gear: 14,
+						heartRate: 140,
+						power: 180,
+						speed: 30,
+					},
+				]}
+				route={[]}
+				speedUnit="kmh"
+			/>
+		);
+		expect(html).toContain('Gear over time');
+		expect(html).toContain('Gear</button>');
+		expect(html).not.toContain('Resistance</button>');
+	});
+
 	test('renders the session save workflow', () => {
 		expect(
 			render(
@@ -326,6 +496,7 @@ describe('view components', () => {
 				session={{
 					aggregates: emptySession.aggregates,
 					calories: 100,
+					controlMode: 'resistance',
 					distance: 10,
 					elapsedSeconds: 3600,
 					endedAt: Date.now(),
@@ -393,6 +564,36 @@ describe('view components', () => {
 		).toBe('');
 	});
 
+	test('renders an overnight session with date and time ranges', () => {
+		const startedAt = new Date(2026, 6, 18, 23).getTime();
+		const endedAt = new Date(2026, 6, 19, 1).getTime();
+		const html = render(
+			<SessionDetail
+				session={{
+					aggregates: emptySession.aggregates,
+					calories: 0,
+					comments: '',
+					controlMode: 'resistance',
+					distance: 0,
+					elapsedSeconds: 7200,
+					endedAt,
+					history: [],
+					id: 'overnight-session',
+					maximums: emptyMetrics,
+					startedAt,
+				}}
+				speedUnit="kmh"
+			/>
+		);
+		expect(html).toContain(
+			new Intl.DateTimeFormat(undefined, { dateStyle: 'full' }).formatRange(
+				new Date(startedAt),
+				new Date(endedAt)
+			)
+		);
+		expect(html).toContain('11:00pm – 1:00am');
+	});
+
 	test('styles an unrecorded feeling like the comments value', () => {
 		const html = render(
 			<SessionDetail
@@ -405,6 +606,7 @@ describe('view components', () => {
 					aggregates: emptySession.aggregates,
 					calories: 0,
 					comments: '',
+					controlMode: 'resistance',
 					distance: 0,
 					elapsedSeconds: 0,
 					endedAt: Date.now(),
@@ -426,5 +628,31 @@ describe('view components', () => {
 		expect(html).toContain(
 			'<p class="mt-1 whitespace-pre-wrap text-slate-300 text-sm">Not recorded</p>'
 		);
+	});
+
+	test('shows gear instead of resistance in a virtual shifting session summary', () => {
+		const html = render(
+			<SessionDetail
+				session={{
+					aggregates: {
+						...emptySession.aggregates,
+						gear: { count: 2, sum: 27 },
+					},
+					calories: 0,
+					comments: '',
+					controlMode: 'gear',
+					distance: 0,
+					elapsedSeconds: 2,
+					endedAt: Date.now(),
+					history: [],
+					id: 'gear-session',
+					maximums: emptyMetrics,
+					startedAt: Date.now() - 2000,
+				}}
+				speedUnit="kmh"
+			/>
+		);
+		expect(html).toContain('GEAR');
+		expect(html).not.toContain('RESISTANCE');
 	});
 });

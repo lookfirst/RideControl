@@ -36,11 +36,13 @@ export const emptyMetrics: Metrics = {
 export const emptySession: StoredSession = {
 	aggregates: {
 		cadence: { count: 0, sum: 0 },
+		gear: { count: 0, sum: 0 },
 		heartRate: { count: 0, sum: 0 },
 		power: { count: 0, sum: 0 },
 		resistance: { count: 0, sum: 0 },
 	},
 	calories: 0,
+	controlMode: 'resistance',
 	distance: 0,
 	elapsedSeconds: 0,
 	ended: false,

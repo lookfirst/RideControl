@@ -29,6 +29,7 @@ describe('session utilities', () => {
 		const snapshot = {
 			aggregates: emptySession.aggregates,
 			calories: 120,
+			controlMode: 'resistance' as const,
 			distance: 14,
 			elapsedSeconds: 1800,
 			endedAt: 5000,
@@ -84,9 +85,24 @@ describe('session utilities', () => {
 			})
 		).toEqual({
 			cadence: { count: 0, sum: 0 },
+			gear: { count: 0, sum: 0 },
 			heartRate: { count: 1, sum: 145 },
 			power: { count: 1, sum: 0 },
 			resistance: { count: 1, sum: 42 },
+		});
+	});
+
+	test('tracks gear without adding a resistance aggregate', () => {
+		expect(
+			addMetricAggregates(emptySession.aggregates, {
+				cadence: 80,
+				gear: 14,
+				heartRate: 140,
+				power: 200,
+			})
+		).toMatchObject({
+			gear: { count: 1, sum: 14 },
+			resistance: { count: 0, sum: 0 },
 		});
 	});
 
@@ -144,6 +160,8 @@ describe('session utilities', () => {
 		expect(session.endedAt).toBe(5000);
 		expect(session.history[0]?.speed).toBe(0);
 		expect(session.history[0]?.resistance).toBe(42);
+		expect(session.history[0]?.gear).toBeUndefined();
+		expect(session.controlMode).toBe('resistance');
 		expect(session.aggregates.power).toEqual({ count: 1, sum: 200 });
 		expect(session.aggregates.resistance).toEqual({ count: 1, sum: 42 });
 		expect(session.maximums.speed).toBe(35);

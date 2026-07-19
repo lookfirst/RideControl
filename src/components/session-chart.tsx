@@ -1,7 +1,12 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { chartModes, chartPath, roundedChartMaximum, storedChartMode } from '../lib/chart';
+import {
+	chartModesForControl,
+	chartPath,
+	roundedChartMaximum,
+	storedChartMode,
+} from '../lib/chart';
 import { formatChartSeconds } from '../lib/format';
-import type { ChartMode, MetricSample, RoutePoint, SpeedUnit } from '../types';
+import type { ChartMode, ControlMode, MetricSample, RoutePoint, SpeedUnit } from '../types';
 
 interface PlotProps {
 	color: string;
@@ -12,7 +17,7 @@ interface PlotProps {
 	positions: number[];
 	title: string;
 	unit: string;
-	values: number[];
+	values: (number | undefined)[];
 }
 
 export function ChartPlot({
@@ -77,20 +82,54 @@ export function ChartPlot({
 }
 
 export function SessionChart({
+	controlMode,
 	history,
 	keyboardEnabled = true,
 	route,
 	speedUnit,
 }: {
+	controlMode?: ControlMode;
 	history: MetricSample[];
 	keyboardEnabled?: boolean;
 	route: RoutePoint[];
 	speedUnit: SpeedUnit;
 }) {
 	const [selectedMode, setSelectedMode] = useState<ChartMode>(storedChartMode);
-	const effectiveMode = selectedMode === 'elevation' && route.length === 0 ? 'all' : selectedMode;
-	const series = useMemo(
-		() => [
+	const resolvedControlMode =
+		controlMode ??
+		(history.some((sample) => sample.gear !== undefined) ? 'gear' : 'resistance');
+	const modeForAvailableControl =
+		selectedMode === 'gear' || selectedMode === 'resistance'
+			? resolvedControlMode
+			: selectedMode;
+	const effectiveMode =
+		modeForAvailableControl === 'elevation' && route.length === 0
+			? 'all'
+			: modeForAvailableControl;
+	const series = useMemo(() => {
+		const controlSeries =
+			resolvedControlMode === 'gear'
+				? {
+						chartMaximum: 24,
+						color: '#adf5bd',
+						decimals: 0,
+						key: 'gear' as const,
+						label: 'Gear',
+						minimum: 1,
+						unit: '',
+						values: history.map((sample) => sample.gear),
+					}
+				: {
+						chartMaximum: 100,
+						color: '#adf5bd',
+						decimals: 0,
+						key: 'resistance' as const,
+						label: 'Resistance',
+						minimum: 0,
+						unit: '%',
+						values: history.map((sample) => sample.resistance),
+					};
+		return [
 			{
 				chartMaximum: roundedChartMaximum(
 					Math.max(
@@ -106,6 +145,7 @@ export function SessionChart({
 				decimals: 1,
 				key: 'speed' as const,
 				label: 'Speed',
+				minimum: 0,
 				unit: speedUnit === 'mph' ? 'mph' : 'km/h',
 				values: history.map((sample) =>
 					speedUnit === 'mph' ? sample.speed * 0.621_371 : sample.speed
@@ -121,6 +161,7 @@ export function SessionChart({
 				decimals: 0,
 				key: 'power' as const,
 				label: 'Power',
+				minimum: 0,
 				unit: 'W',
 				values: history.map((sample) => sample.power),
 			},
@@ -134,6 +175,7 @@ export function SessionChart({
 				decimals: 0,
 				key: 'cadence' as const,
 				label: 'Cadence',
+				minimum: 0,
 				unit: 'rpm',
 				values: history.map((sample) => sample.cadence),
 			},
@@ -147,29 +189,24 @@ export function SessionChart({
 				decimals: 0,
 				key: 'heartRate' as const,
 				label: 'Heart rate',
+				minimum: 0,
 				unit: 'bpm',
 				values: history.map((sample) => sample.heartRate),
 			},
-			{
-				chartMaximum: 100,
-				color: '#adf5bd',
-				decimals: 0,
-				key: 'resistance' as const,
-				label: 'Resistance',
-				unit: '%',
-				values: history.map((sample) => Math.max(0, Math.min(100, sample.resistance ?? 0))),
-			},
-		],
-		[history, speedUnit]
-	);
+			controlSeries,
+		];
+	}, [history, resolvedControlMode, speedUnit]);
 	const visibleSeries =
 		effectiveMode === 'all' ? series : series.filter((item) => item.key === effectiveMode);
 	const availableModes = useMemo(
 		() =>
 			route.length
-				? [...chartModes, { label: 'Elevation', value: 'elevation' as const }]
-				: chartModes,
-		[route.length]
+				? [
+						...chartModesForControl(resolvedControlMode),
+						{ label: 'Elevation', value: 'elevation' as const },
+					]
+				: chartModesForControl(resolvedControlMode),
+		[resolvedControlMode, route.length]
 	);
 	const elevationValues = route.map((point) => point.elevation);
 	const elevationMinimum = elevationValues.length ? Math.min(...elevationValues) : 0;
@@ -269,6 +306,7 @@ export function SessionChart({
 								heightClass={effectiveMode === 'all' ? 'h-24' : 'h-52'}
 								key={item.key}
 								maximum={item.chartMaximum}
+								minimum={item.minimum}
 								positions={historyPositions}
 								title={`${item.label} over time`}
 								unit={item.unit}

@@ -1,23 +1,33 @@
-import type { ChartMode } from '../types';
+import type { ChartMode, ControlMode } from '../types';
 
-export const chartModes: { label: string; value: ChartMode }[] = [
+const baseChartModes: { label: string; value: ChartMode }[] = [
 	{ label: 'All', value: 'all' },
 	{ label: 'Speed', value: 'speed' },
 	{ label: 'Power', value: 'power' },
 	{ label: 'Cadence', value: 'cadence' },
 	{ label: 'Heart rate', value: 'heartRate' },
-	{ label: 'Resistance', value: 'resistance' },
 ];
+
+export function chartModesForControl(controlMode: ControlMode) {
+	return [
+		...baseChartModes,
+		controlMode === 'gear'
+			? { label: 'Gear', value: 'gear' as const }
+			: { label: 'Resistance', value: 'resistance' as const },
+	];
+}
 
 export function storedChartMode(storage: Pick<Storage, 'getItem'> = localStorage): ChartMode {
 	const saved = storage.getItem('trainer-chart-mode');
-	return ['all', 'speed', 'power', 'cadence', 'heartRate', 'resistance'].includes(saved ?? '')
+	return ['all', 'speed', 'power', 'cadence', 'heartRate', 'gear', 'resistance'].includes(
+		saved ?? ''
+	)
 		? (saved as ChartMode)
 		: 'all';
 }
 
 export function chartPath(
-	values: number[],
+	values: (number | undefined)[],
 	minimum: number,
 	maximum: number,
 	positions?: number[]
@@ -28,16 +38,24 @@ export function chartPath(
 	const span = maximum - minimum || 1;
 	const firstPosition = positions?.[0] ?? 0;
 	const positionSpan = (positions?.at(-1) ?? 0) - firstPosition;
+	let drawing = false;
 	return values
 		.map((value, index) => {
+			if (typeof value !== 'number' || !Number.isFinite(value)) {
+				drawing = false;
+				return '';
+			}
 			let x = values.length === 1 ? 0 : (index / (values.length - 1)) * 100;
 			if (positions && positionSpan > 0) {
-				x = ((positions[index] - firstPosition) / positionSpan) * 100;
+				x = (((positions[index] ?? firstPosition) - firstPosition) / positionSpan) * 100;
 			}
 			const normalized = Math.max(0, Math.min(1, (value - minimum) / span));
 			const y = 90 - normalized * 76;
-			return `${index ? 'L' : 'M'} ${x} ${y}`;
+			const command = drawing ? 'L' : 'M';
+			drawing = true;
+			return `${command} ${x} ${y}`;
 		})
+		.filter(Boolean)
 		.join(' ');
 }
 

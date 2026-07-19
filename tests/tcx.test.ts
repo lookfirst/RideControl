@@ -7,12 +7,14 @@ const startedAt = Date.UTC(2026, 6, 18, 16);
 const session: SavedSession = {
 	aggregates: {
 		cadence: { count: 2, sum: 162 },
+		gear: { count: 0, sum: 0 },
 		heartRate: { count: 2, sum: 282 },
 		power: { count: 2, sum: 410 },
 		resistance: { count: 2, sum: 85 },
 	},
 	calories: 220,
 	comments: 'Hard & fun <again>',
+	controlMode: 'resistance',
 	distance: 1.5,
 	elapsedSeconds: 2,
 	endedAt: startedAt + 2000,
@@ -66,5 +68,25 @@ describe('TCX export', () => {
 
 	test('creates a filesystem-safe TCX filename', () => {
 		expect(sessionTcxFilename(session)).toBe('ride-control-2026-07-18T16-00-00.000Z.tcx');
+	});
+
+	test('exports gear instead of resistance for a virtual shifting session', () => {
+		const gearSession: SavedSession = {
+			...session,
+			aggregates: {
+				...session.aggregates,
+				gear: { count: 2, sum: 27 },
+				resistance: { count: 0, sum: 0 },
+			},
+			controlMode: 'gear',
+			history: session.history.map(({ resistance: _resistance, ...sample }, index) => ({
+				...sample,
+				gear: 13 + index,
+			})),
+		};
+		const tcx = sessionToTcx(gearSession);
+		expect(tcx).toContain('<rc:Gear>14</rc:Gear>');
+		expect(tcx).toContain('<rc:AverageGear>13.5</rc:AverageGear>');
+		expect(tcx).not.toContain('<rc:Resistance>');
 	});
 });

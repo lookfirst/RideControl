@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import {
 	appShortcutForKey,
 	dashboardKeyboardShortcuts,
+	gearingKeyboardShortcuts,
 	historyKeyboardShortcuts,
 	historyShortcutForKey,
 } from '../src/lib/keyboard';
@@ -40,6 +41,10 @@ describe('keyboard shortcuts', () => {
 			'n',
 			'h',
 		]);
+	});
+
+	test('describes gear keys when Click is paired', () => {
+		expect(gearingKeyboardShortcuts[4]?.label).toBe('Shift to a harder or easier gear');
 	});
 
 	test('maps history navigation keys', () => {

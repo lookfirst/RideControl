@@ -33,6 +33,13 @@ export const dashboardKeyboardShortcuts: KeyboardShortcutDescription[] = [
 	{ group: 'General', keys: ['Esc'], label: 'Close an open dialog' },
 ];
 
+export const gearingKeyboardShortcuts: KeyboardShortcutDescription[] =
+	dashboardKeyboardShortcuts.map((shortcut) =>
+		shortcut.label === 'Increase or decrease resistance'
+			? { ...shortcut, label: 'Shift to a harder or easier gear' }
+			: shortcut
+	);
+
 export const historyKeyboardShortcuts: KeyboardShortcutDescription[] = [
 	{ keys: ['↑', '↓'], label: 'Select the previous or next session' },
 	{ keys: ['←', '→'], label: 'Change the session chart view' },

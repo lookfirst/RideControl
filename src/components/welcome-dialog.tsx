@@ -64,8 +64,9 @@ export function WelcomeDialog({
 				</div>
 
 				<p className="mt-4 text-slate-300 text-sm leading-6" id="welcome-description">
-					Connect a compatible trainer over Bluetooth, adjust resistance, and keep
-					detailed records of every ride—all from your browser.
+					Pair your trainer, heart rate monitor, and Zwift Click over Bluetooth, then
+					adjust resistance or shift virtual gears while keeping detailed records of every
+					ride—all from your browser.
 				</p>
 				<p className="mt-3 text-slate-400 text-sm leading-6">
 					Ride Control is a freely available, open-source GPLv3 application. View the{' '}

@@ -59,15 +59,21 @@ export function Metric({
 				<span className="font-semibold text-4xl tracking-tight">{value}</span>
 				<span className="text-slate-400 text-sm">{unit}</span>
 			</div>
-			<div className="mt-3 flex items-center justify-between gap-3 text-[11px]">
-				<span className="text-slate-400">
-					<strong className="mr-1 font-bold text-slate-600 tracking-[.08em]">AVG</strong>
-					{average} {unit}
-				</span>
-				<span className="text-right text-slate-400">
-					<strong className="mr-1 font-bold text-slate-600 tracking-[.08em]">MAX</strong>
-					{maximum} {unit}
-				</span>
+			<div className="mt-4 grid grid-cols-2 gap-3 border-line border-t pt-3">
+				<div>
+					<p className="font-bold text-[10px] text-slate-500 tracking-[.12em]">AVG</p>
+					<p className="mt-1 flex items-baseline gap-1 font-semibold text-2xl text-white tabular-nums tracking-tight">
+						<span>{average}</span>
+						<span className="font-medium text-slate-300 text-xs">{unit}</span>
+					</p>
+				</div>
+				<div className="text-right">
+					<p className="font-bold text-[10px] text-slate-500 tracking-[.12em]">MAX</p>
+					<p className="mt-1 flex items-baseline justify-end gap-1 font-semibold text-2xl text-white tabular-nums tracking-tight">
+						<span>{maximum}</span>
+						<span className="font-medium text-slate-300 text-xs">{unit}</span>
+					</p>
+				</div>
 			</div>
 			<div className={`mt-3 h-1 rounded-full ${metricAccentClass(accent)}`} />
 		</div>

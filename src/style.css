@@ -37,6 +37,69 @@
 	}
 }
 
+@property --ramp-progress {
+	syntax: "<angle>";
+	inherits: true;
+	initial-value: 0deg;
+}
+
+@layer components {
+	.resistance-slider {
+		height: 0.375rem;
+		appearance: none;
+		background: linear-gradient(
+			to right,
+			var(--color-mint) 0 var(--resistance-position),
+			#3a4654 var(--resistance-position) 100%
+		);
+		border-radius: 9999px;
+	}
+	.resistance-slider[data-ramp-active="true"] {
+		transition: --ramp-progress 200ms linear;
+	}
+	.resistance-slider:focus {
+		outline: none;
+	}
+	.resistance-slider::-webkit-slider-runnable-track {
+		height: 0.375rem;
+		background: transparent;
+		border-radius: 9999px;
+	}
+	.resistance-slider::-webkit-slider-thumb {
+		width: 1.25rem;
+		height: 1.25rem;
+		margin-top: -0.4375rem;
+		appearance: none;
+		background:
+			radial-gradient(circle, var(--color-mint) 0 42%, transparent 46%),
+			conic-gradient(
+				var(--color-mint) 0 var(--ramp-progress),
+				#475569 var(--ramp-progress) 360deg
+			);
+		border: 2px solid var(--color-panel);
+		border-radius: 9999px;
+		box-shadow: 0 0 0 1px #64748b;
+	}
+	.resistance-slider::-moz-range-track {
+		height: 0.375rem;
+		background: transparent;
+		border-radius: 9999px;
+	}
+	.resistance-slider::-moz-range-thumb {
+		width: 1.25rem;
+		height: 1.25rem;
+		background:
+			radial-gradient(circle, var(--color-mint) 0 42%, transparent 46%),
+			conic-gradient(
+				var(--color-mint) 0 var(--ramp-progress),
+				#475569 var(--ramp-progress) 360deg
+			);
+		border: 2px solid var(--color-panel);
+		border-radius: 9999px;
+		box-shadow: 0 0 0 1px #64748b;
+	}
+}
+
 @keyframes fade-in {
 	from {
 		opacity: 0;

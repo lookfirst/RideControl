@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useState } from 'react';
-import { ConnectionControl } from './components/connection-control';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { DevicePairingButton, DevicePairingPanel } from './components/device-pairing';
+import { GearControl } from './components/gear-control';
 import { Icon } from './components/icon';
 import { KeyboardShortcutsDialog } from './components/keyboard-shortcuts-dialog';
 import { Metric, SmallMetric } from './components/metrics';
@@ -9,10 +10,13 @@ import { SessionChart } from './components/session-chart';
 import { SessionHistory } from './components/session-history';
 import { SessionSaveDialog } from './components/session-save-dialog';
 import { WelcomeDialog } from './components/welcome-dialog';
+import { useGearControl } from './hooks/use-gear-control';
+import { useHeartRateMonitor } from './hooks/use-heart-rate-monitor';
 import { useSession } from './hooks/use-session';
 import { useTrainer } from './hooks/use-trainer';
+import { useZwiftClick } from './hooks/use-zwift-click';
 import { formatAggregateAverage, formatDuration } from './lib/format';
-import { type AppShortcut, appShortcutForKey } from './lib/keyboard';
+import { type AppShortcut, appShortcutForKey, gearingKeyboardShortcuts } from './lib/keyboard';
 import {
 	createSavedSession,
 	requestPersistentSessionStorage,
@@ -20,7 +24,14 @@ import {
 } from './lib/saved-sessions';
 import { requestUnloadConfirmation, sessionNeedsUnloadWarning } from './lib/session';
 import { rememberWelcomeDismissal, shouldShowWelcome } from './lib/welcome';
-import type { RoutePoint, SavedSession, SessionMetadata, SpeedUnit } from './types';
+import type {
+	ControlMode,
+	Metrics,
+	RoutePoint,
+	SavedSession,
+	SessionMetadata,
+	SpeedUnit,
+} from './types';
 
 const EMPTY_ROUTE: RoutePoint[] = [];
 
@@ -35,23 +46,62 @@ function shouldIgnoreShortcut(event: KeyboardEvent) {
 	);
 }
 
+function metricsWithHeartRate(metrics: Metrics, connected: boolean, heartRate: number): Metrics {
+	if (!connected) {
+		return metrics;
+	}
+	return { ...metrics, heartRate };
+}
+
+function shiftHandlerUnlessBlocked(handler: (change: number) => void, blocked: boolean) {
+	return blocked ? () => undefined : handler;
+}
+
+function controlModeForClick(paired: boolean): ControlMode {
+	return paired ? 'gear' : 'resistance';
+}
+
 export function App() {
 	const trainer = useTrainer();
-	const session = useSession(
+	const [devicesOpen, setDevicesOpen] = useState(false);
+	const clickShiftRef = useRef<(change: number) => void>(() => undefined);
+	const handleClickShift = useCallback((change: number) => clickShiftRef.current(change), []);
+	const click = useZwiftClick(handleClickShift, trainer.setNotice, devicesOpen);
+	const heartRate = useHeartRateMonitor(trainer.setNotice);
+	const liveMetrics = metricsWithHeartRate(
 		trainer.metrics,
-		trainer.resistance,
-		trainer.lastPedalingAt,
-		trainer.trainerReportsDistance
+		heartRate.connected,
+		heartRate.heartRate
 	);
 	const { connected } = trainer;
-	const { isRiding, manuallyPaused } = session;
-	const sessionIsSaved = Boolean(session.savedSessionId);
 	const [speedUnit, setSpeedUnit] = useState<SpeedUnit>(() =>
 		localStorage.getItem('speed-unit') === 'kmh' ? 'kmh' : 'mph'
 	);
 	const [historyOpen, setHistoryOpen] = useState(false);
 	const [shortcutsOpen, setShortcutsOpen] = useState(false);
 	const [welcomeOpen, setWelcomeOpen] = useState(shouldShowWelcome);
+	const dashboardKeyboardEnabled = !(devicesOpen || historyOpen || shortcutsOpen || welcomeOpen);
+	const gearControl = useGearControl({
+		active: click.paired,
+		connected: trainer.connected,
+		keyboardEnabled: dashboardKeyboardEnabled,
+		onResistanceChange: trainer.shiftResistanceBy,
+		resistance: trainer.resistance,
+		setNotice: trainer.setNotice,
+	});
+	clickShiftRef.current = shiftHandlerUnlessBlocked(gearControl.shiftGear, devicesOpen);
+	const session = useSession(
+		liveMetrics,
+		{
+			gear: gearControl.gear,
+			mode: controlModeForClick(click.paired),
+			resistance: trainer.resistance,
+		},
+		trainer.lastPedalingAt,
+		trainer.trainerReportsDistance
+	);
+	const { isRiding, manuallyPaused } = session;
+	const sessionIsSaved = Boolean(session.savedSessionId);
 	const [saveDialogOpen, setSaveDialogOpen] = useState(() => session.ended && !sessionIsSaved);
 	const [saving, setSaving] = useState(false);
 	const [startAfterSave, setStartAfterSave] = useState(false);
@@ -134,8 +184,14 @@ export function App() {
 	}, [warnBeforeUnload]);
 
 	useEffect(() => {
-		trainer.setKeyboardControlsEnabled(!(historyOpen || shortcutsOpen || welcomeOpen));
-	}, [historyOpen, shortcutsOpen, trainer.setKeyboardControlsEnabled, welcomeOpen]);
+		trainer.setKeyboardControlsEnabled(dashboardKeyboardEnabled);
+		trainer.setGearControlsEnabled(click.paired);
+	}, [
+		click.paired,
+		dashboardKeyboardEnabled,
+		trainer.setGearControlsEnabled,
+		trainer.setKeyboardControlsEnabled,
+	]);
 
 	useEffect(() => {
 		const shortcutHandlers: Record<AppShortcut, (event: KeyboardEvent) => void> = {
@@ -176,7 +232,7 @@ export function App() {
 			},
 		};
 		const handleShortcut = (event: KeyboardEvent) => {
-			if (welcomeOpen || shouldIgnoreShortcut(event)) {
+			if (devicesOpen || welcomeOpen || shouldIgnoreShortcut(event)) {
 				return;
 			}
 			if (historyOpen) {
@@ -190,6 +246,7 @@ export function App() {
 		window.addEventListener('keydown', handleShortcut);
 		return () => window.removeEventListener('keydown', handleShortcut);
 	}, [
+		devicesOpen,
 		endSession,
 		handleNewSessionShortcut,
 		historyOpen,
@@ -275,12 +332,21 @@ export function App() {
 
 	const unitFactor = speedUnit === 'mph' ? 0.621_371 : 1;
 	const distanceUnit = speedUnit === 'mph' ? 'mi' : 'km';
-	const displayedSpeed = trainer.metrics.speed * unitFactor;
+	const displayedSpeed = liveMetrics.speed * unitFactor;
 	const displayedDistance = session.rideDistance * unitFactor;
 	const displayedMaximumSpeed = session.maximums.speed * unitFactor;
 	const averageSpeed =
 		session.elapsedSeconds > 0 ? session.rideDistance / (session.elapsedSeconds / 3600) : 0;
 	const displayedAverageSpeed = averageSpeed * unitFactor;
+	const connectedDeviceCount =
+		Number(trainer.connected) + Number(heartRate.connected) + click.connectedCount;
+	const pairedDeviceCount = Number(trainer.paired) + Number(heartRate.paired) + click.pairedCount;
+	const devicesConnecting = [
+		trainer.connectionBusy,
+		heartRate.busy,
+		click.busy,
+		click.pairing,
+	].some(Boolean);
 	let sessionControlLabel = 'Auto paused';
 	let sessionControlIcon = 'stop';
 	if (isRiding) {
@@ -377,14 +443,11 @@ export function App() {
 						>
 							?
 						</button>
-						<ConnectionControl
-							busy={trainer.connectionBusy}
-							connected={connected}
-							deviceName={trainer.deviceName}
-							onCancel={trainer.cancelConnection}
-							onConnect={trainer.connect}
-							onDisconnect={trainer.disconnect}
-							status={trainer.status}
+						<DevicePairingButton
+							connectedCount={connectedDeviceCount}
+							connecting={devicesConnecting}
+							onClick={() => setDevicesOpen(true)}
+							pairedCount={pairedDeviceCount}
 						/>
 					</div>
 				</div>
@@ -406,7 +469,7 @@ export function App() {
 						label="POWER"
 						maximum={String(Math.round(session.maximums.power))}
 						unit="watts"
-						value={String(trainer.metrics.power)}
+						value={String(liveMetrics.power)}
 					/>
 					<Metric
 						accent="violet"
@@ -415,7 +478,7 @@ export function App() {
 						label="CADENCE"
 						maximum={String(Math.round(session.maximums.cadence))}
 						unit="rpm"
-						value={String(Math.round(trainer.metrics.cadence))}
+						value={String(Math.round(liveMetrics.cadence))}
 					/>
 					<Metric
 						accent="rose"
@@ -424,7 +487,7 @@ export function App() {
 						label="HEART RATE"
 						maximum={String(Math.round(session.maximums.heartRate))}
 						unit="bpm"
-						value={String(trainer.metrics.heartRate || '—')}
+						value={String(liveMetrics.heartRate || '—')}
 					/>
 				</section>
 
@@ -445,28 +508,46 @@ export function App() {
 							/>
 						</div>
 						<SessionChart
+							controlMode={session.controlMode}
 							history={session.history}
-							keyboardEnabled={!(historyOpen || shortcutsOpen || welcomeOpen)}
+							keyboardEnabled={dashboardKeyboardEnabled}
 							route={EMPTY_ROUTE}
 							speedUnit={speedUnit}
 						/>
 					</div>
 					<div className="self-start rounded-2xl border border-line bg-panel p-4 sm:p-5">
 						<div className="flex items-center justify-between gap-4">
-							<h2 className="font-bold text-lg">Resistance control</h2>
-							<output className="font-bold text-3xl text-mint tabular-nums tracking-tight">
-								{trainer.resistance}
-								<span className="ml-0.5 text-lg">%</span>
-							</output>
+							<h2 className="font-bold text-lg">
+								{click.paired ? 'Virtual shifting' : 'Resistance control'}
+							</h2>
+							<div className="text-right">
+								<output className="font-bold text-3xl text-mint tabular-nums tracking-tight">
+									{click.paired ? gearControl.gear : trainer.resistance}
+									<span className="ml-1 text-slate-500 text-xs">
+										{click.paired ? 'of 24' : '%'}
+									</span>
+								</output>
+							</div>
 						</div>
-						<ResistanceControl
-							disabled={!connected}
-							max={100}
-							min={0}
-							onChange={trainer.updateResistance}
-							step={1}
-							value={trainer.resistance}
-						/>
+						{click.paired ? (
+							<GearControl
+								disabled={!connected}
+								gear={gearControl.gear}
+								onChange={gearControl.shiftGear}
+								shiftFlash={gearControl.shiftFlash}
+							/>
+						) : (
+							<ResistanceControl
+								disabled={!connected}
+								keyboardFlash={trainer.resistanceKeyFlash}
+								max={100}
+								min={0}
+								onChange={trainer.updateResistance}
+								ramp={trainer.resistanceRamp}
+								step={1}
+								value={trainer.resistance}
+							/>
+						)}
 					</div>
 				</section>
 			</div>
@@ -518,7 +599,41 @@ export function App() {
 				open={historyOpen}
 				speedUnit={speedUnit}
 			/>
-			<KeyboardShortcutsDialog onClose={closeShortcuts} open={shortcutsOpen} />
+			<DevicePairingPanel
+				click={{
+					...click,
+					onDisconnect: click.disconnect,
+					onForget: click.forget,
+					onForgetController: click.forgetDevice,
+					onPair: click.pair,
+					onReconnect: click.reconnect,
+				}}
+				heartRate={{
+					...heartRate,
+					onDisconnect: heartRate.disconnect,
+					onForget: heartRate.forget,
+					onPair: heartRate.pair,
+					onReconnect: heartRate.reconnect,
+				}}
+				onClose={() => setDevicesOpen(false)}
+				open={devicesOpen}
+				trainer={{
+					busy: trainer.connectionBusy,
+					connected: trainer.connected,
+					name: trainer.pairedDeviceName,
+					onDisconnect: trainer.disconnect,
+					onForget: trainer.forget,
+					onPair: trainer.connect,
+					onReconnect: trainer.reconnect,
+					paired: trainer.paired,
+					status: trainer.status,
+				}}
+			/>
+			<KeyboardShortcutsDialog
+				onClose={closeShortcuts}
+				open={shortcutsOpen}
+				shortcuts={click.paired ? gearingKeyboardShortcuts : undefined}
+			/>
 			<WelcomeDialog onClose={closeWelcome} open={welcomeOpen} />
 		</main>
 	);

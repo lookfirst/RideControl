@@ -126,7 +126,11 @@ export async function findRememberedKickr(
 	);
 }
 
-export async function waitForFreshAdvertisement(device: BluetoothDevice): Promise<void> {
+export async function waitForFreshAdvertisement(
+	device: BluetoothDevice,
+	onAdvertisement?: (event: BluetoothAdvertisingEvent) => void,
+	timeoutMs = 3000
+): Promise<void> {
 	if (typeof device.watchAdvertisements !== 'function') {
 		return;
 	}
@@ -140,12 +144,19 @@ export async function waitForFreshAdvertisement(device: BluetoothDevice): Promis
 			}
 			finished = true;
 			window.clearTimeout(timeout);
-			device.removeEventListener('advertisementreceived', finish);
+			device.removeEventListener('advertisementreceived', handleAdvertisement);
 			controller.abort();
 			resolve();
 		};
-		device.addEventListener('advertisementreceived', finish, { once: true });
-		timeout = window.setTimeout(finish, 3000);
+		const handleAdvertisement = (event: Event) => {
+			try {
+				onAdvertisement?.(event as BluetoothAdvertisingEvent);
+			} finally {
+				finish();
+			}
+		};
+		device.addEventListener('advertisementreceived', handleAdvertisement, { once: true });
+		timeout = window.setTimeout(finish, timeoutMs);
 		device.watchAdvertisements({ signal: controller.signal }).catch(finish);
 	});
 }

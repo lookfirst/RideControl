@@ -1,3 +1,6 @@
+import { type CSSProperties, useEffect, useRef, useState } from 'react';
+import { resistanceAdjustmentDirection } from '../lib/resistance';
+import type { ResistanceAdjustmentDirection, ResistanceRamp } from '../types';
 import { Icon } from './icon';
 
 export function ResistanceControl({
@@ -7,6 +10,8 @@ export function ResistanceControl({
 	step,
 	onChange,
 	disabled,
+	keyboardFlash,
+	ramp,
 }: {
 	value: number;
 	min: number;
@@ -14,13 +19,64 @@ export function ResistanceControl({
 	step: number;
 	onChange: (value: number) => void;
 	disabled: boolean;
+	keyboardFlash?: ResistanceAdjustmentDirection;
+	ramp: ResistanceRamp;
 }) {
+	const [sliderFlash, setSliderFlash] = useState<ResistanceAdjustmentDirection>();
+	const sliderDragging = useRef(false);
+	const sliderFlashTimer = useRef<number | undefined>(undefined);
+	const sliderValue = useRef(value);
+	const rampProgress = ramp.phase === 'settled' ? 1 : Math.max(0, Math.min(1, ramp.progress));
+	const rampProgressPercent = Math.round(rampProgress * 100);
+	const sliderPosition =
+		max > min ? Math.max(0, Math.min(1, (value - min) / (max - min))) * 100 : 0;
+	const sliderStyle = {
+		'--ramp-progress': `${rampProgress * 360}deg`,
+		'--resistance-position': `${sliderPosition}%`,
+	} as CSSProperties;
+	const buttonClass =
+		'grid h-9 w-9 shrink-0 place-items-center rounded-lg border border-line text-slate-300 transition duration-150 hover:border-mint disabled:opacity-40';
+	const keyboardFlashClass =
+		'scale-105 border-mint bg-mint/15 text-mint shadow-[0_0_14px_rgba(190,242,100,.4)]';
+	const activeFlash = keyboardFlash ?? sliderFlash;
+
+	useEffect(() => {
+		sliderValue.current = value;
+	}, [value]);
+
+	useEffect(
+		() => () => {
+			window.clearTimeout(sliderFlashTimer.current);
+		},
+		[]
+	);
+
+	const clearSliderFlash = () => {
+		sliderDragging.current = false;
+		window.clearTimeout(sliderFlashTimer.current);
+		sliderFlashTimer.current = window.setTimeout(() => setSliderFlash(undefined), 180);
+	};
+
+	const handleSliderChange = (next: number) => {
+		const direction = resistanceAdjustmentDirection(sliderValue.current, next);
+		sliderValue.current = next;
+		if (direction) {
+			window.clearTimeout(sliderFlashTimer.current);
+			setSliderFlash(direction);
+			if (!sliderDragging.current) {
+				sliderFlashTimer.current = window.setTimeout(() => setSliderFlash(undefined), 180);
+			}
+		}
+		onChange(next);
+	};
+
 	return (
 		<div className="mt-4">
 			<div className="flex items-center gap-3">
 				<button
 					aria-label="Decrease resistance"
-					className="grid h-9 w-9 place-items-center rounded-lg border border-line text-slate-300 hover:border-mint disabled:opacity-40"
+					className={`${buttonClass} ${activeFlash === 'decrease' ? keyboardFlashClass : ''}`}
+					data-keyboard-flash={activeFlash === 'decrease' || undefined}
 					disabled={disabled}
 					onClick={() => onChange(value - step)}
 					type="button"
@@ -29,18 +85,29 @@ export function ResistanceControl({
 				</button>
 				<input
 					aria-label="Resistance"
-					className="h-1.5 w-full accent-mint disabled:opacity-40"
+					className="resistance-slider w-full min-w-0 disabled:opacity-40"
+					data-ramp-active={ramp.phase === 'ramping' || undefined}
+					data-ramp-progress={rampProgressPercent}
+					data-resistance-control="true"
 					disabled={disabled}
 					max={max}
 					min={min}
-					onChange={(event) => onChange(Number(event.target.value))}
+					onBlur={clearSliderFlash}
+					onChange={(event) => handleSliderChange(Number(event.target.value))}
+					onPointerCancel={clearSliderFlash}
+					onPointerDown={() => {
+						sliderDragging.current = true;
+					}}
+					onPointerUp={clearSliderFlash}
 					step={step}
+					style={sliderStyle}
 					type="range"
 					value={value}
 				/>
 				<button
 					aria-label="Increase resistance"
-					className="grid h-9 w-9 place-items-center rounded-lg border border-line text-slate-300 hover:border-mint disabled:opacity-40"
+					className={`${buttonClass} ${activeFlash === 'increase' ? keyboardFlashClass : ''}`}
+					data-keyboard-flash={activeFlash === 'increase' || undefined}
 					disabled={disabled}
 					onClick={() => onChange(value + step)}
 					type="button"

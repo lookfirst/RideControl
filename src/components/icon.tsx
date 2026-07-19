@@ -3,6 +3,7 @@ const paths: Record<string, string> = {
 	bluetooth: 'm7 7 10 10-5 5V2l5 5L7 17',
 	bolt: 'm13 2-8 11h6l-1 9 8-12h-6l1-7Z',
 	cadence: 'M20 11a8 8 0 0 0-15.5-2M4 4v5h5M4 13a8 8 0 0 0 15.5 2M20 20v-5h-5',
+	controls: 'M7 4v6m0 4v6m10-16v2m0 4v10M4 10h6m4-4h6M4 14h6m4-4h6',
 	heart: 'M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1-1.1a5.5 5.5 0 0 0-7.8 7.8l1 1L12 21l7.8-7.6a5.5 5.5 0 0 0 1-8.8Z',
 	minus: 'M5 12h14',
 	pause: 'M9 5v14m6-14v14',

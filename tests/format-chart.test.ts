@@ -28,6 +28,12 @@ describe('chart utilities', () => {
 		expect(chartPath([], 0, 1)).toBe('');
 	});
 
+	test('leaves gaps when a control metric is not recorded', () => {
+		expect(chartPath([10, undefined, 12], 1, 24, [1, 2, 3])).toBe(
+			'M 0 60.26086956521739 M 100 53.65217391304348'
+		);
+	});
+
 	test('rounds maxima up by chart step', () => {
 		expect(roundedChartMaximum(121, 100, 50)).toBe(150);
 		expect(roundedChartMaximum(20, 100, 50)).toBe(100);
@@ -36,6 +42,7 @@ describe('chart utilities', () => {
 	test('restores only supported chart modes', () => {
 		expect(storedChartMode({ getItem: () => 'power' })).toBe('power');
 		expect(storedChartMode({ getItem: () => 'resistance' })).toBe('resistance');
+		expect(storedChartMode({ getItem: () => 'gear' })).toBe('gear');
 		expect(storedChartMode({ getItem: () => 'elevation' })).toBe('all');
 	});
 });

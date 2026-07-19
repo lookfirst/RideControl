@@ -1,5 +1,6 @@
 import { emptyMetrics, emptySession } from '../constants';
 import type {
+	ControlMode,
 	MetricAggregate,
 	MetricSample,
 	Metrics,
@@ -18,6 +19,7 @@ export function sessionContinuation(snapshot: SessionSnapshot): StoredSession {
 	return {
 		aggregates: snapshot.aggregates,
 		calories: snapshot.calories,
+		controlMode: snapshot.controlMode,
 		distance: snapshot.distance,
 		elapsedSeconds: snapshot.elapsedSeconds,
 		ended: false,
@@ -55,14 +57,38 @@ export function addAggregate(
 
 export function addMetricAggregates(
 	aggregates: SessionAggregates,
-	metrics: Pick<Metrics, 'cadence' | 'heartRate' | 'power'> & Pick<MetricSample, 'resistance'>
+	metrics: Pick<Metrics, 'cadence' | 'heartRate' | 'power'> &
+		Partial<Pick<MetricSample, 'gear' | 'resistance'>>
 ): SessionAggregates {
 	return {
 		cadence: addAggregate(aggregates.cadence, metrics.cadence, false),
+		gear:
+			typeof metrics.gear === 'number'
+				? addAggregate(aggregates.gear, metrics.gear, true)
+				: aggregates.gear,
 		heartRate: addAggregate(aggregates.heartRate, metrics.heartRate, false),
 		power: addAggregate(aggregates.power, metrics.power, true),
-		resistance: addAggregate(aggregates.resistance, metrics.resistance, true),
+		resistance:
+			typeof metrics.resistance === 'number'
+				? addAggregate(aggregates.resistance, metrics.resistance, true)
+				: aggregates.resistance,
 	};
+}
+
+export function aggregateGear(samples: Partial<Pick<MetricSample, 'gear'>>[]): MetricAggregate {
+	return samples.reduce<MetricAggregate>(
+		(aggregate, sample) => {
+			if (typeof sample.gear !== 'number' || !Number.isFinite(sample.gear)) {
+				return aggregate;
+			}
+			return addAggregate(
+				aggregate,
+				Math.min(24, Math.max(1, Math.round(sample.gear))),
+				true
+			);
+		},
+		{ count: 0, sum: 0 }
+	);
 }
 
 export function aggregateResistance(
@@ -92,6 +118,23 @@ export function restoreAggregate(
 	};
 }
 
+function optionalControlValue(value: unknown, minimum: number, maximum: number) {
+	if (typeof value !== 'number' || !Number.isFinite(value)) {
+		return;
+	}
+	return Math.min(maximum, Math.max(minimum, value));
+}
+
+export function controlModeForHistory(
+	history: Partial<Pick<MetricSample, 'gear'>>[],
+	savedMode?: ControlMode
+): ControlMode {
+	if (savedMode === 'gear' || savedMode === 'resistance') {
+		return savedMode;
+	}
+	return history.some((sample) => typeof sample.gear === 'number') ? 'gear' : 'resistance';
+}
+
 export function loadStoredSession(storage: ReadableStorage = localStorage): StoredSession {
 	const saved = storage.getItem('trainer-session');
 	if (!saved) {
@@ -104,9 +147,10 @@ export function loadStoredSession(storage: ReadableStorage = localStorage): Stor
 			? parsed.history.slice(-3600).map((sample) => ({
 					cadence: nonNegativeNumber(sample.cadence),
 					elapsedSeconds: nonNegativeNumber(sample.elapsedSeconds),
+					gear: optionalControlValue(sample.gear, 1, 24),
 					heartRate: nonNegativeNumber(sample.heartRate),
 					power: nonNegativeNumber(sample.power),
-					resistance: Math.min(100, nonNegativeNumber(sample.resistance)),
+					resistance: optionalControlValue(sample.resistance, 0, 100),
 					speed: nonNegativeNumber(sample.speed),
 				}))
 			: [];
@@ -114,6 +158,7 @@ export function loadStoredSession(storage: ReadableStorage = localStorage): Stor
 		return {
 			aggregates: {
 				cadence: restoreAggregate(parsed.aggregates?.cadence, historyAggregates.cadence),
+				gear: restoreAggregate(parsed.aggregates?.gear, historyAggregates.gear),
 				heartRate: restoreAggregate(
 					parsed.aggregates?.heartRate,
 					historyAggregates.heartRate
@@ -125,6 +170,7 @@ export function loadStoredSession(storage: ReadableStorage = localStorage): Stor
 				),
 			},
 			calories: nonNegativeNumber(parsed.calories),
+			controlMode: controlModeForHistory(history, parsed.controlMode),
 			distance: nonNegativeNumber(parsed.distance),
 			elapsedSeconds: nonNegativeNumber(parsed.elapsedSeconds),
 			ended: parsed.ended === true,

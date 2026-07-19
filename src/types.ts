@@ -17,12 +17,24 @@ export interface Range {
 	min: number;
 }
 
+export type ResistanceRampPhase = 'holding' | 'queued' | 'ramping' | 'settled';
+export type ResistanceAdjustmentDirection = 'decrease' | 'increase';
+
+export interface ResistanceRamp {
+	current: number;
+	from: number;
+	phase: ResistanceRampPhase;
+	progress: number;
+	to: number;
+}
+
 export interface MetricSample {
 	cadence: number;
 	elapsedSeconds: number;
+	gear?: number;
 	heartRate: number;
 	power: number;
-	resistance: number;
+	resistance?: number;
 	speed: number;
 }
 
@@ -33,14 +45,18 @@ export interface MetricAggregate {
 
 export interface SessionAggregates {
 	cadence: MetricAggregate;
+	gear: MetricAggregate;
 	heartRate: MetricAggregate;
 	power: MetricAggregate;
 	resistance: MetricAggregate;
 }
 
+export type ControlMode = 'gear' | 'resistance';
+
 export interface StoredSession {
 	aggregates: SessionAggregates;
 	calories: number;
+	controlMode: ControlMode;
 	distance: number;
 	elapsedSeconds: number;
 	ended: boolean;
@@ -61,6 +77,7 @@ export interface SessionMetadata {
 export interface SessionSnapshot {
 	aggregates: SessionAggregates;
 	calories: number;
+	controlMode: ControlMode;
 	distance: number;
 	elapsedSeconds: number;
 	endedAt: number;
@@ -87,6 +104,7 @@ export type ChartMode =
 	| 'all'
 	| 'cadence'
 	| 'elevation'
+	| 'gear'
 	| 'heartRate'
 	| 'power'
 	| 'resistance'

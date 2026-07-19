@@ -14,8 +14,8 @@ function xmlEscape(value: string): string {
 		.replaceAll("'", '&apos;');
 }
 
-function nonNegative(value: number): number {
-	return Number.isFinite(value) ? Math.max(0, value) : 0;
+function nonNegative(value: unknown): number {
+	return typeof value === 'number' && Number.isFinite(value) ? Math.max(0, value) : 0;
 }
 
 function average({ count, sum }: { count: number; sum: number }): number {
@@ -49,6 +49,10 @@ function trackpointDistances(session: SavedSession): number[] {
 
 function trackpointXml(sample: MetricSample, timestamp: number, distanceMeters: number): string {
 	const heartRate = nonNegative(sample.heartRate);
+	const controlExtension =
+		typeof sample.gear === 'number'
+			? `<rc:Gear>${Math.round(nonNegative(sample.gear))}</rc:Gear>`
+			: `<rc:Resistance>${nonNegative(sample.resistance).toFixed(1)}</rc:Resistance>`;
 	return `
 					<Trackpoint>
 						<Time>${new Date(timestamp).toISOString()}</Time>
@@ -65,7 +69,7 @@ function trackpointXml(sample: MetricSample, timestamp: number, distanceMeters: 
 								<ns3:Speed>${(nonNegative(sample.speed) / 3.6).toFixed(3)}</ns3:Speed>
 								<ns3:Watts>${Math.round(nonNegative(sample.power))}</ns3:Watts>
 							</ns3:TPX>
-							<rc:Resistance>${nonNegative(sample.resistance).toFixed(1)}</rc:Resistance>
+							${controlExtension}
 						</Extensions>
 					</Trackpoint>`;
 }
@@ -91,11 +95,12 @@ export function sessionToTcx(session: SavedSession): string {
 	const averageHeartRate = average(session.aggregates.heartRate);
 	const averageCadence = average(session.aggregates.cadence);
 	const averagePower = average(session.aggregates.power);
-	const averageResistance = average(session.aggregates.resistance);
-	const maximumResistance = Math.max(
-		0,
-		...session.history.map((sample) => nonNegative(sample.resistance))
-	);
+	const controlSummary =
+		session.controlMode === 'gear'
+			? `<rc:AverageGear>${average(session.aggregates.gear).toFixed(1)}</rc:AverageGear>
+						<rc:MaximumGear>${Math.max(0, ...session.history.map((sample) => nonNegative(sample.gear))).toFixed(0)}</rc:MaximumGear>`
+			: `<rc:AverageResistance>${average(session.aggregates.resistance).toFixed(1)}</rc:AverageResistance>
+						<rc:MaximumResistance>${Math.max(0, ...session.history.map((sample) => nonNegative(sample.resistance))).toFixed(1)}</rc:MaximumResistance>`;
 	const distanceMeters = nonNegative(session.distance) * 1000;
 	const averageSpeed = session.elapsedSeconds > 0 ? distanceMeters / session.elapsedSeconds : 0;
 
@@ -131,8 +136,7 @@ export function sessionToTcx(session: SavedSession): string {
 						<ns3:MaxWatts>${Math.round(nonNegative(session.maximums.power))}</ns3:MaxWatts>
 					</ns3:LX>
 					<rc:Summary>
-						<rc:AverageResistance>${averageResistance.toFixed(1)}</rc:AverageResistance>
-						<rc:MaximumResistance>${maximumResistance.toFixed(1)}</rc:MaximumResistance>
+						${controlSummary}
 					</rc:Summary>
 				</Extensions>
 			</Lap>${

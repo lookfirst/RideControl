@@ -11,7 +11,8 @@ import {
 	countSavedSessions,
 	deleteSavedSession,
 	feelingLabel,
-	formatSessionTime,
+	formatSessionDateRange,
+	formatSessionListTime,
 	formatSessionTimeRange,
 	getSavedSession,
 	groupSessionsByDate,
@@ -121,15 +122,29 @@ export function SessionDetail({
 }) {
 	const unitFactor = speedUnit === 'mph' ? 0.621_371 : 1;
 	const distanceUnit = speedUnit === 'mph' ? 'mi' : 'km';
+	const usesGear = session.controlMode === 'gear';
+	const controlMetric = usesGear
+		? {
+				accent: 'mint',
+				average: formatAggregateAverage(session.aggregates.gear, 0),
+				icon: 'controls',
+				label: 'GEAR',
+				unit: '',
+			}
+		: {
+				accent: 'mint',
+				average: formatAggregateAverage(session.aggregates.resistance, 0),
+				icon: 'resistance',
+				label: 'RESISTANCE',
+				unit: '%',
+			};
 
 	return (
 		<div className="min-w-0 flex-1 overflow-y-auto p-5 sm:p-6">
 			<div className="relative flex items-start justify-between gap-4">
 				<div>
 					<p className="font-bold text-[11px] text-mint tracking-[.14em]">
-						{new Intl.DateTimeFormat(undefined, { dateStyle: 'full' }).format(
-							session.startedAt
-						)}
+						{formatSessionDateRange(session)}
 					</p>
 					<h3 className="mt-1 font-bold text-2xl">{formatSessionTimeRange(session)}</h3>
 				</div>
@@ -209,13 +224,7 @@ export function SessionDetail({
 						maximum: String(Math.round(session.maximums.heartRate)),
 						unit: 'bpm',
 					},
-					{
-						accent: 'mint',
-						average: formatAggregateAverage(session.aggregates.resistance, 0),
-						icon: 'resistance',
-						label: 'RESISTANCE',
-						unit: '%',
-					},
+					controlMetric,
 				].map((metric) => (
 					<SessionMetric key={metric.label} {...metric} />
 				))}
@@ -237,6 +246,7 @@ export function SessionDetail({
 				</div>
 			</div>
 			<SessionChart
+				controlMode={session.controlMode}
 				history={session.history}
 				keyboardEnabled={chartKeyboardEnabled}
 				route={EMPTY_ROUTE}
@@ -562,7 +572,7 @@ export function SessionHistory({
 										>
 											<div className="flex items-center justify-between gap-3">
 												<span className="font-semibold text-sm">
-													{formatSessionTime(session.startedAt)}
+													{formatSessionListTime(session)}
 												</span>
 												<span className="text-slate-500 text-xs">
 													{formatDuration(session.elapsedSeconds)}
