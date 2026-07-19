@@ -252,6 +252,8 @@ describe('view components', () => {
 			onPair: () => undefined,
 			onReconnect: () => undefined,
 			paired: false,
+			phase: 'unpaired' as const,
+			reconnecting: false,
 			status: 'Not paired',
 		};
 		const panel = render(
@@ -259,26 +261,37 @@ describe('view components', () => {
 				browserNotice=""
 				click={{
 					...common,
+					busy: true,
 					connectedCount: 0,
 					controllers: [
 						{
 							active: false,
+							busy: true,
 							connected: false,
-							connecting: true,
 							id: 'minus-click',
 							label: '− Controller',
+							paired: true,
+							phase: 'reconnecting',
+							reconnecting: true,
+							status: 'Reconnecting…',
 						},
 						{
 							active: true,
+							busy: false,
 							connected: false,
-							connecting: false,
 							id: 'plus-click',
 							label: '+ Controller',
+							paired: true,
+							phase: 'offline',
+							reconnecting: false,
+							status: 'Paired · offline',
 						},
 					],
 					onForgetController: () => undefined,
+					paired: true,
 					pairedCount: 2,
 					pairing: false,
+					phase: 'reconnecting',
 					reconnecting: true,
 				}}
 				heartRate={common}
@@ -294,8 +307,8 @@ describe('view components', () => {
 		expect(panel).toContain('Waiting for controllers…');
 		expect(panel).not.toContain('Retry');
 		expect(panel).toContain('Reconnect');
-		expect(panel.match(/animate-pulse/g)).toHaveLength(3);
-		expect(panel.match(/animate-pulse bg-sky-400/g)).toHaveLength(2);
+		expect(panel.match(/animate-pulse/g)).toHaveLength(2);
+		expect(panel.match(/animate-pulse bg-sky-400/g)).toHaveLength(1);
 		expect(panel).toContain('Enable reconnect saving in Chrome');
 		expect(panel).toContain('https://github.com/lookfirst/RideControl#automatic-reconnect');
 		expect(panel).toContain('+ Controller');

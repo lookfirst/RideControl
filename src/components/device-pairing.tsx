@@ -1,25 +1,20 @@
 import { useEffect } from 'react';
 import { AUTOMATIC_RECONNECT_README_URL } from '../constants';
 import { bluetoothBrowserNotice } from '../lib/browser';
+import type { DeviceConnectionView } from '../lib/device-connection';
 import { Icon } from './icon';
 
-interface DeviceSlot {
+interface DeviceSlot extends DeviceConnectionView {
 	battery?: number;
-	busy: boolean;
-	connected: boolean;
 	name?: string;
 	onDisconnect: () => void;
 	onForget: () => void | Promise<void>;
 	onPair: () => void | Promise<void>;
 	onReconnect: () => void | Promise<void>;
-	paired: boolean;
-	status: string;
 }
 
-interface ClickController {
+interface ClickController extends DeviceConnectionView {
 	active: boolean;
-	connected: boolean;
-	connecting: boolean;
 	id: string;
 	label: string;
 }
@@ -30,7 +25,7 @@ interface ClickSlot extends DeviceSlot {
 	onForgetController: (deviceId: string) => void | Promise<void>;
 	pairedCount: number;
 	pairing: boolean;
-	reconnecting?: boolean;
+	reconnecting: boolean;
 }
 
 function clickControllerOrder(controller: ClickController) {
@@ -65,31 +60,32 @@ function StatusDot({
 	);
 }
 
-function DeviceActions({ slot }: { slot: DeviceSlot }) {
+function DeviceActions({ showBusy = true, slot }: { showBusy?: boolean; slot: DeviceSlot }) {
+	const actionBusy = showBusy && slot.busy;
 	if (!slot.paired) {
 		return (
 			<button
 				className="h-9 rounded-lg bg-lime px-3 font-bold text-ink text-xs transition hover:bg-[#e4ff9c] disabled:opacity-50"
-				disabled={slot.busy}
+				disabled={actionBusy}
 				onClick={slot.onPair}
 				type="button"
 			>
-				{slot.busy ? 'Pairing…' : 'Pair'}
+				{actionBusy ? 'Pairing…' : 'Pair'}
 			</button>
 		);
 	}
 	let connectionAction = 'Reconnect';
-	if (slot.busy) {
+	if (actionBusy) {
 		connectionAction = 'Connecting…';
 	} else if (slot.connected) {
 		connectionAction = 'Disconnect';
 	}
-	const disconnecting = slot.connected && !slot.busy;
+	const disconnecting = slot.connected && !actionBusy;
 	return (
 		<div className="flex flex-wrap justify-end gap-2">
 			<button
 				className="h-9 rounded-lg border border-line px-3 font-semibold text-slate-300 text-xs transition hover:border-slate-500 hover:text-white disabled:opacity-50"
-				disabled={slot.busy}
+				disabled={actionBusy}
 				onClick={disconnecting ? slot.onDisconnect : slot.onReconnect}
 				type="button"
 			>
@@ -226,13 +222,8 @@ export function DevicePairingPanel({
 		return null;
 	}
 
-	const clickSlot: DeviceSlot = {
-		...click,
-		busy: false,
-		connected: click.pairedCount > 0 && click.connectedCount === click.pairedCount,
-		paired: click.pairedCount > 0,
-	};
-	const waitingForControllers = Boolean(click.reconnecting);
+	const clickSlot: DeviceSlot = click;
+	const waitingForControllers = click.reconnecting || click.phase === 'connecting';
 	const orderedClickControllers = [...click.controllers].sort(
 		(left, right) => clickControllerOrder(left) - clickControllerOrder(right)
 	);
@@ -339,9 +330,7 @@ export function DevicePairingPanel({
 										>
 											<StatusDot
 												bluePulse
-												busy={
-													waitingForControllers && !controller.connected
-												}
+												busy={controller.busy}
 												connected={controller.connected}
 											/>
 											<div className="min-w-0 flex-1">
@@ -366,7 +355,9 @@ export function DevicePairingPanel({
 							) : null}
 
 							<div className="mt-4 flex flex-wrap justify-end gap-2">
-								{click.pairedCount > 0 ? <DeviceActions slot={clickSlot} /> : null}
+								{click.pairedCount > 0 ? (
+									<DeviceActions showBusy={false} slot={clickSlot} />
+								) : null}
 								{click.pairedCount < 2 ? (
 									<button
 										className="h-9 rounded-lg bg-lime px-3 font-bold text-ink text-xs transition hover:bg-[#e4ff9c] disabled:opacity-50"

@@ -95,14 +95,12 @@ describe('Bluetooth data utilities', () => {
 		expect(await findRememberedKickr({} as Bluetooth, { getItem: () => null })).toBeUndefined();
 	});
 
-	test('connects GATT and reports status', async () => {
+	test('connects GATT', async () => {
 		const server = {} as BluetoothRemoteGATTServer;
-		const statuses: string[] = [];
 		const device = {
 			gatt: { connect: async () => server },
 		} as unknown as BluetoothDevice;
-		expect(await connectGatt(device, false, (status) => statuses.push(status))).toBe(server);
-		expect(statuses).toEqual(['Connecting…']);
+		expect(await connectGatt(device, false)).toBe(server);
 	});
 
 	test('rediscovers and retries a failed GATT connection', async () => {
@@ -115,7 +113,6 @@ describe('Bluetooth data utilities', () => {
 			},
 		});
 		const server = {} as BluetoothRemoteGATTServer;
-		const statuses: string[] = [];
 		let attempts = 0;
 		const device = {
 			addEventListener: () => undefined,
@@ -132,9 +129,8 @@ describe('Bluetooth data utilities', () => {
 			watchAdvertisements: () => Promise.reject(new Error('advertisement already fresh')),
 		} as unknown as BluetoothDevice;
 		try {
-			expect(await connectGatt(device, true, (status) => statuses.push(status))).toBe(server);
+			expect(await connectGatt(device, true)).toBe(server);
 			expect(attempts).toBe(2);
-			expect(statuses).toEqual(['Connecting…', 'Finding trainer…', 'Connecting…']);
 		} finally {
 			if (originalWindow) {
 				Object.defineProperty(globalThis, 'window', originalWindow);
@@ -145,7 +141,7 @@ describe('Bluetooth data utilities', () => {
 	});
 
 	test('rejects devices without a GATT server', async () => {
-		await expect(connectGatt({} as BluetoothDevice, false, () => undefined)).rejects.toThrow(
+		await expect(connectGatt({} as BluetoothDevice, false)).rejects.toThrow(
 			'does not expose a GATT server'
 		);
 	});

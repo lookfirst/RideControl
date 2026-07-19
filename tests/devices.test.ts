@@ -97,7 +97,6 @@ describe('paired device protocols', () => {
 			value: { clearTimeout, setTimeout },
 		});
 		const server = {} as BluetoothRemoteGATTServer;
-		const awakeStatuses: string[] = [];
 		let advertisementWatches = 0;
 		const awakeDevice = {
 			addEventListener: () => undefined,
@@ -111,14 +110,10 @@ describe('paired device protocols', () => {
 			},
 		} as unknown as BluetoothDevice;
 		try {
-			expect(
-				await connectClickGatt(awakeDevice, true, (status) => awakeStatuses.push(status))
-			).toBe(server);
+			expect(await connectClickGatt(awakeDevice, true)).toBe(server);
 			expect(advertisementWatches).toBe(0);
-			expect(awakeStatuses).toEqual(['Connecting controllers…']);
 
 			let attempts = 0;
-			const sleepingStatuses: string[] = [];
 			const sleepingDevice = {
 				addEventListener: () => undefined,
 				gatt: {
@@ -136,18 +131,9 @@ describe('paired device protocols', () => {
 					return Promise.reject(new Error('advertisement already fresh'));
 				},
 			} as unknown as BluetoothDevice;
-			expect(
-				await connectClickGatt(sleepingDevice, true, (status) =>
-					sleepingStatuses.push(status)
-				)
-			).toBe(server);
+			expect(await connectClickGatt(sleepingDevice, true)).toBe(server);
 			expect(attempts).toBe(2);
 			expect(advertisementWatches).toBe(1);
-			expect(sleepingStatuses).toEqual([
-				'Connecting controllers…',
-				'Finding controllers…',
-				'Connecting controllers…',
-			]);
 		} finally {
 			if (originalWindow) {
 				Object.defineProperty(globalThis, 'window', originalWindow);

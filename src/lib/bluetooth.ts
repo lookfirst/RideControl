@@ -163,22 +163,18 @@ export async function waitForFreshAdvertisement(
 
 export async function connectGatt(
 	device: BluetoothDevice,
-	rediscover: boolean,
-	updateStatus: (status: string) => void
+	rediscover: boolean
 ): Promise<BluetoothRemoteGATTServer> {
 	if (!device.gatt) {
 		throw new Error('This device does not expose a GATT server.');
 	}
-	updateStatus('Connecting…');
 	try {
 		return await device.gatt.connect();
 	} catch (directConnectionError) {
 		if (!rediscover) {
 			throw directConnectionError;
 		}
-		updateStatus('Finding trainer…');
 		await waitForFreshAdvertisement(device);
-		updateStatus('Connecting…');
 		return await device.gatt.connect();
 	}
 }

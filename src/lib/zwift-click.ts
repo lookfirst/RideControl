@@ -81,17 +81,13 @@ export async function withClickConnectionTimeout<T>(
 export async function connectClickGatt(
 	device: BluetoothDevice,
 	rediscover: boolean,
-	updateStatus: (status: string) => void,
 	onControllerRole?: (role: ClickShift) => void
 ): Promise<BluetoothRemoteGATTServer> {
 	const { gatt } = device;
 	if (!gatt) {
 		throw new Error('This controller does not expose Bluetooth services.');
 	}
-	const connect = (timeoutMs: number) => {
-		updateStatus('Connecting controllers…');
-		return withClickConnectionTimeout(gatt.connect(), timeoutMs);
-	};
+	const connect = (timeoutMs: number) => withClickConnectionTimeout(gatt.connect(), timeoutMs);
 	const observeController = () =>
 		waitForFreshAdvertisement(
 			device,
@@ -112,7 +108,6 @@ export async function connectClickGatt(
 		);
 	} catch {
 		gatt.disconnect();
-		updateStatus('Finding controllers…');
 		await (advertisement ?? observeController());
 		return connect(CLICK_REDISCOVERED_CONNECTION_TIMEOUT_MS);
 	}
