@@ -85,8 +85,8 @@ export function WelcomeDialog({
 					would only upload data with your permission.
 				</p>
 				<p className="mt-2 text-slate-400 text-sm leading-6">
-					You can download your rides as TCX files and upload them to your preferred
-					cycling service whenever you choose.
+					From the history, you can download your rides as TCX files and upload them to
+					your preferred cycling service whenever you choose.
 				</p>
 				<p className="mt-3 rounded-xl border border-line bg-[#12171d] px-3.5 py-3 text-slate-400 text-sm">
 					Press <kbd className="font-mono font-semibold text-slate-200">?</kbd> anytime to

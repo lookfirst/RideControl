@@ -228,7 +228,7 @@ describe('view components', () => {
 		expect(html).toContain('all ride data stays in your browser');
 		expect(html).toContain('We don&#x27;t upload it anywhere');
 		expect(html).toContain('would only upload data with your permission');
-		expect(html).toContain('download your rides as TCX files');
+		expect(html).toContain('From the history, you can download your rides as TCX files');
 	});
 
 	test('renders the keyboard controls reference', () => {
