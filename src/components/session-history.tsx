@@ -11,7 +11,8 @@ import {
 	countSavedSessions,
 	deleteSavedSession,
 	feelingLabel,
-	formatSessionTime,
+	formatSessionDateRange,
+	formatSessionListTime,
 	formatSessionTimeRange,
 	getSavedSession,
 	groupSessionsByDate,
@@ -127,9 +128,7 @@ export function SessionDetail({
 			<div className="relative flex items-start justify-between gap-4">
 				<div>
 					<p className="font-bold text-[11px] text-mint tracking-[.14em]">
-						{new Intl.DateTimeFormat(undefined, { dateStyle: 'full' }).format(
-							session.startedAt
-						)}
+						{formatSessionDateRange(session)}
 					</p>
 					<h3 className="mt-1 font-bold text-2xl">{formatSessionTimeRange(session)}</h3>
 				</div>
@@ -562,7 +561,7 @@ export function SessionHistory({
 										>
 											<div className="flex items-center justify-between gap-3">
 												<span className="font-semibold text-sm">
-													{formatSessionTime(session.startedAt)}
+													{formatSessionListTime(session)}
 												</span>
 												<span className="text-slate-500 text-xs">
 													{formatDuration(session.elapsedSeconds)}

@@ -393,6 +393,35 @@ describe('view components', () => {
 		).toBe('');
 	});
 
+	test('renders an overnight session with date and time ranges', () => {
+		const startedAt = new Date(2026, 6, 18, 23).getTime();
+		const endedAt = new Date(2026, 6, 19, 1).getTime();
+		const html = render(
+			<SessionDetail
+				session={{
+					aggregates: emptySession.aggregates,
+					calories: 0,
+					comments: '',
+					distance: 0,
+					elapsedSeconds: 7200,
+					endedAt,
+					history: [],
+					id: 'overnight-session',
+					maximums: emptyMetrics,
+					startedAt,
+				}}
+				speedUnit="kmh"
+			/>
+		);
+		expect(html).toContain(
+			new Intl.DateTimeFormat(undefined, { dateStyle: 'full' }).formatRange(
+				new Date(startedAt),
+				new Date(endedAt)
+			)
+		);
+		expect(html).toContain('11:00pm – 1:00am');
+	});
+
 	test('styles an unrecorded feeling like the comments value', () => {
 		const html = render(
 			<SessionDetail

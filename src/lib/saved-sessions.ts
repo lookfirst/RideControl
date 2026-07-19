@@ -13,6 +13,9 @@ const SESSION_STORE = 'sessions';
 const SUMMARY_STORE = 'session-summaries';
 const ENDED_AT_INDEX = 'endedAt';
 const MERIDIEM_SUFFIX = /\s*(AM|PM)$/i;
+const SESSION_DATE_FORMATTER = new Intl.DateTimeFormat(undefined, { dateStyle: 'full' });
+
+type SessionTiming = Pick<SavedSessionSummary, 'elapsedSeconds' | 'endedAt' | 'startedAt'>;
 
 let databasePromise: Promise<IDBDatabase> | undefined;
 
@@ -194,18 +197,45 @@ export interface SessionGroup {
 	sessions: SavedSessionSummary[];
 }
 
+function localDateKey(timestamp: number): string {
+	const date = new Date(timestamp);
+	return `${date.getFullYear()}-${date.getMonth() + 1}-${date.getDate()}`;
+}
+
+function hasRecordedSessionEnd(session: SessionTiming): boolean {
+	return session.elapsedSeconds > 0 && session.endedAt > session.startedAt;
+}
+
+function sessionSpansDates(session: SessionTiming): boolean {
+	return (
+		hasRecordedSessionEnd(session) &&
+		localDateKey(session.startedAt) !== localDateKey(session.endedAt)
+	);
+}
+
+export function formatSessionDateRange(session: SessionTiming): string {
+	const started = new Date(session.startedAt);
+	if (!sessionSpansDates(session)) {
+		return SESSION_DATE_FORMATTER.format(started);
+	}
+	return SESSION_DATE_FORMATTER.formatRange(started, new Date(session.endedAt));
+}
+
+function sessionDateGroupKey(session: SessionTiming): string {
+	const started = localDateKey(session.startedAt);
+	return sessionSpansDates(session) ? `${started}/${localDateKey(session.endedAt)}` : started;
+}
+
 export function groupSessionsByDate(sessions: SavedSessionSummary[]): SessionGroup[] {
 	const groups = new Map<string, SessionGroup>();
-	const dateFormatter = new Intl.DateTimeFormat(undefined, { dateStyle: 'full' });
 	for (const session of sessions) {
-		const date = new Date(session.startedAt);
-		const key = `${date.getFullYear()}-${date.getMonth() + 1}-${date.getDate()}`;
+		const key = sessionDateGroupKey(session);
 		const existing = groups.get(key);
 		if (existing) {
 			existing.sessions.push(session);
 		} else {
 			groups.set(key, {
-				date: dateFormatter.format(date),
+				date: formatSessionDateRange(session),
 				key,
 				sessions: [session],
 			});
@@ -251,14 +281,18 @@ export function formatSessionTime(timestamp: number): string {
 		.replace(MERIDIEM_SUFFIX, (suffix) => suffix.trim().toLowerCase());
 }
 
-export function formatSessionTimeRange(
-	session: Pick<SavedSession, 'elapsedSeconds' | 'endedAt' | 'startedAt'>
-): string {
+export function formatSessionTimeRange(session: SessionTiming): string {
 	const started = formatSessionTime(session.startedAt);
-	if (!(session.elapsedSeconds > 0 && session.endedAt > session.startedAt)) {
+	if (!hasRecordedSessionEnd(session)) {
 		return started;
 	}
 	return `${started} – ${formatSessionTime(session.endedAt)}`;
+}
+
+export function formatSessionListTime(session: SessionTiming): string {
+	return sessionSpansDates(session)
+		? formatSessionTimeRange(session)
+		: formatSessionTime(session.startedAt);
 }
 
 export async function requestPersistentSessionStorage(): Promise<boolean> {

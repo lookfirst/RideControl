@@ -5,6 +5,8 @@ import {
 	createSavedSession,
 	deleteSessionRecords,
 	feelingLabel,
+	formatSessionDateRange,
+	formatSessionListTime,
 	formatSessionTime,
 	formatSessionTimeRange,
 	groupSessionsByDate,
@@ -151,6 +153,41 @@ describe('saved session utilities', () => {
 		expect(groups[1]?.sessions[0]?.id).toBe('three');
 	});
 
+	test('groups overnight sessions by their complete local date range', () => {
+		const overnightStart = new Date(2026, 6, 18, 23).getTime();
+		const overnightEnd = new Date(2026, 6, 19, 1).getTime();
+		const daytimeStart = new Date(2026, 6, 18, 9).getTime();
+		const summaries = [
+			{
+				calories: 0,
+				distance: 0,
+				elapsedSeconds: 7200,
+				endedAt: overnightEnd,
+				id: 'overnight',
+				startedAt: overnightStart,
+			},
+			{
+				calories: 0,
+				distance: 0,
+				elapsedSeconds: 3600,
+				endedAt: daytimeStart + 3_600_000,
+				id: 'daytime',
+				startedAt: daytimeStart,
+			},
+		] satisfies SavedSessionSummary[];
+		const groups = groupSessionsByDate(summaries);
+		expect(groups).toHaveLength(2);
+		expect(groups[0]).toMatchObject({
+			date: new Intl.DateTimeFormat(undefined, { dateStyle: 'full' }).formatRange(
+				new Date(overnightStart),
+				new Date(overnightEnd)
+			),
+			key: '2026-7-18/2026-7-19',
+		});
+		expect(groups[0]?.sessions[0]?.id).toBe('overnight');
+		expect(groups[1]?.sessions[0]?.id).toBe('daytime');
+	});
+
 	test('selects the nearest remaining session after deletion', () => {
 		const sessions = ['one', 'two', 'three'].map(
 			(id, index) =>
@@ -202,6 +239,23 @@ describe('saved session utilities', () => {
 		expect(formatSessionTimeRange(snapshot)).toBe('8:30am – 9:00am');
 		expect(formatSessionTimeRange({ ...snapshot, elapsedSeconds: 0 })).toBe('8:30am');
 		expect(formatSessionTimeRange({ ...snapshot, endedAt: snapshot.startedAt })).toBe('8:30am');
+	});
+
+	test('shows date and time ranges for overnight sessions', () => {
+		const overnight = {
+			elapsedSeconds: 7200,
+			endedAt: new Date(2026, 6, 19, 1).getTime(),
+			startedAt: new Date(2026, 6, 18, 23).getTime(),
+		};
+		const dateFormatter = new Intl.DateTimeFormat(undefined, { dateStyle: 'full' });
+		expect(formatSessionDateRange(overnight)).toBe(
+			dateFormatter.formatRange(new Date(overnight.startedAt), new Date(overnight.endedAt))
+		);
+		expect(formatSessionListTime(overnight)).toBe('11:00pm – 1:00am');
+		expect(formatSessionListTime(snapshot)).toBe('8:30am');
+		expect(formatSessionDateRange({ ...overnight, elapsedSeconds: 0 })).toBe(
+			dateFormatter.format(overnight.startedAt)
+		);
 	});
 
 	test('requests persistent storage only when needed and supported', async () => {
