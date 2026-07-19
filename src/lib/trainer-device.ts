@@ -116,19 +116,39 @@ export async function connectTrainerDevice(
 		} catch {
 			// Use the generic range.
 		}
-		const [removePower, removeCadence] = await Promise.all([
+		device.addEventListener('gattserverdisconnected', onDisconnect, { once: true });
+		const optionalCleanups: Array<() => void> = [];
+		let cleanedUp = false;
+		const cleanupRequiredServices = combineBluetoothCleanups(
+			removeBikeData,
+			removeControlPoint,
+			() => device.removeEventListener('gattserverdisconnected', onDisconnect)
+		);
+		const cleanup = () => {
+			if (cleanedUp) {
+				return;
+			}
+			cleanedUp = true;
+			cleanupRequiredServices();
+			combineBluetoothCleanups(...optionalCleanups)();
+			optionalCleanups.length = 0;
+		};
+		Promise.all([
 			optionalPowerSubscription(server, onMetrics),
 			optionalCadenceSubscription(server, onMetrics),
-		]);
-		device.addEventListener('gattserverdisconnected', onDisconnect, { once: true });
+		]).then((cleanups) => {
+			if (cleanedUp) {
+				combineBluetoothCleanups(...cleanups)();
+				return;
+			}
+			for (const optionalCleanup of cleanups) {
+				if (optionalCleanup) {
+					optionalCleanups.push(optionalCleanup);
+				}
+			}
+		});
 		return {
-			cleanup: combineBluetoothCleanups(
-				removeBikeData,
-				removeControlPoint,
-				removePower,
-				removeCadence,
-				() => device.removeEventListener('gattserverdisconnected', onDisconnect)
-			),
+			cleanup,
 			controlPoint,
 			resistanceRange,
 		};
