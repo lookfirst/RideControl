@@ -4,6 +4,7 @@ import {
 	convertDistance,
 	convertSpeed,
 	formatDistance,
+	formatDistanceValue,
 	kilometersForMeters,
 	kilometersTraveled,
 	metersForKilometers,
@@ -19,6 +20,7 @@ describe('unit conversions', () => {
 		expect(convertSpeed(32.186_88, 'mph')).toBeCloseTo(20);
 		expect(formatDistance(16.093_44, 'mph')).toBe('10.00 mi');
 		expect(formatDistance(16.093_44, 'kmh')).toBe('16.09 km');
+		expect(formatDistanceValue(16.093_44, 'mph')).toBe('10.00');
 	});
 
 	test('converts stored SI and ride timing values consistently', () => {

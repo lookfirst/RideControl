@@ -62,8 +62,8 @@ describe('session store', () => {
 				speed: 36,
 			},
 		]);
-		expect(state.aggregates.power).toEqual({ count: 1, sum: 200 });
-		expect(state.aggregates.resistance).toEqual({ count: 1, sum: 42 });
+		expect(state.aggregates.power).toEqual({ count: 1, maximum: 200, sum: 200 });
+		expect(state.aggregates.resistance).toEqual({ count: 1, maximum: 42, sum: 42 });
 		subscription.unsubscribe();
 	});
 
@@ -81,8 +81,32 @@ describe('session store', () => {
 		expect(store.get().controlMode).toBe('gear');
 		expect(store.get().history[0]?.gear).toBe(16);
 		expect(store.get().history[0]?.resistance).toBeUndefined();
-		expect(store.get().aggregates.gear).toEqual({ count: 1, sum: 16 });
+		expect(store.get().aggregates.gear).toEqual({ count: 1, maximum: 16, sum: 16 });
 		expect(store.get().aggregates.resistance).toEqual({ count: 0, sum: 0 });
+	});
+
+	test('retains resistance and gear maxima after lower control samples', () => {
+		const resistanceStore = createSessionStore(restoredSession(), 1000);
+		resistanceStore.actions.syncRiding(true);
+		for (const resistance of [70, 35]) {
+			resistanceStore.actions.recordTick({
+				control: { gear: 12, mode: 'resistance', resistance },
+				metrics: liveMetrics,
+				seconds: 1,
+			});
+		}
+		expect(resistanceStore.get().aggregates.resistance.maximum).toBe(70);
+
+		const gearStore = createSessionStore(restoredSession(), 1000);
+		gearStore.actions.syncRiding(true);
+		for (const gear of [20, 12]) {
+			gearStore.actions.recordTick({
+				control: { gear, mode: 'gear', resistance: 42 },
+				metrics: liveMetrics,
+				seconds: 1,
+			});
+		}
+		expect(gearStore.get().aggregates.gear.maximum).toBe(20);
 	});
 
 	test('coordinates pause, end, reset, and continuation transitions', () => {

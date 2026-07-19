@@ -37,8 +37,12 @@ export function convertSpeed(kilometersPerHour: number, unit: SpeedUnit): number
 	return unit === 'mph' ? kilometersPerHour / KILOMETERS_PER_MILE : kilometersPerHour;
 }
 
+export function formatDistanceValue(kilometers: number, unit: SpeedUnit, decimals = 2): string {
+	return convertDistance(kilometers, unit).toFixed(decimals);
+}
+
 export function formatDistance(kilometers: number, unit: SpeedUnit, decimals = 2): string {
-	return `${convertDistance(kilometers, unit).toFixed(decimals)} ${distanceUnitLabel(unit)}`;
+	return `${formatDistanceValue(kilometers, unit, decimals)} ${distanceUnitLabel(unit)}`;
 }
 
 export function formatSpeed(kilometersPerHour: number, unit: SpeedUnit, decimals = 1): string {

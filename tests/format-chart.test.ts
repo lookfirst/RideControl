@@ -1,6 +1,11 @@
 import { describe, expect, test } from 'bun:test';
 import { chartPath, roundedChartMaximum, storedChartMode } from '../src/lib/chart';
-import { formatAggregateAverage, formatChartSeconds, formatDuration } from '../src/lib/format';
+import {
+	aggregateMaximum,
+	formatAggregateAverage,
+	formatChartSeconds,
+	formatDuration,
+} from '../src/lib/format';
 
 describe('format utilities', () => {
 	test('formats ride durations', () => {
@@ -15,6 +20,8 @@ describe('format utilities', () => {
 	test('formats aggregate averages', () => {
 		expect(formatAggregateAverage({ count: 2, sum: 11 }, 1)).toBe('5.5');
 		expect(formatAggregateAverage({ count: 0, sum: 0 }, 0)).toBe('0');
+		expect(aggregateMaximum({ count: 2, maximum: 8, sum: 11 })).toBe(8);
+		expect(aggregateMaximum({ count: 2, sum: 11 })).toBe(0);
 	});
 });
 

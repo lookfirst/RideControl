@@ -55,6 +55,7 @@ export function addAggregate(
 	}
 	return {
 		count: aggregate.count + 1,
+		maximum: Math.max(nonNegativeNumber(aggregate.maximum), Math.max(0, value)),
 		sum: aggregate.sum + Math.max(0, value),
 	};
 }
@@ -114,6 +115,9 @@ export function restoreAggregate(
 	}
 	return {
 		count: nonNegativeNumber(saved.count),
+		maximum: isFiniteNumber(saved.maximum)
+			? nonNegativeNumber(saved.maximum)
+			: nonNegativeNumber(fallback.maximum),
 		sum: nonNegativeNumber(saved.sum),
 	};
 }

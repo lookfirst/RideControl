@@ -44,6 +44,7 @@ export interface MetricSample {
 
 export interface MetricAggregate {
 	count: number;
+	maximum?: number;
 	sum: number;
 }
 
@@ -91,6 +92,7 @@ export interface SessionSnapshot {
 
 export interface SavedSession extends SessionSnapshot, SessionMetadata {
 	id: string;
+	importedAt?: number;
 }
 
 export interface SavedSessionSummary {
@@ -100,6 +102,7 @@ export interface SavedSessionSummary {
 	endedAt: number;
 	feeling?: SessionFeeling;
 	id: string;
+	importedAt?: number;
 	startedAt: number;
 }
 

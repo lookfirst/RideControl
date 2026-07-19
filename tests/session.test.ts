@@ -70,9 +70,9 @@ describe('session utilities', () => {
 
 	test('adds aggregate samples according to zero policy', () => {
 		const initial = { count: 2, sum: 10 };
-		expect(addAggregate(initial, 5, false)).toEqual({ count: 3, sum: 15 });
+		expect(addAggregate(initial, 5, false)).toEqual({ count: 3, maximum: 5, sum: 15 });
 		expect(addAggregate(initial, 0, false)).toBe(initial);
-		expect(addAggregate(initial, 0, true)).toEqual({ count: 3, sum: 10 });
+		expect(addAggregate(initial, 0, true)).toEqual({ count: 3, maximum: 0, sum: 10 });
 	});
 
 	test('aggregates cadence, heart rate, power, and resistance', () => {
@@ -86,9 +86,9 @@ describe('session utilities', () => {
 		).toEqual({
 			cadence: { count: 0, sum: 0 },
 			gear: { count: 0, sum: 0 },
-			heartRate: { count: 1, sum: 145 },
-			power: { count: 1, sum: 0 },
-			resistance: { count: 1, sum: 42 },
+			heartRate: { count: 1, maximum: 145, sum: 145 },
+			power: { count: 1, maximum: 0, sum: 0 },
+			resistance: { count: 1, maximum: 42, sum: 42 },
 		});
 	});
 
@@ -101,7 +101,7 @@ describe('session utilities', () => {
 				power: 200,
 			})
 		).toMatchObject({
-			gear: { count: 1, sum: 14 },
+			gear: { count: 1, maximum: 14, sum: 14 },
 			resistance: { count: 0, sum: 0 },
 		});
 	});
@@ -117,17 +117,20 @@ describe('session utilities', () => {
 			])
 		).toEqual({
 			count: 3,
+			maximum: 100,
 			sum: 125,
 		});
 	});
 
 	test('restores valid aggregate values and falls back when absent', () => {
-		expect(restoreAggregate({ count: -2, sum: 20 }, { count: 1, sum: 2 })).toEqual({
+		expect(restoreAggregate({ count: -2, sum: 20 }, { count: 1, maximum: 8, sum: 2 })).toEqual({
 			count: 0,
+			maximum: 8,
 			sum: 20,
 		});
-		expect(restoreAggregate(undefined, { count: 1, sum: 2 })).toEqual({
+		expect(restoreAggregate(undefined, { count: 1, maximum: 2, sum: 2 })).toEqual({
 			count: 1,
+			maximum: 2,
 			sum: 2,
 		});
 	});
@@ -163,8 +166,8 @@ describe('session utilities', () => {
 		expect(session.history[0]?.resistance).toBe(42);
 		expect(session.history[0]?.gear).toBeUndefined();
 		expect(session.controlMode).toBe('resistance');
-		expect(session.aggregates.power).toEqual({ count: 1, sum: 200 });
-		expect(session.aggregates.resistance).toEqual({ count: 1, sum: 42 });
+		expect(session.aggregates.power).toEqual({ count: 1, maximum: 200, sum: 200 });
+		expect(session.aggregates.resistance).toEqual({ count: 1, maximum: 42, sum: 42 });
 		expect(session.maximums.speed).toBe(35);
 		expect(session.savedSessionId).toBe('saved-session');
 		expect(session.startedAt).toBe(1000);

@@ -1,4 +1,5 @@
 import type { MetricAggregate } from '../types';
+import { nonNegativeNumber } from './numbers';
 import { SECONDS_PER_HOUR, SECONDS_PER_MINUTE } from './units';
 
 export function formatDuration(totalSeconds: number) {
@@ -22,6 +23,10 @@ export function formatAggregateAverage(aggregate: MetricAggregate, decimals: num
 
 export function aggregateAverage(aggregate: MetricAggregate): number {
 	return aggregate.count > 0 ? aggregate.sum / aggregate.count : 0;
+}
+
+export function aggregateMaximum(aggregate: MetricAggregate): number {
+	return nonNegativeNumber(aggregate.maximum);
 }
 
 export function formatWholeNumber(value: number): string {

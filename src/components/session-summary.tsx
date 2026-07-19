@@ -1,5 +1,5 @@
 import { formatDuration, formatWholeNumber } from '../lib/format';
-import { formatDistance } from '../lib/units';
+import { distanceUnitLabel, formatDistanceValue } from '../lib/units';
 import type { SpeedUnit } from '../types';
 import { SmallMetric } from './metrics';
 
@@ -24,12 +24,14 @@ export function SessionSummary({
 			<SmallMetric
 				label="DISTANCE"
 				large={large}
-				value={formatDistance(distance, speedUnit)}
+				unit={distanceUnitLabel(speedUnit)}
+				value={formatDistanceValue(distance, speedUnit)}
 			/>
 			<SmallMetric
 				label="CALORIES"
 				large={large}
-				value={`${formatWholeNumber(calories)} kcal`}
+				unit="kcal"
+				value={formatWholeNumber(calories)}
 			/>
 		</>
 	);

@@ -41,7 +41,9 @@ export function Metric({
 		<div className="rounded-2xl border border-line bg-panel p-5">
 			<div className="flex items-center justify-between">
 				<span className="font-bold text-slate-500 text-xs tracking-[.14em]">{label}</span>
-				{icon ? <Icon className={metricIconClass(accent)} name={icon} /> : null}
+				{icon ? (
+					<Icon className={`h-5 w-5 ${metricIconClass(accent)}`} name={icon} />
+				) : null}
 			</div>
 			<div className="mt-4 flex items-baseline gap-2">
 				<span className="font-semibold text-6xl tracking-tight">{value}</span>
@@ -59,19 +61,28 @@ export function Metric({
 export function SmallMetric({
 	large = false,
 	label,
+	unit,
 	value,
 }: {
 	large?: boolean;
 	label: string;
+	unit?: string;
 	value: string;
 }) {
 	return (
 		<div className="p-4 sm:p-5">
 			<p className="font-bold text-[11px] text-slate-500 tracking-[.12em]">{label}</p>
 			<p
-				className={`mt-1 font-semibold tracking-tight ${large ? 'text-3xl sm:text-5xl' : 'text-lg sm:text-2xl'}`}
+				className={`mt-1 flex items-baseline gap-2 font-semibold tracking-tight ${large ? 'text-3xl sm:text-5xl' : 'text-lg sm:text-2xl'}`}
 			>
-				{value}
+				<span>{value}</span>
+				{unit ? (
+					<span
+						className={`font-medium text-slate-400 tracking-normal ${large ? 'text-base sm:text-xl' : 'text-xs sm:text-sm'}`}
+					>
+						{unit}
+					</span>
+				) : null}
 			</p>
 		</div>
 	);
@@ -109,7 +120,7 @@ export function SessionMetric({
 						<strong className="mr-1 font-bold text-slate-600 tracking-[.08em]">
 							MAX
 						</strong>
-						{maximum} {unit}
+						{maximum}
 					</span>
 				)}
 			</div>
