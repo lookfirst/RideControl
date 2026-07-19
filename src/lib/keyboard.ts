@@ -41,12 +41,12 @@ export const gearingKeyboardShortcuts: KeyboardShortcutDescription[] =
 	);
 
 export const historyKeyboardShortcuts: KeyboardShortcutDescription[] = [
-	{ keys: ['↑', '↓'], label: 'Select the previous or next session' },
-	{ keys: ['←', '→'], label: 'Change the session chart view' },
-	{ keys: ['d'], label: 'Delete the selected session' },
-	{ keys: ['Enter'], label: 'Confirm session deletion' },
-	{ keys: ['?'], label: 'Show history keyboard controls' },
-	{ keys: ['Esc'], label: 'Close help or session history' },
+	{ group: 'Navigation', keys: ['↑', '↓'], label: 'Select the previous or next session' },
+	{ group: 'Navigation', keys: ['←', '→'], label: 'Change the session chart view' },
+	{ group: 'Session', keys: ['d'], label: 'Delete the selected session' },
+	{ group: 'Session', keys: ['Enter'], label: 'Confirm session deletion' },
+	{ group: 'General', keys: ['?'], label: 'Show history keyboard controls' },
+	{ group: 'General', keys: ['Esc'], label: 'Close help or session history' },
 ];
 
 export function appShortcutForKey({ code, key }: Pick<KeyboardEvent, 'code' | 'key'>) {

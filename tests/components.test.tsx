@@ -515,6 +515,9 @@ describe('view components', () => {
 		expect(historyHtml).toContain('Change the session chart view');
 		expect(historyHtml).toContain('Delete the selected session');
 		expect(historyHtml).toContain('Confirm session deletion');
+		expect(historyHtml).toContain('NAVIGATION');
+		expect(historyHtml).toContain('SESSION');
+		expect(historyHtml).toContain('GENERAL');
 		expect(historyHtml).not.toContain('Increase or decrease resistance');
 		expect(historyHtml).not.toContain('Pause or resume');
 		expect(historyHtml).not.toContain('Start a new session after ending');
