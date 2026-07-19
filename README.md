@@ -34,6 +34,15 @@ bun run dev
 
 Open <http://localhost:4200> in current Chrome.
 
+## Architecture
+
+Ride session data is held in a per-app TanStack Store and changed through atomic domain actions.
+The `useSession` adapter owns recording timers and durable browser persistence while exposing the
+existing session controller API to the interface. Web Bluetooth devices, GATT characteristics,
+retry queues, and listeners remain inside their dedicated device hooks; only serializable device
+status should cross into shared application state. Temporary dialogs and form inputs remain local
+React state.
+
 ## Deployment
 
 Pull requests and pushes to `main` run the complete `bun run ci` suite in GitHub Actions. After
