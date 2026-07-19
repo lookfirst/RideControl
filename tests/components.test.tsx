@@ -208,6 +208,7 @@ describe('view components', () => {
 		expect(html).toContain('show again');
 		expect(html).toContain('tracking-wide transition hover:text-slate-400');
 		expect(html).toContain('type="button">Ride Control</button>');
+		expect(html).toContain('xl:grid-cols-[1.45fr_.55fr]');
 		expect(html.indexOf('KM/H')).toBeLessThan(html.indexOf('Show keyboard controls'));
 		expect(html).toMatch(enabledEndSessionButton);
 	});
@@ -286,6 +287,12 @@ describe('view components', () => {
 		);
 		expect(html).toContain('Resistance over time');
 		expect(html).toContain('Resistance</button>');
+		expect(html).toContain('grid-cols-[3.75rem_minmax(0,1fr)]');
+		expect(html).toContain('absolute right-2 -translate-y-1/2 whitespace-nowrap');
+		expect(html).toContain('pointer-events-none relative h-full w-15 shrink-0');
+		expect(html).toContain('h-full min-w-0 flex-1 overflow-hidden');
+		expect(html).toContain('class="block h-full w-full"');
+		expect(html).not.toContain('absolute top-[11%] bottom-[8%] left-1');
 	});
 
 	test('renders the session save workflow', () => {

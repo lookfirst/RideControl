@@ -27,37 +27,44 @@ export function ChartPlot({
 	values,
 }: PlotProps) {
 	const labels = [maximum, (maximum + minimum) / 2, minimum];
+	const labelPositions = [14, 52, 90];
 	return (
-		<div className={`relative w-full ${heightClass}`}>
-			<div className="pointer-events-none absolute top-[11%] bottom-[8%] left-1 z-10 flex flex-col justify-between font-medium text-[10px] text-slate-400">
-				{labels.map((label) => (
-					<span className="w-fit rounded bg-[#12171d]/85 px-1" key={label}>
+		<div className={`flex w-full ${heightClass}`}>
+			<div className="pointer-events-none relative h-full w-15 shrink-0 font-medium text-[10px] text-slate-400">
+				{labels.map((label, index) => (
+					<span
+						className="absolute right-2 -translate-y-1/2 whitespace-nowrap"
+						key={label}
+						style={{ top: `${labelPositions[index]}%` }}
+					>
 						{label.toFixed(decimals)} {unit}
 					</span>
 				))}
 			</div>
-			<svg
-				className="h-full w-full overflow-visible"
-				preserveAspectRatio="none"
-				viewBox="0 0 100 100"
-			>
-				<title>{title}</title>
-				<path
-					d="M0 90H100 M0 52H100 M0 14H100 M25 14V90 M50 14V90 M75 14V90"
-					fill="none"
-					stroke="#3a4654"
-					strokeDasharray="2.5 2.5"
-					strokeWidth=".75"
-					vectorEffect="non-scaling-stroke"
-				/>
-				<path
-					d={chartPath(values, minimum, maximum, positions)}
-					fill="none"
-					stroke={color}
-					strokeWidth="1.5"
-					vectorEffect="non-scaling-stroke"
-				/>
-			</svg>
+			<div className="h-full min-w-0 flex-1 overflow-hidden">
+				<svg
+					className="block h-full w-full"
+					preserveAspectRatio="none"
+					viewBox="0 0 100 100"
+				>
+					<title>{title}</title>
+					<path
+						d="M0 90H100 M0 52H100 M0 14H100 M25 14V90 M50 14V90 M75 14V90"
+						fill="none"
+						stroke="#3a4654"
+						strokeDasharray="2.5 2.5"
+						strokeWidth=".75"
+						vectorEffect="non-scaling-stroke"
+					/>
+					<path
+						d={chartPath(values, minimum, maximum, positions)}
+						fill="none"
+						stroke={color}
+						strokeWidth="1.5"
+						vectorEffect="non-scaling-stroke"
+					/>
+				</svg>
+			</div>
 		</div>
 	);
 }
@@ -263,12 +270,15 @@ export function SessionChart({
 						))
 					)}
 				</div>
-				<div className="mt-1 flex justify-between text-[10px] text-slate-500">
-					{[0, 0.25, 0.5, 0.75, 1].map((position) => (
-						<span key={position}>
-							{formatChartSeconds(historyStart + historySeconds * position)}
-						</span>
-					))}
+				<div className="mt-1 grid grid-cols-[3.75rem_minmax(0,1fr)] text-[10px] text-slate-500">
+					<span aria-hidden="true" />
+					<div className="flex justify-between">
+						{[0, 0.25, 0.5, 0.75, 1].map((position) => (
+							<span key={position}>
+								{formatChartSeconds(historyStart + historySeconds * position)}
+							</span>
+						))}
+					</div>
 				</div>
 			</div>
 		</div>

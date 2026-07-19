@@ -415,7 +415,7 @@ export function App() {
 					/>
 				</section>
 
-				<section className="mt-6 grid gap-6 xl:grid-cols-[1.35fr_.65fr]">
+				<section className="mt-6 grid gap-6 xl:grid-cols-[1.45fr_.55fr]">
 					<div className="rounded-2xl border border-line bg-panel p-5 sm:p-6">
 						<div className="grid grid-cols-3 divide-x divide-line rounded-xl border border-slate-500 bg-[#12171d]">
 							<SmallMetric
