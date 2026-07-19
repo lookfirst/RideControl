@@ -1,3 +1,4 @@
+import { CONTROL_MODE } from './lib/control-mode';
 import type { Metrics, StoredSession } from './types';
 
 export const FITNESS_MACHINE = 0x18_26;
@@ -13,10 +14,13 @@ export const CYCLING_POWER_MEASUREMENT = 0x2a_63;
 export const CSC_MEASUREMENT = 0x2a_5b;
 export const CHROME_BLUETOOTH_FLAGS_URL =
 	'chrome://flags/#enable-web-bluetooth-new-permissions-backend';
-export const AUTOMATIC_RECONNECT_README_URL =
-	'https://github.com/lookfirst/RideControl#automatic-reconnect';
 export const CHROME_BLUETOOTH_PERMISSION_MESSAGE = 'Chrome returned no site-authorized.';
+export const WEB_BLUETOOTH_UNAVAILABLE_MESSAGE =
+	'Web Bluetooth requires current Chrome or Edge on localhost or HTTPS.';
 export const RECORDING_PAUSE_DELAY_MS = 10_000;
+export const CONTROL_FLASH_MS = 180;
+export const MAX_SESSION_HISTORY_SAMPLES = 3600;
+export const EMPTY_ROUTE = [] as const;
 
 export const optionalServices: BluetoothServiceUUID[] = [
 	FITNESS_MACHINE,
@@ -44,7 +48,8 @@ export const emptySession: StoredSession = {
 		resistance: { count: 0, sum: 0 },
 	},
 	calories: 0,
-	controlMode: 'resistance',
+	controlMode: CONTROL_MODE.RESISTANCE,
+	discarded: false,
 	distance: 0,
 	elapsedSeconds: 0,
 	ended: false,

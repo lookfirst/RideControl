@@ -1,4 +1,6 @@
 import { type CSSProperties, useEffect, useRef, useState } from 'react';
+import { CONTROL_FLASH_MS } from '../constants';
+import { clamp } from '../lib/numbers';
 import { resistanceAdjustmentDirection } from '../lib/resistance';
 import type { ResistanceAdjustmentDirection, ResistanceRamp } from '../types';
 import { Icon } from './icon';
@@ -26,10 +28,9 @@ export function ResistanceControl({
 	const sliderDragging = useRef(false);
 	const sliderFlashTimer = useRef<number | undefined>(undefined);
 	const sliderValue = useRef(value);
-	const rampProgress = ramp.phase === 'settled' ? 1 : Math.max(0, Math.min(1, ramp.progress));
+	const rampProgress = ramp.phase === 'settled' ? 1 : clamp(ramp.progress, 0, 1);
 	const rampProgressPercent = Math.round(rampProgress * 100);
-	const sliderPosition =
-		max > min ? Math.max(0, Math.min(1, (value - min) / (max - min))) * 100 : 0;
+	const sliderPosition = max > min ? clamp((value - min) / (max - min), 0, 1) * 100 : 0;
 	const sliderStyle = {
 		'--ramp-progress': `${rampProgress * 360}deg`,
 		'--resistance-position': `${sliderPosition}%`,
@@ -54,7 +55,10 @@ export function ResistanceControl({
 	const clearSliderFlash = () => {
 		sliderDragging.current = false;
 		window.clearTimeout(sliderFlashTimer.current);
-		sliderFlashTimer.current = window.setTimeout(() => setSliderFlash(undefined), 180);
+		sliderFlashTimer.current = window.setTimeout(
+			() => setSliderFlash(undefined),
+			CONTROL_FLASH_MS
+		);
 	};
 
 	const handleSliderChange = (next: number) => {
@@ -64,7 +68,10 @@ export function ResistanceControl({
 			window.clearTimeout(sliderFlashTimer.current);
 			setSliderFlash(direction);
 			if (!sliderDragging.current) {
-				sliderFlashTimer.current = window.setTimeout(() => setSliderFlash(undefined), 180);
+				sliderFlashTimer.current = window.setTimeout(
+					() => setSliderFlash(undefined),
+					CONTROL_FLASH_MS
+				);
 			}
 		}
 		onChange(next);

@@ -54,6 +54,14 @@ describe('keyboard shortcuts', () => {
 		expect(historyShortcutForKey('D')).toBe('deleteSession');
 		expect(historyShortcutForKey('Enter')).toBe('confirmDelete');
 		expect(historyKeyboardShortcuts[2]?.keys).toEqual(['d']);
+		expect(historyKeyboardShortcuts.map(({ group }) => group)).toEqual([
+			'Navigation',
+			'Navigation',
+			'Session',
+			'Session',
+			'General',
+			'General',
+		]);
 		expect(historyShortcutForKey('?')).toBe('help');
 		expect(historyShortcutForKey('Escape')).toBe('close');
 		expect(historyShortcutForKey('ArrowLeft')).toBeUndefined();

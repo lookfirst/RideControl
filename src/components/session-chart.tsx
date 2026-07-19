@@ -1,11 +1,14 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import {
-	chartModesForControl,
-	chartPath,
-	roundedChartMaximum,
-	storedChartMode,
-} from '../lib/chart';
+import { useSelector } from '@tanstack/react-store';
+import { Fragment, useCallback, useEffect, useMemo } from 'react';
+import { chartModesForControl, chartPath, roundedChartMaximum } from '../lib/chart';
+import { CONTROL_MODE, isControlMode } from '../lib/control-mode';
+import { eventTargetsEditableControl, keyboardEventHasModifiers } from '../lib/dom';
 import { formatChartSeconds } from '../lib/format';
+import { MAX_GEAR, MIN_GEAR } from '../lib/gears';
+import { METRIC_PRESENTATION, STANDARD_METRIC_KEYS } from '../lib/metric-presentation';
+import { MAX_RESISTANCE, MIN_RESISTANCE } from '../lib/resistance';
+import { convertSpeed, minimumSpeedChartMaximum, speedUnitLabel } from '../lib/units';
+import { preferencesStore } from '../stores/preferences-store';
 import type { ChartMode, ControlMode, MetricSample, RoutePoint, SpeedUnit } from '../types';
 
 interface PlotProps {
@@ -91,108 +94,80 @@ export function SessionChart({
 	controlMode?: ControlMode;
 	history: MetricSample[];
 	keyboardEnabled?: boolean;
-	route: RoutePoint[];
+	route: readonly RoutePoint[];
 	speedUnit: SpeedUnit;
 }) {
-	const [selectedMode, setSelectedMode] = useState<ChartMode>(storedChartMode);
+	const selectedMode = useSelector(preferencesStore, (preferences) => preferences.chartMode);
 	const resolvedControlMode =
 		controlMode ??
-		(history.some((sample) => sample.gear !== undefined) ? 'gear' : 'resistance');
-	const modeForAvailableControl =
-		selectedMode === 'gear' || selectedMode === 'resistance'
-			? resolvedControlMode
-			: selectedMode;
+		(history.some((sample) => sample.gear !== undefined)
+			? CONTROL_MODE.GEAR
+			: CONTROL_MODE.RESISTANCE);
+	const modeForAvailableControl = isControlMode(selectedMode)
+		? resolvedControlMode
+		: selectedMode;
 	const effectiveMode =
 		modeForAvailableControl === 'elevation' && route.length === 0
 			? 'all'
 			: modeForAvailableControl;
 	const series = useMemo(() => {
+		const speedValues = history.map((sample) => convertSpeed(sample.speed, speedUnit));
+		const standardSeries = STANDARD_METRIC_KEYS.map((key) => {
+			const presentation = METRIC_PRESENTATION[key];
+			const values = history.map((sample) => sample[key]);
+			return {
+				chartMaximum: roundedChartMaximum(
+					Math.max(...values, 0),
+					presentation.chartMinimumMaximum,
+					presentation.chartStep
+				),
+				color: presentation.chartColor,
+				decimals: 0,
+				key,
+				label: presentation.label,
+				minimum: 0,
+				unit: presentation.unit,
+				values,
+			};
+		});
 		const controlSeries =
-			resolvedControlMode === 'gear'
+			resolvedControlMode === CONTROL_MODE.GEAR
 				? {
-						chartMaximum: 24,
+						chartMaximum: MAX_GEAR,
 						color: '#adf5bd',
 						decimals: 0,
-						key: 'gear' as const,
+						key: CONTROL_MODE.GEAR,
 						label: 'Gear',
-						minimum: 1,
+						minimum: MIN_GEAR,
 						unit: '',
 						values: history.map((sample) => sample.gear),
 					}
 				: {
-						chartMaximum: 100,
+						chartMaximum: MAX_RESISTANCE,
 						color: '#adf5bd',
 						decimals: 0,
-						key: 'resistance' as const,
+						key: CONTROL_MODE.RESISTANCE,
 						label: 'Resistance',
-						minimum: 0,
+						minimum: MIN_RESISTANCE,
 						unit: '%',
 						values: history.map((sample) => sample.resistance),
 					};
 		return [
 			{
 				chartMaximum: roundedChartMaximum(
-					Math.max(
-						...history.map(
-							(sample) => sample.speed * (speedUnit === 'mph' ? 0.621_371 : 1)
-						),
-						0
-					),
-					speedUnit === 'mph' ? 20 : 30,
+					Math.max(...speedValues, 0),
+					minimumSpeedChartMaximum(speedUnit),
 					5
 				),
-				color: '#38bdf8',
+				color: METRIC_PRESENTATION.speed.chartColor,
 				decimals: 1,
 				key: 'speed' as const,
-				label: 'Speed',
+				label: METRIC_PRESENTATION.speed.label,
 				minimum: 0,
-				unit: speedUnit === 'mph' ? 'mph' : 'km/h',
-				values: history.map((sample) =>
-					speedUnit === 'mph' ? sample.speed * 0.621_371 : sample.speed
-				),
+				unit: speedUnitLabel(speedUnit),
+				values: speedValues,
 			},
-			{
-				chartMaximum: roundedChartMaximum(
-					Math.max(...history.map((sample) => sample.power), 0),
-					100,
-					50
-				),
-				color: '#facc15',
-				decimals: 0,
-				key: 'power' as const,
-				label: 'Power',
-				minimum: 0,
-				unit: 'W',
-				values: history.map((sample) => sample.power),
-			},
-			{
-				chartMaximum: roundedChartMaximum(
-					Math.max(...history.map((sample) => sample.cadence), 0),
-					80,
-					10
-				),
-				color: '#a78bfa',
-				decimals: 0,
-				key: 'cadence' as const,
-				label: 'Cadence',
-				minimum: 0,
-				unit: 'rpm',
-				values: history.map((sample) => sample.cadence),
-			},
-			{
-				chartMaximum: roundedChartMaximum(
-					Math.max(...history.map((sample) => sample.heartRate), 0),
-					180,
-					10
-				),
-				color: '#fb7185',
-				decimals: 0,
-				key: 'heartRate' as const,
-				label: 'Heart rate',
-				minimum: 0,
-				unit: 'bpm',
-				values: history.map((sample) => sample.heartRate),
-			},
+			...standardSeries,
 			controlSeries,
 		];
 	}, [history, resolvedControlMode, speedUnit]);
@@ -216,23 +191,20 @@ export function SessionChart({
 	const historySeconds =
 		history.length > 1 ? (history.at(-1)?.elapsedSeconds ?? 0) - historyStart : 0;
 
-	const selectMode = useCallback((mode: ChartMode) => {
-		setSelectedMode(mode);
-		localStorage.setItem('trainer-chart-mode', mode);
-	}, []);
+	const selectMode = useCallback(
+		(mode: ChartMode) => preferencesStore.actions.selectChartMode(mode),
+		[]
+	);
 
 	useEffect(() => {
 		if (!keyboardEnabled) {
 			return;
 		}
 		const handleKeys = (event: KeyboardEvent) => {
-			const target = event.target as HTMLElement | null;
 			if (
 				event.defaultPrevented ||
-				event.altKey ||
-				event.ctrlKey ||
-				event.metaKey ||
-				target?.matches("input, textarea, select, [contenteditable='true']") ||
+				keyboardEventHasModifiers(event) ||
+				eventTargetsEditableControl(event) ||
 				!['ArrowLeft', 'ArrowRight'].includes(event.key)
 			) {
 				return;
@@ -299,19 +271,27 @@ export function SessionChart({
 							values={elevationValues}
 						/>
 					) : (
-						visibleSeries.map((item) => (
-							<ChartPlot
-								color={item.color}
-								decimals={item.decimals}
-								heightClass={effectiveMode === 'all' ? 'h-24' : 'h-52'}
-								key={item.key}
-								maximum={item.chartMaximum}
-								minimum={item.minimum}
-								positions={historyPositions}
-								title={`${item.label} over time`}
-								unit={item.unit}
-								values={item.values}
-							/>
+						visibleSeries.map((item, index) => (
+							<Fragment key={item.key}>
+								<ChartPlot
+									color={item.color}
+									decimals={item.decimals}
+									heightClass={effectiveMode === 'all' ? 'h-24' : 'h-52'}
+									maximum={item.chartMaximum}
+									minimum={item.minimum}
+									positions={historyPositions}
+									title={`${item.label} over time`}
+									unit={item.unit}
+									values={item.values}
+								/>
+								{effectiveMode === 'all' && index < visibleSeries.length - 1 ? (
+									<div
+										aria-hidden="true"
+										className="pointer-events-none relative -my-3 ml-15 h-6 bg-white/1.5"
+										data-chart-separator="true"
+									/>
+								) : null}
+							</Fragment>
 						))
 					)}
 				</div>

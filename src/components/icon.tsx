@@ -5,6 +5,8 @@ const paths: Record<string, string> = {
 	cadence: 'M20 11a8 8 0 0 0-15.5-2M4 4v5h5M4 13a8 8 0 0 0 15.5 2M20 20v-5h-5',
 	controls: 'M7 4v6m0 4v6m10-16v2m0 4v10M4 10h6m4-4h6M4 14h6m4-4h6',
 	heart: 'M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1-1.1a5.5 5.5 0 0 0-7.8 7.8l1 1L12 21l7.8-7.6a5.5 5.5 0 0 0 1-8.8Z',
+	imported:
+		'M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8m-6-6 6 6m-6-6v6h6M8 15l2 2 5-5',
 	minus: 'M5 12h14',
 	pause: 'M9 5v14m6-14v14',
 	play: 'm9 5 10 7-10 7V5Z',
@@ -16,11 +18,19 @@ const paths: Record<string, string> = {
 	upload: 'M12 16V4m0 0 4 4m-4-4L8 8M5 20h14',
 };
 
-export function Icon({ name, className = '' }: { name: string; className?: string }) {
+export function Icon({
+	name,
+	className = 'h-5 w-5',
+	title = name,
+}: {
+	name: string;
+	className?: string;
+	title?: string;
+}) {
 	return (
 		<svg
 			aria-hidden="true"
-			className={`h-5 w-5 ${className}`}
+			className={className}
 			fill="none"
 			stroke="currentColor"
 			strokeLinecap="round"
@@ -28,7 +38,7 @@ export function Icon({ name, className = '' }: { name: string; className?: strin
 			strokeWidth="1.8"
 			viewBox="0 0 24 24"
 		>
-			<title>{name}</title>
+			<title>{title}</title>
 			<path d={paths[name] ?? paths.bike} />
 		</svg>
 	);

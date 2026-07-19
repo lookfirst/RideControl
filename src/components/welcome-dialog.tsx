@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCloseOnEscape } from '../hooks/use-dialog-behavior';
 
 export function WelcomeDialog({
 	onClose,
@@ -9,6 +10,8 @@ export function WelcomeDialog({
 }) {
 	const [dontShowAgain, setDontShowAgain] = useState(false);
 	const dontShowAgainRef = useRef(false);
+	const closeFromEscape = useCallback(() => onClose(dontShowAgainRef.current), [onClose]);
+	useCloseOnEscape(open, closeFromEscape);
 
 	useEffect(() => {
 		if (!open) {
@@ -16,15 +19,7 @@ export function WelcomeDialog({
 		}
 		dontShowAgainRef.current = false;
 		setDontShowAgain(false);
-		const closeOnEscape = (event: KeyboardEvent) => {
-			if (event.key === 'Escape') {
-				event.preventDefault();
-				onClose(dontShowAgainRef.current);
-			}
-		};
-		window.addEventListener('keydown', closeOnEscape);
-		return () => window.removeEventListener('keydown', closeOnEscape);
-	}, [onClose, open]);
+	}, [open]);
 
 	function updateDontShowAgain(checked: boolean) {
 		dontShowAgainRef.current = checked;

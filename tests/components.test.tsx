@@ -6,25 +6,27 @@ import { DevicePairingButton, DevicePairingPanel } from '../src/components/devic
 import { GearControl } from '../src/components/gear-control';
 import { Icon } from '../src/components/icon';
 import { KeyboardShortcutsDialog } from '../src/components/keyboard-shortcuts-dialog';
-import {
-	Metric,
-	metricAccentClass,
-	metricIconClass,
-	SessionMetric,
-	SmallMetric,
-} from '../src/components/metrics';
+import { Metric, SessionMetric, SmallMetric } from '../src/components/metrics';
 import { Notification } from '../src/components/notification';
 import { ResistanceControl } from '../src/components/resistance-control';
 import { SessionChart } from '../src/components/session-chart';
-import {
-	DeleteSessionDialog,
-	SessionDetail,
-	SessionHistory,
-} from '../src/components/session-history';
+import { DeleteSessionDialog, SessionDetail } from '../src/components/session-detail';
+import { SessionHistory } from '../src/components/session-history';
+import { SessionHistoryList } from '../src/components/session-history-list';
 import { SessionSaveDialog } from '../src/components/session-save-dialog';
+import { TrainingControl } from '../src/components/training-control';
 import { WelcomeDialog } from '../src/components/welcome-dialog';
-import { CHROME_BLUETOOTH_PERMISSION_MESSAGE, emptyMetrics, emptySession } from '../src/constants';
+import {
+	CHROME_BLUETOOTH_FLAGS_URL,
+	CHROME_BLUETOOTH_PERMISSION_MESSAGE,
+	emptyMetrics,
+	emptySession,
+} from '../src/constants';
 import { historyKeyboardShortcuts } from '../src/lib/keyboard';
+import { metricAccentClass, metricIconClass } from '../src/lib/metric-presentation';
+import { formatSessionImportTime, sessionSummary } from '../src/lib/saved-sessions';
+import { SESSION_WORKFLOW_INTENT } from '../src/lib/session-workflow';
+import { savedSessionFixture } from './fixtures/saved-session';
 
 const render = (element: React.ReactNode) => renderToStaticMarkup(element);
 const enabledEndSessionButton = /<button(?![^>]*disabled)[^>]*>End session<\/button>/;
@@ -53,9 +55,11 @@ describe('view components', () => {
 		expect(html).toContain('POWER');
 		expect(html).toContain('200');
 		expect(html).toContain('grid grid-cols-2 gap-3 border-line border-t pt-3');
-		expect(html).toContain('font-semibold text-2xl text-white tabular-nums tracking-tight');
-		expect(html).toContain('<span>180</span>');
-		expect(html).toContain('<span>300</span>');
+		expect(html).toContain('font-semibold text-6xl tracking-tight');
+		expect(html).toContain('font-semibold text-4xl text-white tabular-nums tracking-tight');
+		expect(html).toContain('>180</p>');
+		expect(html).toContain('>300</p>');
+		expect(html.match(/watts/g)).toHaveLength(1);
 		expect(metricAccentClass('rose')).toBe('bg-rose-400');
 		expect(metricAccentClass('other')).toBe('bg-mint');
 		expect(metricIconClass('violet')).toBe('text-violet-400');
@@ -64,6 +68,13 @@ describe('view components', () => {
 
 	test('renders a compact session metric', () => {
 		expect(render(<SmallMetric label="TIME" value="01:02:03" />)).toContain('01:02:03');
+		expect(render(<SmallMetric label="TIME" large value="01:02:03" />)).toContain(
+			'text-3xl sm:text-5xl'
+		);
+		const distance = render(<SmallMetric label="DISTANCE" large unit="mi" value="10.00" />);
+		expect(distance).toContain('>10.00</span>');
+		expect(distance).toContain('text-base sm:text-xl');
+		expect(distance).toContain('>mi</span>');
 		const html = render(
 			<SessionMetric
 				accent="yellow"
@@ -77,6 +88,8 @@ describe('view components', () => {
 		expect(html).toContain('text-3xl');
 		expect(html).toContain('bg-yellow-400');
 		expect(html).toContain('<title>bolt</title>');
+		expect(html.match(/>W<\/span>/g)).toHaveLength(1);
+		expect(html).toContain('MAX</strong>300');
 		const averageOnly = render(
 			<SessionMetric
 				accent="mint"
@@ -252,6 +265,8 @@ describe('view components', () => {
 			onPair: () => undefined,
 			onReconnect: () => undefined,
 			paired: false,
+			phase: 'unpaired' as const,
+			reconnecting: false,
 			status: 'Not paired',
 		};
 		const panel = render(
@@ -259,26 +274,37 @@ describe('view components', () => {
 				browserNotice=""
 				click={{
 					...common,
+					busy: true,
 					connectedCount: 0,
 					controllers: [
 						{
 							active: false,
+							busy: true,
 							connected: false,
-							connecting: true,
 							id: 'minus-click',
 							label: '− Controller',
+							paired: true,
+							phase: 'reconnecting',
+							reconnecting: true,
+							status: 'Reconnecting…',
 						},
 						{
 							active: true,
+							busy: false,
 							connected: false,
-							connecting: false,
 							id: 'plus-click',
 							label: '+ Controller',
+							paired: true,
+							phase: 'offline',
+							reconnecting: false,
+							status: 'Paired · offline',
 						},
 					],
 					onForgetController: () => undefined,
+					paired: true,
 					pairedCount: 2,
 					pairing: false,
+					phase: 'reconnecting',
 					reconnecting: true,
 				}}
 				heartRate={common}
@@ -288,22 +314,55 @@ describe('view components', () => {
 			/>
 		);
 		expect(panel).toContain('Paired devices');
+		expect(panel).toContain('data-side-tray="true"');
+		expect(panel).toContain('transition-opacity duration-200');
+		expect(panel).toContain('transition-transform duration-200');
+		expect(panel).toContain('translate-x-0');
 		expect(panel).toContain('Smart trainer');
 		expect(panel).toContain('Heart rate');
 		expect(panel).toContain('Zwift Click V2');
-		expect(panel).toContain('Waiting for controllers…');
+		expect(panel).toContain('Reconnecting…');
+		expect(panel).not.toContain('Waiting for controllers…');
 		expect(panel).not.toContain('Retry');
-		expect(panel).toContain('Reconnect');
-		expect(panel.match(/animate-pulse/g)).toHaveLength(3);
-		expect(panel.match(/animate-pulse bg-sky-400/g)).toHaveLength(2);
-		expect(panel).toContain('Enable reconnect saving in Chrome');
-		expect(panel).toContain('https://github.com/lookfirst/RideControl#automatic-reconnect');
+		expect(panel).toContain('Connecting…');
+		expect(panel).not.toContain('>Reconnect</button>');
+		expect(panel.match(/animate-pulse/g)).toHaveLength(2);
+		expect(panel.match(/animate-pulse bg-sky-400/g)).toHaveLength(1);
+		expect(panel).toContain('Automatic reconnect in Chrome');
+		expect(panel).toContain('Chrome needs persistent Bluetooth permissions');
+		expect(panel).toContain('chrome://flags/#enable-web-bluetooth-new-permissions-backend');
+		expect(panel).toContain('Copy Chrome Bluetooth settings address');
+		expect(panel).toContain('Use the new permissions backend for Web Bluetooth');
+		expect(panel).toContain('Relaunch Chrome, then pair each device once more.');
+		expect(panel).not.toContain('github.com/lookfirst/RideControl#automatic-reconnect');
 		expect(panel).toContain('+ Controller');
 		expect(panel.indexOf('+ Controller')).toBeLessThan(panel.indexOf('− Controller'));
 		expect(panel).toContain('animate-pulse');
 		expect(panel).toContain('bg-mint/10');
 		expect(panel).not.toContain('shadow-[inset_0_0_18px');
 		expect(panel).not.toContain('divide-y');
+		const configuredPanel = render(
+			<DevicePairingPanel
+				automaticReconnectConfigured
+				browserNotice=""
+				click={{
+					...common,
+					connectedCount: 0,
+					controllers: [],
+					onForgetController: () => undefined,
+					pairedCount: 0,
+					pairing: false,
+					reconnecting: false,
+				}}
+				heartRate={common}
+				onClose={() => undefined}
+				open
+				trainer={common}
+			/>
+		);
+		expect(configuredPanel).toContain('Automatic reconnect is configured correctly');
+		expect(configuredPanel).not.toContain(CHROME_BLUETOOTH_FLAGS_URL);
+		expect(configuredPanel).not.toContain('Use the new permissions backend for Web Bluetooth');
 		const unsupportedPanel = render(
 			<DevicePairingPanel
 				browserNotice="Bluetooth does not work in Brave. Chrome is currently the only browser tested with Ride Control."
@@ -323,9 +382,9 @@ describe('view components', () => {
 			/>
 		);
 		expect(unsupportedPanel).toContain('Bluetooth does not work in Brave');
-		expect(unsupportedPanel).not.toContain('Enable reconnect saving in Chrome');
+		expect(unsupportedPanel).not.toContain('Automatic reconnect in Chrome');
 		expect(unsupportedPanel).not.toContain(
-			'https://github.com/lookfirst/RideControl#automatic-reconnect'
+			'chrome://flags/#enable-web-bluetooth-new-permissions-backend'
 		);
 		expect(unsupportedPanel).not.toContain('Smart trainer');
 		expect(unsupportedPanel).not.toContain('Heart rate');
@@ -348,6 +407,39 @@ describe('view components', () => {
 		expect(html).toContain('HARDER');
 		expect(html).toContain('grid h-9 w-9 shrink-0 place-items-center rounded-lg');
 		expect(html).toContain('scale-105 border-mint bg-mint/15 text-mint');
+		expect(html).not.toContain('Connect the trainer and controllers before shifting gears.');
+		const disabled = render(<GearControl disabled gear={12} onChange={() => undefined} />);
+		expect(disabled).not.toContain(
+			'Connect the trainer and controllers before shifting gears.'
+		);
+		expect(disabled).not.toContain('Use Zwift Click');
+		expect(disabled.match(/disabled=""/g)).toHaveLength(2);
+	});
+
+	test('renders only the selected training control mode', () => {
+		const gear = render(
+			<TrainingControl
+				connected
+				control={{ gear: 12, mode: 'gear', onShift: () => undefined }}
+			/>
+		);
+		expect(gear).toContain('Virtual shifting');
+		expect(gear).toContain('of 24');
+		expect(gear).not.toContain('Resistance control');
+
+		const resistance = render(
+			<TrainingControl
+				connected
+				control={{
+					mode: 'resistance',
+					onChange: () => undefined,
+					ramp: { current: 40, from: 40, phase: 'holding', progress: 0, to: 40 },
+					resistance: 40,
+				}}
+			/>
+		);
+		expect(resistance).toContain('Resistance control');
+		expect(resistance).not.toContain('Virtual shifting');
 	});
 
 	test('hides empty notifications and expands setup guidance', () => {
@@ -448,6 +540,9 @@ describe('view components', () => {
 		expect(historyHtml).toContain('Change the session chart view');
 		expect(historyHtml).toContain('Delete the selected session');
 		expect(historyHtml).toContain('Confirm session deletion');
+		expect(historyHtml).toContain('NAVIGATION');
+		expect(historyHtml).toContain('SESSION');
+		expect(historyHtml).toContain('GENERAL');
 		expect(historyHtml).not.toContain('Increase or decrease resistance');
 		expect(historyHtml).not.toContain('Pause or resume');
 		expect(historyHtml).not.toContain('Start a new session after ending');
@@ -486,6 +581,8 @@ describe('view components', () => {
 		expect(html).toContain('class="block h-full w-full"');
 		expect(html).toMatch(solidChartBoundaries);
 		expect(html).toMatch(dashedChartGuides);
+		expect(html.match(/data-chart-separator="true"/g)).toHaveLength(4);
+		expect(html.match(/-my-3 ml-15 h-6 bg-white\/1\.5/g)).toHaveLength(4);
 		expect(html).not.toContain('absolute top-[11%] bottom-[8%] left-1');
 	});
 
@@ -516,6 +613,7 @@ describe('view components', () => {
 		expect(
 			render(
 				<SessionSaveDialog
+					intent={SESSION_WORKFLOW_INTENT.END}
 					onClose={() => undefined}
 					onSave={async () => undefined}
 					onStartWithoutSaving={() => undefined}
@@ -528,7 +626,7 @@ describe('view components', () => {
 		).toBe('');
 		const html = render(
 			<SessionSaveDialog
-				continuing
+				intent={SESSION_WORKFLOW_INTENT.CONTINUE}
 				onClose={() => undefined}
 				onSave={async () => undefined}
 				onStartWithoutSaving={() => undefined}
@@ -551,6 +649,35 @@ describe('view components', () => {
 		expect(html).toContain('Save this session?');
 		expect(html).toContain('How did it feel?');
 		expect(html).toContain('Continue without saving');
+		expect(html).toContain('Save &amp; continue');
+		const endSession = render(
+			<SessionSaveDialog
+				intent={SESSION_WORKFLOW_INTENT.END}
+				onClose={() => undefined}
+				onSave={async () => undefined}
+				onStartWithoutSaving={() => undefined}
+				open
+				saving={false}
+				session={{ ...emptySession, maximums: emptyMetrics }}
+				speedUnit="kmh"
+			/>
+		);
+		expect(endSession).toContain('End without saving');
+		expect(endSession).toContain('Save session');
+		const newSession = render(
+			<SessionSaveDialog
+				intent={SESSION_WORKFLOW_INTENT.NEW}
+				onClose={() => undefined}
+				onSave={async () => undefined}
+				onStartWithoutSaving={() => undefined}
+				open
+				saving={false}
+				session={{ ...emptySession, maximums: emptyMetrics }}
+				speedUnit="kmh"
+			/>
+		);
+		expect(newSession).toContain('Start new without saving');
+		expect(newSession).toContain('Save &amp; start new');
 	});
 
 	test('renders an empty session history', () => {
@@ -563,10 +690,62 @@ describe('view components', () => {
 			/>
 		);
 		expect(html).toContain('Session history');
+		expect(html).toContain('data-side-tray="true"');
 		expect(html).toContain('No saved sessions yet');
+		expect(html).toContain('Import TCX');
+		expect(html).toContain('Download all');
+		expect(html).toContain('.tcx,.zip');
+		expect(html).toContain('End a session or import a TCX file to add it here.');
 		expect(html).toContain('ml-auto');
 		expect(html).toContain('translate-x-0');
 		expect(html).toContain('Show history keyboard controls');
+	});
+
+	test('highlights every session from the latest import in history navigation', () => {
+		const importedSession = { ...savedSessionFixture, importedAt: Date.UTC(2026, 6, 19) };
+		const html = render(
+			<SessionHistoryList
+				error=""
+				highlightedSessionIds={[importedSession.id]}
+				onLoadMore={() => undefined}
+				onSelect={() => undefined}
+				selectedId={importedSession.id}
+				speedUnit="kmh"
+				summaries={[sessionSummary(importedSession)]}
+				total={1}
+			/>
+		);
+		expect(html).toContain('aria-label="Imported from TCX file"');
+		expect(html).toContain('<title>Imported from TCX file</title>');
+		expect(html).toContain('absolute right-2.5 bottom-3');
+		expect(html).toContain('class="h-5 w-5"');
+		expect(html).toContain('ring-cyan-400/70');
+		expect(html).toContain('shadow-[0_0_14px_rgba(34,211,238,0.16)]');
+	});
+
+	test('labels imported sessions permanently without retaining the fresh highlight', () => {
+		const importedSession = { ...savedSessionFixture, importedAt: Date.UTC(2026, 6, 19) };
+		const list = render(
+			<SessionHistoryList
+				error=""
+				highlightedSessionIds={[]}
+				onLoadMore={() => undefined}
+				onSelect={() => undefined}
+				speedUnit="kmh"
+				summaries={[sessionSummary(importedSession)]}
+				total={1}
+			/>
+		);
+		expect(list).toContain('aria-label="Imported from TCX file"');
+		expect(list).not.toContain('>Imported<');
+		expect(list).not.toContain('ring-cyan-400/70');
+		const detail = render(<SessionDetail session={importedSession} speedUnit="kmh" />);
+		expect(detail).toContain('>Imported<');
+		expect(detail).not.toContain('Imported TCX');
+		expect(detail).toContain('MAX</strong>45');
+		expect(detail).toContain(
+			`title="Imported ${formatSessionImportTime(importedSession.importedAt)}`
+		);
 	});
 
 	test('renders session deletion confirmation as a modal', () => {
@@ -677,7 +856,7 @@ describe('view components', () => {
 				session={{
 					aggregates: {
 						...emptySession.aggregates,
-						gear: { count: 2, sum: 27 },
+						gear: { count: 2, maximum: 14, sum: 27 },
 					},
 					calories: 0,
 					comments: '',
@@ -694,6 +873,7 @@ describe('view components', () => {
 			/>
 		);
 		expect(html).toContain('GEAR');
+		expect(html).toContain('MAX</strong>14');
 		expect(html).not.toContain('RESISTANCE');
 	});
 });

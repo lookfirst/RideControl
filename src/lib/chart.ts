@@ -1,27 +1,40 @@
-import type { ChartMode, ControlMode } from '../types';
+import type { ChartMode } from '../types';
+import { CONTROL_MODE, type ControlMode } from './control-mode';
+import { METRIC_PRESENTATION, STANDARD_METRIC_KEYS } from './metric-presentation';
+import { clamp } from './numbers';
+import { isFiniteNumber } from './type-guards';
+
+export const CHART_MODE_STORAGE_KEY = 'trainer-chart-mode';
 
 const baseChartModes: { label: string; value: ChartMode }[] = [
 	{ label: 'All', value: 'all' },
-	{ label: 'Speed', value: 'speed' },
-	{ label: 'Power', value: 'power' },
-	{ label: 'Cadence', value: 'cadence' },
-	{ label: 'Heart rate', value: 'heartRate' },
+	{ label: METRIC_PRESENTATION.speed.label, value: 'speed' },
+	...STANDARD_METRIC_KEYS.map((key) => ({
+		label: METRIC_PRESENTATION[key].label,
+		value: key,
+	})),
 ];
 
 export function chartModesForControl(controlMode: ControlMode) {
 	return [
 		...baseChartModes,
-		controlMode === 'gear'
-			? { label: 'Gear', value: 'gear' as const }
-			: { label: 'Resistance', value: 'resistance' as const },
+		controlMode === CONTROL_MODE.GEAR
+			? { label: 'Gear', value: CONTROL_MODE.GEAR }
+			: { label: 'Resistance', value: CONTROL_MODE.RESISTANCE },
 	];
 }
 
 export function storedChartMode(storage: Pick<Storage, 'getItem'> = localStorage): ChartMode {
-	const saved = storage.getItem('trainer-chart-mode');
-	return ['all', 'speed', 'power', 'cadence', 'heartRate', 'gear', 'resistance'].includes(
-		saved ?? ''
-	)
+	const saved = storage.getItem(CHART_MODE_STORAGE_KEY);
+	return [
+		'all',
+		'speed',
+		'power',
+		'cadence',
+		'heartRate',
+		CONTROL_MODE.GEAR,
+		CONTROL_MODE.RESISTANCE,
+	].includes(saved ?? '')
 		? (saved as ChartMode)
 		: 'all';
 }
@@ -41,7 +54,7 @@ export function chartPath(
 	let drawing = false;
 	return values
 		.map((value, index) => {
-			if (typeof value !== 'number' || !Number.isFinite(value)) {
+			if (!isFiniteNumber(value)) {
 				drawing = false;
 				return '';
 			}
@@ -49,7 +62,7 @@ export function chartPath(
 			if (positions && positionSpan > 0) {
 				x = (((positions[index] ?? firstPosition) - firstPosition) / positionSpan) * 100;
 			}
-			const normalized = Math.max(0, Math.min(1, (value - minimum) / span));
+			const normalized = clamp((value - minimum) / span, 0, 1);
 			const y = 90 - normalized * 76;
 			const command = drawing ? 'L' : 'M';
 			drawing = true;

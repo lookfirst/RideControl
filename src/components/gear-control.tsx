@@ -125,10 +125,12 @@ export function GearControl({
 					<Icon className="h-4 w-4" name="plus" />
 				</button>
 			</div>
-			<p className="mt-3 text-center text-[11px] text-slate-500">
-				Use Zwift Click or <kbd className="font-mono text-slate-400">↑</kbd>{' '}
-				<kbd className="font-mono text-slate-400">↓</kbd> to shift
-			</p>
+			{disabled ? null : (
+				<p className="mt-3 text-center text-[11px] text-slate-500">
+					Use Zwift Click or <kbd className="font-mono text-slate-400">↑</kbd>{' '}
+					<kbd className="font-mono text-slate-400">↓</kbd> to shift
+				</p>
+			)}
 		</div>
 	);
 }

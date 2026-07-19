@@ -1,19 +1,37 @@
 import { useEffect, useState } from 'react';
-import { formatDuration } from '../lib/format';
-import { formatSessionTime } from '../lib/saved-sessions';
+import { unreachable } from '../lib/errors';
+import { formatSessionTime, SESSION_FEELING_OPTIONS } from '../lib/saved-sessions';
+import { SESSION_WORKFLOW_INTENT, type SessionWorkflowIntent } from '../lib/session-workflow';
 import type { SessionFeeling, SessionMetadata, SessionSnapshot, SpeedUnit } from '../types';
-import { SmallMetric } from './metrics';
+import { SessionSummary } from './session-summary';
 
-const feelings: { label: string; value: SessionFeeling }[] = [
-	{ label: 'Great', value: 'great' },
-	{ label: 'Good', value: 'good' },
-	{ label: 'Okay', value: 'okay' },
-	{ label: 'Tough', value: 'tough' },
-	{ label: 'Exhausted', value: 'exhausted' },
-];
+function actionLabels(intent: SessionWorkflowIntent['kind']) {
+	switch (intent) {
+		case SESSION_WORKFLOW_INTENT.CONTINUE:
+			return {
+				primary: 'Save & continue',
+				secondary: 'Continue without saving',
+				secondaryClass: 'text-slate-400 hover:bg-slate-800 hover:text-slate-200',
+			};
+		case SESSION_WORKFLOW_INTENT.NEW:
+			return {
+				primary: 'Save & start new',
+				secondary: 'Start new without saving',
+				secondaryClass: 'text-slate-400 hover:bg-slate-800 hover:text-slate-200',
+			};
+		case SESSION_WORKFLOW_INTENT.END:
+			return {
+				primary: 'Save session',
+				secondary: 'End without saving',
+				secondaryClass: 'text-rose-300 hover:bg-rose-400/5 hover:text-rose-200',
+			};
+		default:
+			return unreachable(intent);
+	}
+}
 
 export function SessionSaveDialog({
-	continuing = false,
+	intent,
 	open,
 	onClose,
 	onSave,
@@ -22,7 +40,7 @@ export function SessionSaveDialog({
 	session,
 	speedUnit,
 }: {
-	continuing?: boolean;
+	intent: SessionWorkflowIntent['kind'];
 	open: boolean;
 	onClose: () => void;
 	onSave: (metadata: SessionMetadata) => Promise<void>;
@@ -33,6 +51,7 @@ export function SessionSaveDialog({
 }) {
 	const [comments, setComments] = useState('');
 	const [feeling, setFeeling] = useState<SessionFeeling>();
+	const labels = actionLabels(intent);
 
 	useEffect(() => {
 		if (open) {
@@ -44,9 +63,6 @@ export function SessionSaveDialog({
 	if (!open) {
 		return null;
 	}
-
-	const unitFactor = speedUnit === 'mph' ? 0.621_371 : 1;
-	const distanceUnit = speedUnit === 'mph' ? 'mi' : 'km';
 
 	return (
 		<div className="fixed inset-0 z-40 grid place-items-center bg-black/65 p-4 backdrop-blur-sm">
@@ -79,18 +95,18 @@ export function SessionSaveDialog({
 				</div>
 
 				<div className="mt-5 grid grid-cols-3 divide-x divide-line rounded-xl border border-line bg-[#12171d]">
-					<SmallMetric label="TIME" value={formatDuration(session.elapsedSeconds)} />
-					<SmallMetric
-						label="DISTANCE"
-						value={`${(session.distance * unitFactor).toFixed(2)} ${distanceUnit}`}
+					<SessionSummary
+						calories={session.calories}
+						distance={session.distance}
+						elapsedSeconds={session.elapsedSeconds}
+						speedUnit={speedUnit}
 					/>
-					<SmallMetric label="CALORIES" value={`${Math.round(session.calories)} kcal`} />
 				</div>
 
 				<fieldset className="mt-5">
 					<legend className="font-semibold text-sm">How did it feel?</legend>
 					<div className="mt-2 grid grid-cols-5 gap-1.5">
-						{feelings.map((option) => (
+						{SESSION_FEELING_OPTIONS.map((option) => (
 							<button
 								aria-pressed={feeling === option.value}
 								className={`rounded-lg border px-2 py-2 font-semibold text-xs transition ${feeling === option.value ? 'border-mint bg-mint/10 text-mint' : 'border-line bg-[#12171d] text-slate-400 hover:border-slate-500 hover:text-slate-200'}`}
@@ -118,12 +134,12 @@ export function SessionSaveDialog({
 
 				<div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
 					<button
-						className="rounded-lg px-4 py-2.5 font-semibold text-slate-400 text-sm hover:bg-slate-800 hover:text-slate-200"
+						className={`rounded-lg px-4 py-2.5 font-semibold text-sm ${labels.secondaryClass}`}
 						disabled={saving}
 						onClick={onStartWithoutSaving}
 						type="button"
 					>
-						{continuing ? 'Continue without saving' : 'Start new without saving'}
+						{labels.secondary}
 					</button>
 					<button
 						className="rounded-lg bg-lime px-5 py-2.5 font-bold text-ink text-sm hover:bg-[#e4ff9c] disabled:opacity-50"
@@ -131,7 +147,7 @@ export function SessionSaveDialog({
 						onClick={() => onSave({ comments, feeling })}
 						type="button"
 					>
-						{saving ? 'Saving…' : 'Save session'}
+						{saving ? 'Saving…' : labels.primary}
 					</button>
 				</div>
 			</section>

@@ -1,4 +1,13 @@
 import type { ResistanceAdjustmentDirection } from '../types';
+import { clamp } from './numbers';
+
+export const MIN_RESISTANCE = 0;
+export const MAX_RESISTANCE = 100;
+export const DEFAULT_RESISTANCE = 10;
+
+export function clampResistance(resistance: number): number {
+	return clamp(resistance, MIN_RESISTANCE, MAX_RESISTANCE);
+}
 
 export function resistanceAdjustmentDirection(
 	from: number,
@@ -26,7 +35,7 @@ export function resistanceRampDuration(from: number, to: number): number {
 }
 
 export function smoothedResistance(from: number, to: number, progress: number): number {
-	const boundedProgress = Math.max(0, Math.min(1, progress));
+	const boundedProgress = clamp(progress, 0, 1);
 	const eased = boundedProgress * boundedProgress * (3 - 2 * boundedProgress);
 	return from + (to - from) * eased;
 }

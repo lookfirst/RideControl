@@ -1,8 +1,16 @@
 import type { Metrics, Range } from '../types';
+import { MAX_RESISTANCE } from './resistance';
+import { kilometersForMeters, SECONDS_PER_MINUTE } from './units';
+
+export const TRAINER_DEVICE_STORAGE_KEY = 'trainer-device-id';
 
 export interface CrankReading {
 	revolutions: number;
 	time: number;
+}
+
+export function isBluetoothChooserCancellation(error: unknown): boolean {
+	return error instanceof DOMException && error.name === 'NotFoundError';
 }
 
 export function characteristicValue(event: Event): DataView | undefined {
@@ -51,11 +59,11 @@ export function parseIndoorBikeData(value: DataView): {
 	let reportsDistance = false;
 	if (flags & (1 << 4)) {
 		reportsDistance = true;
-		metrics.distance =
-			(value.getUint8(offset) |
+		metrics.distance = kilometersForMeters(
+			value.getUint8(offset) |
 				(value.getUint8(offset + 1) << 8) |
-				(value.getUint8(offset + 2) << 16)) /
-			1000;
+				(value.getUint8(offset + 2) << 16)
+		);
 		offset += 3;
 	}
 	if (flags & (1 << 5)) {
@@ -99,13 +107,13 @@ export function parseCrankCadence(
 	const deltaTime = (current.time - previous.time + 65_536) % 65_536;
 	const deltaRevs = (current.revolutions - previous.revolutions + 65_536) % 65_536;
 	return {
-		cadence: deltaTime ? (deltaRevs * 60 * 1024) / deltaTime : undefined,
+		cadence: deltaTime ? (deltaRevs * SECONDS_PER_MINUTE * 1024) / deltaTime : undefined,
 		current,
 	};
 }
 
 export function resistanceCommand(percent: number, range: Range): number[] {
-	const trainerLevel = range.min + (percent / 100) * (range.max - range.min);
+	const trainerLevel = range.min + (percent / MAX_RESISTANCE) * (range.max - range.min);
 	const scaled = Math.round(trainerLevel * 10);
 	return [0x04, scaled & 255, (scaled >> 8) & 255];
 }
@@ -118,7 +126,7 @@ export async function findRememberedKickr(
 		return;
 	}
 	const permitted = await bluetooth.getDevices();
-	const savedDeviceId = storage.getItem('trainer-device-id');
+	const savedDeviceId = storage.getItem(TRAINER_DEVICE_STORAGE_KEY);
 	return (
 		permitted.find((candidate) => candidate.id === savedDeviceId) ??
 		permitted.find((candidate) => candidate.name?.toUpperCase().startsWith('KICKR')) ??
@@ -131,7 +139,7 @@ export async function waitForFreshAdvertisement(
 	onAdvertisement?: (event: BluetoothAdvertisingEvent) => void,
 	timeoutMs = 3000
 ): Promise<void> {
-	if (typeof device.watchAdvertisements !== 'function') {
+	if (!device.watchAdvertisements) {
 		return;
 	}
 	const controller = new AbortController();
@@ -163,22 +171,18 @@ export async function waitForFreshAdvertisement(
 
 export async function connectGatt(
 	device: BluetoothDevice,
-	rediscover: boolean,
-	updateStatus: (status: string) => void
+	rediscover: boolean
 ): Promise<BluetoothRemoteGATTServer> {
 	if (!device.gatt) {
 		throw new Error('This device does not expose a GATT server.');
 	}
-	updateStatus('Connecting…');
 	try {
 		return await device.gatt.connect();
 	} catch (directConnectionError) {
 		if (!rediscover) {
 			throw directConnectionError;
 		}
-		updateStatus('Finding trainer…');
 		await waitForFreshAdvertisement(device);
-		updateStatus('Connecting…');
 		return await device.gatt.connect();
 	}
 }

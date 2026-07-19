@@ -1,5 +1,9 @@
 import { describe, expect, test } from 'bun:test';
-import { bluetoothBrowserNotice, isTestedChromeBrowser } from '../src/lib/browser';
+import {
+	automaticBluetoothReconnectConfigured,
+	bluetoothBrowserNotice,
+	isTestedChromeBrowser,
+} from '../src/lib/browser';
 
 function browser(userAgent: string, brands: string[] = [], extra: Record<string, unknown> = {}) {
 	return {
@@ -38,5 +42,10 @@ describe('browser compatibility', () => {
 		expect(bluetoothBrowserNotice(browser('Firefox/142'))).toContain(
 			'Chrome is currently the only browser tested'
 		);
+	});
+
+	test('detects the persistent Bluetooth reconnect capability', () => {
+		expect(automaticBluetoothReconnectConfigured({ getDevices: async () => [] })).toBeTrue();
+		expect(automaticBluetoothReconnectConfigured({})).toBeFalse();
 	});
 });

@@ -1,25 +1,22 @@
-import { useEffect } from 'react';
-import { AUTOMATIC_RECONNECT_README_URL } from '../constants';
-import { bluetoothBrowserNotice } from '../lib/browser';
+import { useState } from 'react';
+import { CHROME_BLUETOOTH_FLAGS_URL } from '../constants';
+import { automaticBluetoothReconnectConfigured, bluetoothBrowserNotice } from '../lib/browser';
+import type { DeviceConnectionView } from '../lib/device-connection';
+import { MAX_CLICK_CONTROLLERS } from '../lib/zwift-click';
 import { Icon } from './icon';
+import { SideTray } from './side-tray';
 
-interface DeviceSlot {
+interface DeviceSlot extends DeviceConnectionView {
 	battery?: number;
-	busy: boolean;
-	connected: boolean;
 	name?: string;
 	onDisconnect: () => void;
 	onForget: () => void | Promise<void>;
 	onPair: () => void | Promise<void>;
 	onReconnect: () => void | Promise<void>;
-	paired: boolean;
-	status: string;
 }
 
-interface ClickController {
+interface ClickController extends DeviceConnectionView {
 	active: boolean;
-	connected: boolean;
-	connecting: boolean;
 	id: string;
 	label: string;
 }
@@ -30,7 +27,7 @@ interface ClickSlot extends DeviceSlot {
 	onForgetController: (deviceId: string) => void | Promise<void>;
 	pairedCount: number;
 	pairing: boolean;
-	reconnecting?: boolean;
+	reconnecting: boolean;
 }
 
 function clickControllerOrder(controller: ClickController) {
@@ -66,30 +63,31 @@ function StatusDot({
 }
 
 function DeviceActions({ slot }: { slot: DeviceSlot }) {
+	const actionBusy = slot.busy;
 	if (!slot.paired) {
 		return (
 			<button
 				className="h-9 rounded-lg bg-lime px-3 font-bold text-ink text-xs transition hover:bg-[#e4ff9c] disabled:opacity-50"
-				disabled={slot.busy}
+				disabled={actionBusy}
 				onClick={slot.onPair}
 				type="button"
 			>
-				{slot.busy ? 'Pairing…' : 'Pair'}
+				{actionBusy ? 'Pairing…' : 'Pair'}
 			</button>
 		);
 	}
 	let connectionAction = 'Reconnect';
-	if (slot.busy) {
+	if (actionBusy) {
 		connectionAction = 'Connecting…';
 	} else if (slot.connected) {
 		connectionAction = 'Disconnect';
 	}
-	const disconnecting = slot.connected && !slot.busy;
+	const disconnecting = slot.connected && !actionBusy;
 	return (
 		<div className="flex flex-wrap justify-end gap-2">
 			<button
 				className="h-9 rounded-lg border border-line px-3 font-semibold text-slate-300 text-xs transition hover:border-slate-500 hover:text-white disabled:opacity-50"
-				disabled={slot.busy}
+				disabled={actionBusy}
 				onClick={disconnecting ? slot.onDisconnect : slot.onReconnect}
 				type="button"
 			>
@@ -103,6 +101,58 @@ function DeviceActions({ slot }: { slot: DeviceSlot }) {
 				Forget
 			</button>
 		</div>
+	);
+}
+
+function AutomaticReconnectStatus({
+	configured,
+	copied,
+	copyLabel,
+	onCopy,
+}: {
+	configured: boolean;
+	copied: boolean;
+	copyLabel: string;
+	onCopy: () => void | Promise<void>;
+}) {
+	if (configured) {
+		return (
+			<aside className="rounded-xl border border-mint/20 bg-mint/5 p-3 text-[11px] text-slate-400 leading-relaxed">
+				<p className="flex items-center gap-2 font-semibold text-mint text-xs">
+					<span
+						aria-hidden="true"
+						className="h-2 w-2 shrink-0 rounded-full bg-mint shadow-[0_0_8px_rgba(173,245,189,.45)]"
+					/>
+					Automatic reconnect is configured correctly
+				</p>
+			</aside>
+		);
+	}
+
+	return (
+		<aside className="rounded-xl border border-sky-400/20 bg-sky-400/5 p-3 text-[11px] text-slate-400 leading-relaxed">
+			<h3 className="font-semibold text-slate-200 text-xs">Automatic reconnect in Chrome</h3>
+			<p className="mt-1">
+				Chrome needs persistent Bluetooth permissions to reconnect devices after a refresh.
+			</p>
+			<ol className="mt-2 list-decimal space-y-1 pl-4">
+				<li>
+					{copied ? null : 'Open '}
+					<button
+						aria-label="Copy Chrome Bluetooth settings address"
+						className="wrap-break-word max-w-full text-left align-top font-semibold text-sky-300 underline underline-offset-2 hover:text-sky-200"
+						onClick={onCopy}
+						type="button"
+					>
+						{copyLabel}
+					</button>
+				</li>
+				<li>
+					Enable <strong>Use the new permissions backend for Web Bluetooth</strong>.
+				</li>
+				<li>Relaunch Chrome, then pair each device once more.</li>
+			</ol>
+		</aside>
 	);
 }
 
@@ -189,6 +239,7 @@ export function DevicePairingButton({
 }
 
 export function DevicePairingPanel({
+	automaticReconnectConfigured = automaticBluetoothReconnectConfigured(),
 	browserNotice = bluetoothBrowserNotice(),
 	click,
 	heartRate,
@@ -196,6 +247,7 @@ export function DevicePairingPanel({
 	open,
 	trainer,
 }: {
+	automaticReconnectConfigured?: boolean;
 	browserNotice?: string;
 	click: ClickSlot;
 	heartRate: DeviceSlot;
@@ -203,36 +255,14 @@ export function DevicePairingPanel({
 	open: boolean;
 	trainer: DeviceSlot;
 }) {
-	useEffect(() => {
-		if (!open) {
-			return;
-		}
-		const closeOnEscape = (event: KeyboardEvent) => {
-			if (event.key === 'Escape') {
-				event.preventDefault();
-				onClose();
-			}
-		};
-		const previousOverflow = document.body.style.overflow;
-		document.body.style.overflow = 'hidden';
-		window.addEventListener('keydown', closeOnEscape);
-		return () => {
-			document.body.style.overflow = previousOverflow;
-			window.removeEventListener('keydown', closeOnEscape);
-		};
-	}, [onClose, open]);
-
-	if (!open) {
-		return null;
-	}
-
-	const clickSlot: DeviceSlot = {
-		...click,
-		busy: false,
-		connected: click.pairedCount > 0 && click.connectedCount === click.pairedCount,
-		paired: click.pairedCount > 0,
+	const [flagsUrlCopied, setFlagsUrlCopied] = useState(false);
+	const copyChromeFlagsUrl = async () => {
+		await navigator.clipboard.writeText(CHROME_BLUETOOTH_FLAGS_URL);
+		setFlagsUrlCopied(true);
 	};
-	const waitingForControllers = Boolean(click.reconnecting);
+
+	const clickSlot: DeviceSlot = click;
+	const waitingForControllers = click.reconnecting || click.phase === 'connecting';
 	const orderedClickControllers = [...click.controllers].sort(
 		(left, right) => clickControllerOrder(left) - clickControllerOrder(right)
 	);
@@ -242,161 +272,144 @@ export function DevicePairingPanel({
 	} else if (click.pairedCount) {
 		pairControllerLabel = 'Pair other controller';
 	}
+	const chromeFlagsCopyLabel = flagsUrlCopied
+		? 'copied, now paste it into a new tab.'
+		: CHROME_BLUETOOTH_FLAGS_URL;
 
 	return (
-		<div className="fixed inset-0 z-50 flex justify-end bg-black/65 backdrop-blur-sm">
-			<button
-				aria-label="Close paired devices"
-				className="absolute inset-0 h-full w-full cursor-default"
-				onClick={onClose}
-				type="button"
-			/>
-			<section
-				aria-labelledby="paired-devices-title"
-				aria-modal="true"
-				className="relative h-full w-full max-w-md overflow-y-auto overflow-x-hidden border-line border-l bg-panel p-5 shadow-2xl shadow-black/60 sm:p-6"
-				role="dialog"
-			>
-				<div className="flex items-start justify-between gap-4">
-					<div>
-						<h2 className="font-bold text-2xl" id="paired-devices-title">
-							Paired devices
-						</h2>
-						<p className="mt-1 max-w-sm text-slate-400 text-sm">
-							Pair each sensor once. Ride Control reconnects remembered devices when
-							they wake up.
-						</p>
-					</div>
-					<button
-						aria-label="Close paired devices"
-						autoFocus
-						className="grid h-9 w-9 shrink-0 place-items-center rounded-lg text-slate-400 hover:bg-slate-700 hover:text-white"
-						onClick={onClose}
-						type="button"
-					>
-						×
-					</button>
+		<SideTray
+			closeLabel="Close paired devices"
+			labelledBy="paired-devices-title"
+			onClose={onClose}
+			open={open}
+			panelClassName="max-w-md overflow-y-auto overflow-x-hidden p-5 sm:p-6"
+		>
+			<div className="flex items-start justify-between gap-4">
+				<div>
+					<h2 className="font-bold text-2xl" id="paired-devices-title">
+						Paired devices
+					</h2>
+					<p className="mt-1 max-w-sm text-slate-400 text-sm">
+						Pair each sensor once. Ride Control reconnects remembered devices when they
+						wake up.
+					</p>
 				</div>
+				<button
+					aria-label="Close paired devices"
+					autoFocus
+					className="grid h-9 w-9 shrink-0 place-items-center rounded-lg text-slate-400 hover:bg-slate-700 hover:text-white"
+					onClick={onClose}
+					type="button"
+				>
+					×
+				</button>
+			</div>
 
-				{browserNotice ? (
-					<div
-						className="mt-5 rounded-xl border border-sky-400/30 bg-sky-400/10 p-3 text-sky-100 text-sm"
-						role="note"
-					>
-						<p>{browserNotice}</p>
-					</div>
-				) : null}
+			{browserNotice ? (
+				<div
+					className="mt-5 rounded-xl border border-sky-400/30 bg-sky-400/10 p-3 text-sky-100 text-sm"
+					role="note"
+				>
+					<p>{browserNotice}</p>
+				</div>
+			) : null}
 
-				{browserNotice ? null : (
-					<div className="mt-6 space-y-3">
-						<DeviceCard
-							description="Power, cadence and resistance control"
-							icon="bike"
-							slot={trainer}
-							title="Smart trainer"
-						/>
-						<DeviceCard
-							description="Standard Bluetooth heart rate monitor"
-							icon="heart"
-							slot={heartRate}
-							title="Heart rate"
-						/>
+			{browserNotice ? null : (
+				<div className="mt-6 space-y-3">
+					<DeviceCard
+						description="Power, cadence and resistance control"
+						icon="bike"
+						slot={trainer}
+						title="Smart trainer"
+					/>
+					<DeviceCard
+						description="Standard Bluetooth heart rate monitor"
+						icon="heart"
+						slot={heartRate}
+						title="Heart rate"
+					/>
 
-						<article className="rounded-2xl border border-line bg-[#12171d] p-4">
-							<div className="flex items-start gap-3">
-								<div className="grid h-10 w-10 shrink-0 place-items-center rounded-xl border border-slate-700 bg-slate-800/60 text-slate-300">
-									<Icon className="h-5 w-5" name="controls" />
-								</div>
-								<div className="min-w-0 flex-1">
-									<div className="flex items-center gap-2">
-										<StatusDot
-											busy={waitingForControllers}
-											connected={click.connectedCount > 0}
-										/>
-										<h3 className="font-bold text-sm text-white">
-											Zwift Click V2
-										</h3>
-									</div>
-									<p className="mt-1 text-slate-300 text-xs">
-										{click.pairedCount
-											? `${click.connectedCount} of ${click.pairedCount} controllers connected`
-											: 'Pair each controller separately'}
-									</p>
-									<p className="mt-1 text-[11px] text-slate-500">
-										{waitingForControllers
-											? 'Waiting for controllers…'
-											: click.status}
-									</p>
-								</div>
+					<article className="rounded-2xl border border-line bg-[#12171d] p-4">
+						<div className="flex items-start gap-3">
+							<div className="grid h-10 w-10 shrink-0 place-items-center rounded-xl border border-slate-700 bg-slate-800/60 text-slate-300">
+								<Icon className="h-5 w-5" name="controls" />
 							</div>
-
-							{orderedClickControllers.length ? (
-								<div className="mt-4 overflow-hidden rounded-xl border border-line">
-									{orderedClickControllers.map((controller) => (
-										<div
-											className={`flex items-center gap-3 border-line border-b px-3 py-2.5 transition duration-150 last:border-b-0 ${controller.active ? 'bg-mint/10' : ''}`}
-											key={controller.id}
-										>
-											<StatusDot
-												bluePulse
-												busy={
-													waitingForControllers && !controller.connected
-												}
-												connected={controller.connected}
-											/>
-											<div className="min-w-0 flex-1">
-												<p
-													className={`font-semibold text-xs transition ${controller.active ? 'text-mint' : 'text-slate-200'}`}
-												>
-													{controller.label}
-												</p>
-											</div>
-											<button
-												className="font-semibold text-[11px] text-rose-300 hover:text-rose-200"
-												onClick={() =>
-													click.onForgetController(controller.id)
-												}
-												type="button"
-											>
-												Forget
-											</button>
-										</div>
-									))}
+							<div className="min-w-0 flex-1">
+								<div className="flex items-center gap-2">
+									<StatusDot
+										busy={waitingForControllers}
+										connected={click.connectedCount > 0}
+									/>
+									<h3 className="font-bold text-sm text-white">Zwift Click V2</h3>
 								</div>
-							) : null}
+								<p className="mt-1 text-slate-300 text-xs">
+									{click.pairedCount
+										? `${click.connectedCount} of ${click.pairedCount} controllers connected`
+										: 'Pair each controller separately'}
+								</p>
+								<p className="mt-1 text-[11px] text-slate-500">
+									{waitingForControllers ? 'Reconnecting…' : click.status}
+								</p>
+							</div>
+						</div>
 
-							<div className="mt-4 flex flex-wrap justify-end gap-2">
-								{click.pairedCount > 0 ? <DeviceActions slot={clickSlot} /> : null}
-								{click.pairedCount < 2 ? (
-									<button
-										className="h-9 rounded-lg bg-lime px-3 font-bold text-ink text-xs transition hover:bg-[#e4ff9c] disabled:opacity-50"
-										disabled={click.pairing}
-										onClick={click.onPair}
-										type="button"
+						{orderedClickControllers.length ? (
+							<div className="mt-4 overflow-hidden rounded-xl border border-line">
+								{orderedClickControllers.map((controller) => (
+									<div
+										className={`flex items-center gap-3 border-line border-b px-3 py-2.5 transition duration-150 last:border-b-0 ${controller.active ? 'bg-mint/10' : ''}`}
+										key={controller.id}
 									>
-										{pairControllerLabel}
-									</button>
-								) : null}
+										<StatusDot
+											bluePulse
+											busy={controller.busy}
+											connected={controller.connected}
+										/>
+										<div className="min-w-0 flex-1">
+											<p
+												className={`font-semibold text-xs transition ${controller.active ? 'text-mint' : 'text-slate-200'}`}
+											>
+												{controller.label}
+											</p>
+										</div>
+										<button
+											className="font-semibold text-[11px] text-rose-300 hover:text-rose-200"
+											onClick={() => click.onForgetController(controller.id)}
+											type="button"
+										>
+											Forget
+										</button>
+									</div>
+								))}
 							</div>
-							<p className="mt-3 text-[10px] text-slate-500 leading-relaxed">
-								Wake each controller before pairing. The + and − sides are
-								identified automatically and reconnect in the background.
-							</p>
-						</article>
-						<p className="px-1 text-[11px] text-slate-500">
-							Having reconnect trouble?{' '}
-							<a
-								className="font-semibold text-slate-400 underline underline-offset-2 hover:text-slate-200"
-								href={AUTOMATIC_RECONNECT_README_URL}
-								rel="noreferrer"
-								target="_blank"
-							>
-								Enable reconnect saving in Chrome
-							</a>
+						) : null}
+
+						<div className="mt-4 flex flex-wrap justify-end gap-2">
+							{click.pairedCount > 0 ? <DeviceActions slot={clickSlot} /> : null}
+							{click.pairedCount < MAX_CLICK_CONTROLLERS ? (
+								<button
+									className="h-9 rounded-lg bg-lime px-3 font-bold text-ink text-xs transition hover:bg-[#e4ff9c] disabled:opacity-50"
+									disabled={click.pairing}
+									onClick={click.onPair}
+									type="button"
+								>
+									{pairControllerLabel}
+								</button>
+							) : null}
+						</div>
+						<p className="mt-3 text-[10px] text-slate-500 leading-relaxed">
+							Wake each controller before pairing. The + and − sides are identified
+							automatically and reconnect in the background.
 						</p>
-					</div>
-				)}
-			</section>
-		</div>
+					</article>
+					<AutomaticReconnectStatus
+						configured={automaticReconnectConfigured}
+						copied={flagsUrlCopied}
+						copyLabel={chromeFlagsCopyLabel}
+						onCopy={copyChromeFlagsUrl}
+					/>
+				</div>
+			)}
+		</SideTray>
 	);
 }

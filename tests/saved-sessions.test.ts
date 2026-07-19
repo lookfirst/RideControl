@@ -10,6 +10,7 @@ import {
 	formatSessionTime,
 	formatSessionTimeRange,
 	groupSessionsByDate,
+	isImportedSession,
 	normalizeSavedSession,
 	requestPersistentSessionStorage,
 	saveSessionRecords,
@@ -75,6 +76,9 @@ describe('saved session utilities', () => {
 			startedAt: snapshot.startedAt,
 		});
 		expect('history' in summary).toBe(false);
+		expect(sessionSummary({ ...session, importedAt: 5678 }).importedAt).toBe(5678);
+		expect(isImportedSession({ id: 'tcx:legacy-import' })).toBe(true);
+		expect(isImportedSession({ id: session.id })).toBe(false);
 	});
 
 	test('writes and deletes both full and summary session records', () => {
@@ -126,11 +130,17 @@ describe('saved session utilities', () => {
 		} as unknown as SavedSession;
 		expect(normalizeSavedSession(legacy).aggregates.resistance).toEqual({
 			count: 1,
+			maximum: 42,
 			sum: 42,
 		});
-		expect(normalizeSavedSession(session).aggregates.resistance).toBe(
-			session.aggregates.resistance
-		);
+		expect(normalizeSavedSession(session).aggregates.resistance).toEqual({
+			count: 0,
+			maximum: 42,
+			sum: 0,
+		});
+		expect(
+			normalizeSavedSession({ ...session, importedAt: Number.NaN }).importedAt
+		).toBeUndefined();
 	});
 
 	test('restores gear aggregates for virtual shifting sessions', () => {
@@ -154,7 +164,7 @@ describe('saved session utilities', () => {
 		} as unknown as SavedSession;
 		const normalized = normalizeSavedSession(gearSession);
 		expect(normalized.controlMode).toBe('gear');
-		expect(normalized.aggregates.gear).toEqual({ count: 1, sum: 14 });
+		expect(normalized.aggregates.gear).toEqual({ count: 1, maximum: 14, sum: 14 });
 	});
 
 	test('groups ordered summaries by their local calendar date', () => {

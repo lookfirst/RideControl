@@ -1,4 +1,5 @@
 import type { RoutePoint } from '../types';
+import { kilometersForMeters } from './units';
 
 export function distanceBetween(a: number, b: number, c: number, d: number) {
 	const rad = Math.PI / 180;
@@ -21,7 +22,7 @@ export function parseGpx(source: string, parser: DOMParser = new DOMParser()): R
 		}
 		previous = { lat, lon };
 		return {
-			distance: total / 1000,
+			distance: kilometersForMeters(total),
 			elevation: Number(point.querySelector('ele')?.textContent ?? 0),
 		};
 	});

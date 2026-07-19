@@ -5,7 +5,14 @@ import type {
 	SessionMetadata,
 	SessionSnapshot,
 } from '../types';
-import { aggregateGear, aggregateResistance, controlModeForHistory } from './session';
+import {
+	aggregateGear,
+	aggregateResistance,
+	controlModeForHistory,
+	restoreAggregate,
+} from './session';
+import { IMPORTED_TCX_ID_PREFIX } from './tcx-schema';
+import { isFiniteNumber } from './type-guards';
 
 const DATABASE_NAME = 'ridecontrol-sessions';
 const DATABASE_VERSION = 1;
@@ -14,6 +21,18 @@ const SUMMARY_STORE = 'session-summaries';
 const ENDED_AT_INDEX = 'endedAt';
 const MERIDIEM_SUFFIX = /\s*(AM|PM)$/i;
 const SESSION_DATE_FORMATTER = new Intl.DateTimeFormat(undefined, { dateStyle: 'full' });
+const SESSION_IMPORT_FORMATTER = new Intl.DateTimeFormat(undefined, {
+	dateStyle: 'medium',
+	timeStyle: 'short',
+});
+
+export const SESSION_FEELING_OPTIONS: { label: string; value: SessionFeeling }[] = [
+	{ label: 'Great', value: 'great' },
+	{ label: 'Good', value: 'good' },
+	{ label: 'Okay', value: 'okay' },
+	{ label: 'Tough', value: 'tough' },
+	{ label: 'Exhausted', value: 'exhausted' },
+];
 
 type SessionTiming = Pick<SavedSessionSummary, 'elapsedSeconds' | 'endedAt' | 'startedAt'>;
 
@@ -90,8 +109,23 @@ export function sessionSummary(session: SavedSession): SavedSessionSummary {
 		endedAt: session.endedAt,
 		feeling: session.feeling,
 		id: session.id,
+		...(session.importedAt === undefined ? {} : { importedAt: session.importedAt }),
 		startedAt: session.startedAt,
 	};
+}
+
+function normalizedImportedAt(importedAt: unknown): number | undefined {
+	return isFiniteNumber(importedAt) && importedAt >= 0 ? importedAt : undefined;
+}
+
+export function normalizeSavedSessionSummary(session: SavedSessionSummary): SavedSessionSummary {
+	return { ...session, importedAt: normalizedImportedAt(session.importedAt) };
+}
+
+export function isImportedSession(
+	session: Pick<SavedSessionSummary, 'id' | 'importedAt'>
+): boolean {
+	return session.importedAt !== undefined || session.id.startsWith(IMPORTED_TCX_ID_PREFIX);
 }
 
 type StoreGetter<T> = (name: string) => T;
@@ -147,14 +181,17 @@ export function normalizeSavedSession(session: SavedSession): SavedSession {
 		...session,
 		aggregates: {
 			...session.aggregates,
-			gear:
-				(session.aggregates as Partial<SavedSession['aggregates']>).gear ??
-				aggregateGear(session.history),
-			resistance:
-				(session.aggregates as Partial<SavedSession['aggregates']>).resistance ??
-				aggregateResistance(session.history),
+			gear: restoreAggregate(
+				(session.aggregates as Partial<SavedSession['aggregates']>).gear,
+				aggregateGear(session.history)
+			),
+			resistance: restoreAggregate(
+				(session.aggregates as Partial<SavedSession['aggregates']>).resistance,
+				aggregateResistance(session.history)
+			),
 		},
 		controlMode: controlModeForHistory(session.history, session.controlMode),
+		importedAt: normalizedImportedAt(session.importedAt),
 	};
 }
 
@@ -187,12 +224,23 @@ export async function listSavedSessions(
 				resolve();
 				return;
 			}
-			summaries.push(cursor.value as SavedSessionSummary);
+			summaries.push(normalizeSavedSessionSummary(cursor.value as SavedSessionSummary));
 			cursor.continue();
 		});
 	});
 	await completed;
 	return summaries;
+}
+
+export async function listAllSavedSessions(): Promise<SavedSession[]> {
+	const database = await openDatabase();
+	const transaction = database.transaction(SESSION_STORE, 'readonly');
+	const completed = transactionComplete(transaction);
+	const sessions = await requestResult(
+		transaction.objectStore(SESSION_STORE).getAll() as IDBRequest<SavedSession[]>
+	);
+	await completed;
+	return sessions.map(normalizeSavedSession).sort((left, right) => right.endedAt - left.endedAt);
 }
 
 export interface SessionGroup {
@@ -297,6 +345,16 @@ export function formatSessionListTime(session: SessionTiming): string {
 	return sessionSpansDates(session)
 		? formatSessionTimeRange(session)
 		: formatSessionTime(session.startedAt);
+}
+
+export function formatSessionImportTime(timestamp: number): string {
+	return SESSION_IMPORT_FORMATTER.format(timestamp);
+}
+
+export function formatSessionImportLabel(session: Pick<SavedSessionSummary, 'importedAt'>): string {
+	return session.importedAt === undefined
+		? 'Imported'
+		: `Imported ${formatSessionImportTime(session.importedAt)}`;
 }
 
 export async function requestPersistentSessionStorage(): Promise<boolean> {

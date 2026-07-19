@@ -1,6 +1,5 @@
-import { emptyMetrics, emptySession } from '../constants';
+import { emptyMetrics, emptySession, MAX_SESSION_HISTORY_SAMPLES } from '../constants';
 import type {
-	ControlMode,
 	MetricAggregate,
 	MetricSample,
 	Metrics,
@@ -8,18 +7,23 @@ import type {
 	SessionSnapshot,
 	StoredSession,
 } from '../types';
+import { CONTROL_MODE, type ControlMode, isControlMode } from './control-mode';
+import { clampGear, MAX_GEAR, MIN_GEAR } from './gears';
+import { clamp, nonNegativeNumber } from './numbers';
+import { clampResistance, DEFAULT_RESISTANCE, MAX_RESISTANCE, MIN_RESISTANCE } from './resistance';
+import { isFiniteNumber, isString } from './type-guards';
+
+export const SESSION_STORAGE_KEY = 'trainer-session';
+export const RESISTANCE_STORAGE_KEY = 'trainer-resistance-percent';
 
 type ReadableStorage = Pick<Storage, 'getItem'>;
-
-export function nonNegativeNumber(value: unknown): number {
-	return typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : 0;
-}
 
 export function sessionContinuation(snapshot: SessionSnapshot): StoredSession {
 	return {
 		aggregates: snapshot.aggregates,
 		calories: snapshot.calories,
 		controlMode: snapshot.controlMode,
+		discarded: false,
 		distance: snapshot.distance,
 		elapsedSeconds: snapshot.elapsedSeconds,
 		ended: false,
@@ -51,6 +55,7 @@ export function addAggregate(
 	}
 	return {
 		count: aggregate.count + 1,
+		maximum: Math.max(nonNegativeNumber(aggregate.maximum), Math.max(0, value)),
 		sum: aggregate.sum + Math.max(0, value),
 	};
 }
@@ -63,29 +68,25 @@ export function addMetricAggregates(
 	return {
 		cadence: addAggregate(aggregates.cadence, metrics.cadence, false),
 		gear:
-			typeof metrics.gear === 'number'
-				? addAggregate(aggregates.gear, metrics.gear, true)
-				: aggregates.gear,
+			metrics.gear === undefined
+				? aggregates.gear
+				: addAggregate(aggregates.gear, metrics.gear, true),
 		heartRate: addAggregate(aggregates.heartRate, metrics.heartRate, false),
 		power: addAggregate(aggregates.power, metrics.power, true),
 		resistance:
-			typeof metrics.resistance === 'number'
-				? addAggregate(aggregates.resistance, metrics.resistance, true)
-				: aggregates.resistance,
+			metrics.resistance === undefined
+				? aggregates.resistance
+				: addAggregate(aggregates.resistance, metrics.resistance, true),
 	};
 }
 
 export function aggregateGear(samples: Partial<Pick<MetricSample, 'gear'>>[]): MetricAggregate {
 	return samples.reduce<MetricAggregate>(
 		(aggregate, sample) => {
-			if (typeof sample.gear !== 'number' || !Number.isFinite(sample.gear)) {
+			if (!isFiniteNumber(sample.gear)) {
 				return aggregate;
 			}
-			return addAggregate(
-				aggregate,
-				Math.min(24, Math.max(1, Math.round(sample.gear))),
-				true
-			);
+			return addAggregate(aggregate, clampGear(sample.gear), true);
 		},
 		{ count: 0, sum: 0 }
 	);
@@ -96,10 +97,10 @@ export function aggregateResistance(
 ): MetricAggregate {
 	return samples.reduce<MetricAggregate>(
 		(aggregate, sample) => {
-			if (typeof sample.resistance !== 'number' || !Number.isFinite(sample.resistance)) {
+			if (!isFiniteNumber(sample.resistance)) {
 				return aggregate;
 			}
-			return addAggregate(aggregate, Math.min(100, Math.max(0, sample.resistance)), true);
+			return addAggregate(aggregate, clampResistance(sample.resistance), true);
 		},
 		{ count: 0, sum: 0 }
 	);
@@ -114,29 +115,34 @@ export function restoreAggregate(
 	}
 	return {
 		count: nonNegativeNumber(saved.count),
+		maximum: isFiniteNumber(saved.maximum)
+			? nonNegativeNumber(saved.maximum)
+			: nonNegativeNumber(fallback.maximum),
 		sum: nonNegativeNumber(saved.sum),
 	};
 }
 
 function optionalControlValue(value: unknown, minimum: number, maximum: number) {
-	if (typeof value !== 'number' || !Number.isFinite(value)) {
+	if (!isFiniteNumber(value)) {
 		return;
 	}
-	return Math.min(maximum, Math.max(minimum, value));
+	return clamp(value, minimum, maximum);
 }
 
 export function controlModeForHistory(
 	history: Partial<Pick<MetricSample, 'gear'>>[],
 	savedMode?: ControlMode
 ): ControlMode {
-	if (savedMode === 'gear' || savedMode === 'resistance') {
+	if (isControlMode(savedMode)) {
 		return savedMode;
 	}
-	return history.some((sample) => typeof sample.gear === 'number') ? 'gear' : 'resistance';
+	return history.some((sample) => sample.gear !== undefined)
+		? CONTROL_MODE.GEAR
+		: CONTROL_MODE.RESISTANCE;
 }
 
 export function loadStoredSession(storage: ReadableStorage = localStorage): StoredSession {
-	const saved = storage.getItem('trainer-session');
+	const saved = storage.getItem(SESSION_STORAGE_KEY);
 	if (!saved) {
 		return emptySession;
 	}
@@ -144,13 +150,17 @@ export function loadStoredSession(storage: ReadableStorage = localStorage): Stor
 		const parsed = JSON.parse(saved) as Partial<StoredSession>;
 		const maximums = parsed.maximums ?? emptyMetrics;
 		const history = Array.isArray(parsed.history)
-			? parsed.history.slice(-3600).map((sample) => ({
+			? parsed.history.slice(-MAX_SESSION_HISTORY_SAMPLES).map((sample) => ({
 					cadence: nonNegativeNumber(sample.cadence),
 					elapsedSeconds: nonNegativeNumber(sample.elapsedSeconds),
-					gear: optionalControlValue(sample.gear, 1, 24),
+					gear: optionalControlValue(sample.gear, MIN_GEAR, MAX_GEAR),
 					heartRate: nonNegativeNumber(sample.heartRate),
 					power: nonNegativeNumber(sample.power),
-					resistance: optionalControlValue(sample.resistance, 0, 100),
+					resistance: optionalControlValue(
+						sample.resistance,
+						MIN_RESISTANCE,
+						MAX_RESISTANCE
+					),
 					speed: nonNegativeNumber(sample.speed),
 				}))
 			: [];
@@ -171,6 +181,7 @@ export function loadStoredSession(storage: ReadableStorage = localStorage): Stor
 			},
 			calories: nonNegativeNumber(parsed.calories),
 			controlMode: controlModeForHistory(history, parsed.controlMode),
+			discarded: parsed.discarded === true,
 			distance: nonNegativeNumber(parsed.distance),
 			elapsedSeconds: nonNegativeNumber(parsed.elapsedSeconds),
 			ended: parsed.ended === true,
@@ -184,8 +195,7 @@ export function loadStoredSession(storage: ReadableStorage = localStorage): Stor
 				power: nonNegativeNumber(maximums.power),
 				speed: nonNegativeNumber(maximums.speed),
 			},
-			savedSessionId:
-				typeof parsed.savedSessionId === 'string' ? parsed.savedSessionId : undefined,
+			savedSessionId: isString(parsed.savedSessionId) ? parsed.savedSessionId : undefined,
 			startedAt: nonNegativeNumber(parsed.startedAt),
 		};
 	} catch {
@@ -194,10 +204,10 @@ export function loadStoredSession(storage: ReadableStorage = localStorage): Stor
 }
 
 export function storedResistance(storage: ReadableStorage = localStorage) {
-	const saved = storage.getItem('trainer-resistance-percent');
+	const saved = storage.getItem(RESISTANCE_STORAGE_KEY);
 	if (saved === null) {
-		return 10;
+		return DEFAULT_RESISTANCE;
 	}
 	const value = Number(saved);
-	return Number.isFinite(value) ? Math.max(0, Math.min(100, value)) : 10;
+	return Number.isFinite(value) ? clampResistance(value) : DEFAULT_RESISTANCE;
 }
