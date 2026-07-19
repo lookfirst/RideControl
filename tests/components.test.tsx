@@ -10,11 +10,8 @@ import { Metric, SessionMetric, SmallMetric } from '../src/components/metrics';
 import { Notification } from '../src/components/notification';
 import { ResistanceControl } from '../src/components/resistance-control';
 import { SessionChart } from '../src/components/session-chart';
-import {
-	DeleteSessionDialog,
-	SessionDetail,
-	SessionHistory,
-} from '../src/components/session-history';
+import { DeleteSessionDialog, SessionDetail } from '../src/components/session-detail';
+import { SessionHistory } from '../src/components/session-history';
 import { SessionSaveDialog } from '../src/components/session-save-dialog';
 import { TrainingControl } from '../src/components/training-control';
 import { WelcomeDialog } from '../src/components/welcome-dialog';
