@@ -1,13 +1,10 @@
 import { createStore } from '@tanstack/react-store';
 import { emptyMetrics, emptySession, MAX_SESSION_HISTORY_SAMPLES } from '../constants';
-import {
-	addMetricAggregates,
-	estimatedCyclingCalories,
-	SESSION_STORAGE_KEY,
-	sessionContinuation,
-} from '../lib/session';
+import { CONTROL_MODE, type ControlMode } from '../lib/control-mode';
+import { estimatedCyclingCalories } from '../lib/cycling-energy';
+import { addMetricAggregates, SESSION_STORAGE_KEY, sessionContinuation } from '../lib/session';
 import { kilometersTraveled } from '../lib/units';
-import type { ControlMode, Metrics, SessionSnapshot, StoredSession } from '../types';
+import type { Metrics, SessionSnapshot, StoredSession } from '../types';
 
 interface RecordSessionTick {
 	control: {
@@ -132,7 +129,7 @@ export function createSessionStore(restored: StoredSession, now = Date.now()) {
 				}
 				const elapsedSeconds = current.elapsedSeconds + seconds;
 				const controlSample =
-					control.mode === 'gear'
+					control.mode === CONTROL_MODE.GEAR
 						? { gear: control.gear }
 						: { resistance: control.resistance };
 				const sample = {

@@ -1,6 +1,5 @@
 import { emptyMetrics, emptySession, MAX_SESSION_HISTORY_SAMPLES } from '../constants';
 import type {
-	ControlMode,
 	MetricAggregate,
 	MetricSample,
 	Metrics,
@@ -8,15 +7,13 @@ import type {
 	SessionSnapshot,
 	StoredSession,
 } from '../types';
+import { CONTROL_MODE, type ControlMode, isControlMode } from './control-mode';
 import { clampGear, MAX_GEAR, MIN_GEAR } from './gears';
 import { clamp, nonNegativeNumber } from './numbers';
 import { clampResistance, DEFAULT_RESISTANCE, MAX_RESISTANCE, MIN_RESISTANCE } from './resistance';
 
 export const SESSION_STORAGE_KEY = 'trainer-session';
 export const RESISTANCE_STORAGE_KEY = 'trainer-resistance-percent';
-
-const JOULES_PER_KILOCALORIE = 4184;
-const ESTIMATED_CYCLING_EFFICIENCY = 0.24;
 
 type ReadableStorage = Pick<Storage, 'getItem'>;
 
@@ -37,12 +34,6 @@ export function sessionContinuation(snapshot: SessionSnapshot): StoredSession {
 
 export function sessionNeedsUnloadWarning(ended: boolean, elapsedSeconds: number): boolean {
 	return !ended && elapsedSeconds > 0;
-}
-
-export function estimatedCyclingCalories(powerWatts: number, seconds: number): number {
-	return powerWatts > 0
-		? (powerWatts * seconds) / (JOULES_PER_KILOCALORIE * ESTIMATED_CYCLING_EFFICIENCY)
-		: 0;
 }
 
 export function requestUnloadConfirmation(
@@ -136,10 +127,12 @@ export function controlModeForHistory(
 	history: Partial<Pick<MetricSample, 'gear'>>[],
 	savedMode?: ControlMode
 ): ControlMode {
-	if (savedMode === 'gear' || savedMode === 'resistance') {
+	if (isControlMode(savedMode)) {
 		return savedMode;
 	}
-	return history.some((sample) => typeof sample.gear === 'number') ? 'gear' : 'resistance';
+	return history.some((sample) => typeof sample.gear === 'number')
+		? CONTROL_MODE.GEAR
+		: CONTROL_MODE.RESISTANCE;
 }
 
 export function loadStoredSession(storage: ReadableStorage = localStorage): StoredSession {

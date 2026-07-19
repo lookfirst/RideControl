@@ -18,12 +18,13 @@ import { useSession } from './hooks/use-session';
 import { useSessionWorkflow } from './hooks/use-session-workflow';
 import { useTrainer } from './hooks/use-trainer';
 import { useZwiftClick } from './hooks/use-zwift-click';
+import { CONTROL_MODE, type ControlMode } from './lib/control-mode';
 import { eventTargetsInteractiveControl, keyboardEventHasModifiers } from './lib/dom';
 import { type AppShortcut, appShortcutForKey, gearingKeyboardShortcuts } from './lib/keyboard';
 import { requestUnloadConfirmation, sessionNeedsUnloadWarning } from './lib/session';
 import { SPEED_UNIT_STORAGE_KEY, storedSpeedUnit } from './lib/units';
 import { rememberWelcomeDismissal, shouldShowWelcome } from './lib/welcome';
-import type { ControlMode, Metrics, SavedSession, SpeedUnit } from './types';
+import type { Metrics, SavedSession, SpeedUnit } from './types';
 
 type AppOverlay = 'devices' | 'history' | 'shortcuts' | 'welcome';
 
@@ -47,7 +48,7 @@ function shiftHandlerUnlessBlocked(handler: (change: number) => void, blocked: b
 }
 
 function controlModeForClick(paired: boolean): ControlMode {
-	return paired ? 'gear' : 'resistance';
+	return paired ? CONTROL_MODE.GEAR : CONTROL_MODE.RESISTANCE;
 }
 
 export function App() {
@@ -254,13 +255,13 @@ export function App() {
 							click.paired
 								? {
 										gear: gearControl.gear,
-										mode: 'gear',
+										mode: CONTROL_MODE.GEAR,
 										onShift: gearControl.shiftGear,
 										shiftFlash: gearControl.shiftFlash,
 									}
 								: {
 										keyboardFlash: trainer.resistanceKeyFlash,
-										mode: 'resistance',
+										mode: CONTROL_MODE.RESISTANCE,
 										onChange: trainer.updateResistance,
 										ramp: trainer.resistanceRamp,
 										resistance: trainer.resistance,

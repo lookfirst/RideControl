@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { EMPTY_ROUTE } from '../constants';
+import { CONTROL_MODE } from '../lib/control-mode';
 import {
 	eventTargetsEditableControl,
 	eventTargetsInteractiveControl,
@@ -126,7 +127,7 @@ export function SessionDetail({
 	session: SavedSession;
 	speedUnit: SpeedUnit;
 }) {
-	const usesGear = session.controlMode === 'gear';
+	const usesGear = session.controlMode === CONTROL_MODE.GEAR;
 	const controlMetric = usesGear
 		? {
 				accent: 'mint',

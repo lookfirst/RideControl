@@ -1,4 +1,5 @@
 import type { MetricSample, SavedSession } from '../types';
+import { CONTROL_MODE } from './control-mode';
 import { aggregateAverage } from './format';
 import { nonNegativeNumber } from './numbers';
 import { metersForKilometers, metersPerSecond, millisecondsForSeconds } from './units';
@@ -92,7 +93,7 @@ export function sessionToTcx(session: SavedSession): string {
 	const averageCadence = aggregateAverage(session.aggregates.cadence);
 	const averagePower = aggregateAverage(session.aggregates.power);
 	const controlSummary =
-		session.controlMode === 'gear'
+		session.controlMode === CONTROL_MODE.GEAR
 			? `<rc:AverageGear>${aggregateAverage(session.aggregates.gear).toFixed(1)}</rc:AverageGear>
 						<rc:MaximumGear>${Math.max(0, ...session.history.map((sample) => nonNegativeNumber(sample.gear))).toFixed(0)}</rc:MaximumGear>`
 			: `<rc:AverageResistance>${aggregateAverage(session.aggregates.resistance).toFixed(1)}</rc:AverageResistance>

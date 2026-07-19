@@ -1,3 +1,4 @@
+import { CONTROL_MODE } from './lib/control-mode';
 import type { Metrics, StoredSession } from './types';
 
 export const FITNESS_MACHINE = 0x18_26;
@@ -47,7 +48,7 @@ export const emptySession: StoredSession = {
 		resistance: { count: 0, sum: 0 },
 	},
 	calories: 0,
-	controlMode: 'resistance',
+	controlMode: CONTROL_MODE.RESISTANCE,
 	distance: 0,
 	elapsedSeconds: 0,
 	ended: false,

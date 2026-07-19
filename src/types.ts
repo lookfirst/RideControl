@@ -1,3 +1,7 @@
+import type { ControlMode } from './lib/control-mode';
+
+export type { ControlMode } from './lib/control-mode';
+
 export interface Metrics {
 	cadence: number;
 	calories: number;
@@ -50,8 +54,6 @@ export interface SessionAggregates {
 	power: MetricAggregate;
 	resistance: MetricAggregate;
 }
-
-export type ControlMode = 'gear' | 'resistance';
 
 export interface StoredSession {
 	aggregates: SessionAggregates;

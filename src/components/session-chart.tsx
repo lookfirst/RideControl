@@ -6,6 +6,7 @@ import {
 	roundedChartMaximum,
 	storedChartMode,
 } from '../lib/chart';
+import { CONTROL_MODE, isControlMode } from '../lib/control-mode';
 import { eventTargetsEditableControl, keyboardEventHasModifiers } from '../lib/dom';
 import { formatChartSeconds } from '../lib/format';
 import { MAX_GEAR, MIN_GEAR } from '../lib/gears';
@@ -103,11 +104,12 @@ export function SessionChart({
 	const [selectedMode, setSelectedMode] = useState<ChartMode>(storedChartMode);
 	const resolvedControlMode =
 		controlMode ??
-		(history.some((sample) => sample.gear !== undefined) ? 'gear' : 'resistance');
-	const modeForAvailableControl =
-		selectedMode === 'gear' || selectedMode === 'resistance'
-			? resolvedControlMode
-			: selectedMode;
+		(history.some((sample) => sample.gear !== undefined)
+			? CONTROL_MODE.GEAR
+			: CONTROL_MODE.RESISTANCE);
+	const modeForAvailableControl = isControlMode(selectedMode)
+		? resolvedControlMode
+		: selectedMode;
 	const effectiveMode =
 		modeForAvailableControl === 'elevation' && route.length === 0
 			? 'all'
@@ -133,12 +135,12 @@ export function SessionChart({
 			};
 		});
 		const controlSeries =
-			resolvedControlMode === 'gear'
+			resolvedControlMode === CONTROL_MODE.GEAR
 				? {
 						chartMaximum: MAX_GEAR,
 						color: '#adf5bd',
 						decimals: 0,
-						key: 'gear' as const,
+						key: CONTROL_MODE.GEAR,
 						label: 'Gear',
 						minimum: MIN_GEAR,
 						unit: '',
@@ -148,7 +150,7 @@ export function SessionChart({
 						chartMaximum: MAX_RESISTANCE,
 						color: '#adf5bd',
 						decimals: 0,
-						key: 'resistance' as const,
+						key: CONTROL_MODE.RESISTANCE,
 						label: 'Resistance',
 						minimum: MIN_RESISTANCE,
 						unit: '%',
