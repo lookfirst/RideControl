@@ -11,6 +11,7 @@ import { CONTROL_MODE, type ControlMode, isControlMode } from './control-mode';
 import { clampGear, MAX_GEAR, MIN_GEAR } from './gears';
 import { clamp, nonNegativeNumber } from './numbers';
 import { clampResistance, DEFAULT_RESISTANCE, MAX_RESISTANCE, MIN_RESISTANCE } from './resistance';
+import { isFiniteNumber, isString } from './type-guards';
 
 export const SESSION_STORAGE_KEY = 'trainer-session';
 export const RESISTANCE_STORAGE_KEY = 'trainer-resistance-percent';
@@ -65,22 +66,22 @@ export function addMetricAggregates(
 	return {
 		cadence: addAggregate(aggregates.cadence, metrics.cadence, false),
 		gear:
-			typeof metrics.gear === 'number'
-				? addAggregate(aggregates.gear, metrics.gear, true)
-				: aggregates.gear,
+			metrics.gear === undefined
+				? aggregates.gear
+				: addAggregate(aggregates.gear, metrics.gear, true),
 		heartRate: addAggregate(aggregates.heartRate, metrics.heartRate, false),
 		power: addAggregate(aggregates.power, metrics.power, true),
 		resistance:
-			typeof metrics.resistance === 'number'
-				? addAggregate(aggregates.resistance, metrics.resistance, true)
-				: aggregates.resistance,
+			metrics.resistance === undefined
+				? aggregates.resistance
+				: addAggregate(aggregates.resistance, metrics.resistance, true),
 	};
 }
 
 export function aggregateGear(samples: Partial<Pick<MetricSample, 'gear'>>[]): MetricAggregate {
 	return samples.reduce<MetricAggregate>(
 		(aggregate, sample) => {
-			if (typeof sample.gear !== 'number' || !Number.isFinite(sample.gear)) {
+			if (!isFiniteNumber(sample.gear)) {
 				return aggregate;
 			}
 			return addAggregate(aggregate, clampGear(sample.gear), true);
@@ -94,7 +95,7 @@ export function aggregateResistance(
 ): MetricAggregate {
 	return samples.reduce<MetricAggregate>(
 		(aggregate, sample) => {
-			if (typeof sample.resistance !== 'number' || !Number.isFinite(sample.resistance)) {
+			if (!isFiniteNumber(sample.resistance)) {
 				return aggregate;
 			}
 			return addAggregate(aggregate, clampResistance(sample.resistance), true);
@@ -117,7 +118,7 @@ export function restoreAggregate(
 }
 
 function optionalControlValue(value: unknown, minimum: number, maximum: number) {
-	if (typeof value !== 'number' || !Number.isFinite(value)) {
+	if (!isFiniteNumber(value)) {
 		return;
 	}
 	return clamp(value, minimum, maximum);
@@ -130,7 +131,7 @@ export function controlModeForHistory(
 	if (isControlMode(savedMode)) {
 		return savedMode;
 	}
-	return history.some((sample) => typeof sample.gear === 'number')
+	return history.some((sample) => sample.gear !== undefined)
 		? CONTROL_MODE.GEAR
 		: CONTROL_MODE.RESISTANCE;
 }
@@ -188,8 +189,7 @@ export function loadStoredSession(storage: ReadableStorage = localStorage): Stor
 				power: nonNegativeNumber(maximums.power),
 				speed: nonNegativeNumber(maximums.speed),
 			},
-			savedSessionId:
-				typeof parsed.savedSessionId === 'string' ? parsed.savedSessionId : undefined,
+			savedSessionId: isString(parsed.savedSessionId) ? parsed.savedSessionId : undefined,
 			startedAt: nonNegativeNumber(parsed.startedAt),
 		};
 	} catch {

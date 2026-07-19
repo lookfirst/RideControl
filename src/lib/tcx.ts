@@ -46,9 +46,9 @@ function trackpointDistances(session: SavedSession): number[] {
 function trackpointXml(sample: MetricSample, timestamp: number, distanceMeters: number): string {
 	const heartRate = nonNegativeNumber(sample.heartRate);
 	const controlExtension =
-		typeof sample.gear === 'number'
-			? `<rc:Gear>${Math.round(nonNegativeNumber(sample.gear))}</rc:Gear>`
-			: `<rc:Resistance>${nonNegativeNumber(sample.resistance).toFixed(1)}</rc:Resistance>`;
+		sample.gear === undefined
+			? `<rc:Resistance>${nonNegativeNumber(sample.resistance).toFixed(1)}</rc:Resistance>`
+			: `<rc:Gear>${Math.round(nonNegativeNumber(sample.gear))}</rc:Gear>`;
 	return `
 					<Trackpoint>
 						<Time>${new Date(timestamp).toISOString()}</Time>

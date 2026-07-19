@@ -139,7 +139,7 @@ export async function waitForFreshAdvertisement(
 	onAdvertisement?: (event: BluetoothAdvertisingEvent) => void,
 	timeoutMs = 3000
 ): Promise<void> {
-	if (typeof device.watchAdvertisements !== 'function') {
+	if (!device.watchAdvertisements) {
 		return;
 	}
 	const controller = new AbortController();

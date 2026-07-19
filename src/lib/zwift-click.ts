@@ -1,4 +1,5 @@
 import { waitForFreshAdvertisement } from './bluetooth';
+import { isRecord, isString } from './type-guards';
 
 export const ZWIFT_CLICK_NAME = 'Zwift Click';
 export const ZWIFT_CLICK_SERVICE = '0000fc82-0000-1000-8000-00805f9b34fb';
@@ -239,11 +240,7 @@ export function parseClickV2Shift(
 export function storedClickDeviceIds(storage: Pick<Storage, 'getItem'> = localStorage): string[] {
 	try {
 		const saved = JSON.parse(storage.getItem(CLICK_DEVICE_IDS_STORAGE_KEY) ?? '[]');
-		return Array.isArray(saved)
-			? saved
-					.filter((value): value is string => typeof value === 'string')
-					.slice(0, MAX_CLICK_CONTROLLERS)
-			: [];
+		return Array.isArray(saved) ? saved.filter(isString).slice(0, MAX_CLICK_CONTROLLERS) : [];
 	} catch {
 		return [];
 	}
@@ -254,7 +251,7 @@ export function storedClickControllerRoles(
 ): ClickControllerRoles {
 	try {
 		const saved = JSON.parse(storage.getItem(CLICK_CONTROLLER_ROLES_STORAGE_KEY) ?? '{}');
-		if (!saved || typeof saved !== 'object' || Array.isArray(saved)) {
+		if (!isRecord(saved)) {
 			return {};
 		}
 		const roles: ClickControllerRoles = {};

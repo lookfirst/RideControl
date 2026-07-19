@@ -2,6 +2,7 @@ import type { ChartMode } from '../types';
 import { CONTROL_MODE, type ControlMode } from './control-mode';
 import { METRIC_PRESENTATION, STANDARD_METRIC_KEYS } from './metric-presentation';
 import { clamp } from './numbers';
+import { isFiniteNumber } from './type-guards';
 
 export const CHART_MODE_STORAGE_KEY = 'trainer-chart-mode';
 
@@ -53,7 +54,7 @@ export function chartPath(
 	let drawing = false;
 	return values
 		.map((value, index) => {
-			if (typeof value !== 'number' || !Number.isFinite(value)) {
+			if (!isFiniteNumber(value)) {
 				drawing = false;
 				return '';
 			}
