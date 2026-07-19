@@ -305,8 +305,13 @@ describe('view components', () => {
 		expect(panel).toContain('Reconnect');
 		expect(panel.match(/animate-pulse/g)).toHaveLength(2);
 		expect(panel.match(/animate-pulse bg-sky-400/g)).toHaveLength(1);
-		expect(panel).toContain('Enable reconnect saving in Chrome');
-		expect(panel).toContain('https://github.com/lookfirst/RideControl#automatic-reconnect');
+		expect(panel).toContain('Automatic reconnect in Chrome');
+		expect(panel).toContain('Chrome needs persistent Bluetooth permissions');
+		expect(panel).toContain('chrome://flags/#enable-web-bluetooth-new-permissions-backend');
+		expect(panel).toContain('Copy Chrome Bluetooth settings address');
+		expect(panel).toContain('Use the new permissions backend for Web Bluetooth');
+		expect(panel).toContain('Relaunch Chrome, then pair each device once more.');
+		expect(panel).not.toContain('github.com/lookfirst/RideControl#automatic-reconnect');
 		expect(panel).toContain('+ Controller');
 		expect(panel.indexOf('+ Controller')).toBeLessThan(panel.indexOf('− Controller'));
 		expect(panel).toContain('animate-pulse');
@@ -332,9 +337,9 @@ describe('view components', () => {
 			/>
 		);
 		expect(unsupportedPanel).toContain('Bluetooth does not work in Brave');
-		expect(unsupportedPanel).not.toContain('Enable reconnect saving in Chrome');
+		expect(unsupportedPanel).not.toContain('Automatic reconnect in Chrome');
 		expect(unsupportedPanel).not.toContain(
-			'https://github.com/lookfirst/RideControl#automatic-reconnect'
+			'chrome://flags/#enable-web-bluetooth-new-permissions-backend'
 		);
 		expect(unsupportedPanel).not.toContain('Smart trainer');
 		expect(unsupportedPanel).not.toContain('Heart rate');

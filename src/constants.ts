@@ -13,8 +13,6 @@ export const CYCLING_POWER_MEASUREMENT = 0x2a_63;
 export const CSC_MEASUREMENT = 0x2a_5b;
 export const CHROME_BLUETOOTH_FLAGS_URL =
 	'chrome://flags/#enable-web-bluetooth-new-permissions-backend';
-export const AUTOMATIC_RECONNECT_README_URL =
-	'https://github.com/lookfirst/RideControl#automatic-reconnect';
 export const CHROME_BLUETOOTH_PERMISSION_MESSAGE = 'Chrome returned no site-authorized.';
 export const WEB_BLUETOOTH_UNAVAILABLE_MESSAGE =
 	'Web Bluetooth requires current Chrome or Edge on localhost or HTTPS.';

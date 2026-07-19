@@ -1,7 +1,9 @@
-import { useEffect } from 'react';
-import { AUTOMATIC_RECONNECT_README_URL } from '../constants';
+import { useState } from 'react';
+import { CHROME_BLUETOOTH_FLAGS_URL } from '../constants';
+import { useBodyScrollLock, useCloseOnEscape } from '../hooks/use-dialog-behavior';
 import { bluetoothBrowserNotice } from '../lib/browser';
 import type { DeviceConnectionView } from '../lib/device-connection';
+import { MAX_CLICK_CONTROLLERS } from '../lib/zwift-click';
 import { Icon } from './icon';
 
 interface DeviceSlot extends DeviceConnectionView {
@@ -199,24 +201,13 @@ export function DevicePairingPanel({
 	open: boolean;
 	trainer: DeviceSlot;
 }) {
-	useEffect(() => {
-		if (!open) {
-			return;
-		}
-		const closeOnEscape = (event: KeyboardEvent) => {
-			if (event.key === 'Escape') {
-				event.preventDefault();
-				onClose();
-			}
-		};
-		const previousOverflow = document.body.style.overflow;
-		document.body.style.overflow = 'hidden';
-		window.addEventListener('keydown', closeOnEscape);
-		return () => {
-			document.body.style.overflow = previousOverflow;
-			window.removeEventListener('keydown', closeOnEscape);
-		};
-	}, [onClose, open]);
+	const [flagsUrlCopied, setFlagsUrlCopied] = useState(false);
+	useCloseOnEscape(open, onClose);
+	useBodyScrollLock(open);
+	const copyChromeFlagsUrl = async () => {
+		await navigator.clipboard.writeText(CHROME_BLUETOOTH_FLAGS_URL);
+		setFlagsUrlCopied(true);
+	};
 
 	if (!open) {
 		return null;
@@ -233,6 +224,9 @@ export function DevicePairingPanel({
 	} else if (click.pairedCount) {
 		pairControllerLabel = 'Pair other controller';
 	}
+	const chromeFlagsCopyLabel = flagsUrlCopied
+		? 'copied, now paste it into a new tab.'
+		: CHROME_BLUETOOTH_FLAGS_URL;
 
 	return (
 		<div className="fixed inset-0 z-50 flex justify-end bg-black/65 backdrop-blur-sm">
@@ -358,7 +352,7 @@ export function DevicePairingPanel({
 								{click.pairedCount > 0 ? (
 									<DeviceActions showBusy={false} slot={clickSlot} />
 								) : null}
-								{click.pairedCount < 2 ? (
+								{click.pairedCount < MAX_CLICK_CONTROLLERS ? (
 									<button
 										className="h-9 rounded-lg bg-lime px-3 font-bold text-ink text-xs transition hover:bg-[#e4ff9c] disabled:opacity-50"
 										disabled={click.pairing}
@@ -374,17 +368,36 @@ export function DevicePairingPanel({
 								identified automatically and reconnect in the background.
 							</p>
 						</article>
-						<p className="px-1 text-[11px] text-slate-500">
-							Having reconnect trouble?{' '}
-							<a
-								className="font-semibold text-slate-400 underline underline-offset-2 hover:text-slate-200"
-								href={AUTOMATIC_RECONNECT_README_URL}
-								rel="noreferrer"
-								target="_blank"
-							>
-								Enable reconnect saving in Chrome
-							</a>
-						</p>
+						<aside className="rounded-xl border border-sky-400/20 bg-sky-400/5 p-3 text-[11px] text-slate-400 leading-relaxed">
+							<h3 className="font-semibold text-slate-200 text-xs">
+								Automatic reconnect in Chrome
+							</h3>
+							<p className="mt-1">
+								Chrome needs persistent Bluetooth permissions to reconnect devices
+								after a refresh.
+							</p>
+							<ol className="mt-2 list-decimal space-y-1 pl-4">
+								<li>
+									{flagsUrlCopied ? null : 'Open '}
+									<button
+										aria-label="Copy Chrome Bluetooth settings address"
+										className="break-all font-semibold text-sky-300 underline underline-offset-2 hover:text-sky-200"
+										onClick={copyChromeFlagsUrl}
+										type="button"
+									>
+										{chromeFlagsCopyLabel}
+									</button>
+								</li>
+								<li>
+									Enable{' '}
+									<strong>
+										Use the new permissions backend for Web Bluetooth
+									</strong>
+									.
+								</li>
+								<li>Relaunch Chrome, then pair each device once more.</li>
+							</ol>
+						</aside>
 					</div>
 				)}
 			</section>
