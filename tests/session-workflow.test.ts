@@ -1,34 +1,49 @@
 import { describe, expect, test } from 'bun:test';
-import { initialSessionWorkflowState, sessionWorkflowReducer } from '../src/lib/session-workflow';
+import { SESSION_WORKFLOW_INTENT, SESSION_WORKFLOW_PHASE } from '../src/lib/session-workflow';
+import {
+	createSessionWorkflowStore,
+	initialSessionWorkflowState,
+} from '../src/stores/session-workflow-store';
 import type { SavedSession } from '../src/types';
 
-describe('session workflow reducer', () => {
+describe('session workflow store', () => {
 	test('opens with the ended-session intent when an unsaved session is restored', () => {
 		expect(initialSessionWorkflowState(true)).toEqual({
-			intent: { kind: 'end' },
-			phase: 'prompt',
+			intent: { kind: SESSION_WORKFLOW_INTENT.END },
+			phase: SESSION_WORKFLOW_PHASE.PROMPT,
 		});
-		expect(initialSessionWorkflowState(false)).toEqual({ phase: 'closed' });
+		expect(initialSessionWorkflowState(false)).toEqual({
+			phase: SESSION_WORKFLOW_PHASE.CLOSED,
+		});
 	});
 
 	test('preserves the requested next session while saving', () => {
 		const session = { id: 'saved-session' } as SavedSession;
-		const prompt = sessionWorkflowReducer(
-			{ phase: 'closed' },
-			{ intent: { kind: 'continue', session }, type: 'open' }
-		);
-		expect(prompt).toEqual({ intent: { kind: 'continue', session }, phase: 'prompt' });
-		const saving = sessionWorkflowReducer(prompt, { type: 'start-saving' });
-		expect(saving).toEqual({ intent: { kind: 'continue', session }, phase: 'saving' });
-		expect(sessionWorkflowReducer(saving, { type: 'save-failed' })).toEqual(prompt);
+		const store = createSessionWorkflowStore(false);
+		store.actions.open({ kind: SESSION_WORKFLOW_INTENT.CONTINUE, session });
+		const prompt = store.get();
+		expect(prompt).toEqual({
+			intent: { kind: SESSION_WORKFLOW_INTENT.CONTINUE, session },
+			phase: SESSION_WORKFLOW_PHASE.PROMPT,
+		});
+		store.actions.startSaving();
+		expect(store.get()).toEqual({
+			intent: { kind: SESSION_WORKFLOW_INTENT.CONTINUE, session },
+			phase: SESSION_WORKFLOW_PHASE.SAVING,
+		});
+		store.actions.saveFailed();
+		expect(store.get()).toEqual(prompt);
 	});
 
 	test('ignores invalid transitions and closes atomically', () => {
-		const closed = { phase: 'closed' } as const;
-		expect(sessionWorkflowReducer(closed, { type: 'start-saving' })).toBe(closed);
-		expect(sessionWorkflowReducer(closed, { type: 'save-failed' })).toBe(closed);
-		expect(
-			sessionWorkflowReducer({ intent: { kind: 'new' }, phase: 'prompt' }, { type: 'close' })
-		).toEqual(closed);
+		const store = createSessionWorkflowStore(false);
+		const closed = store.get();
+		store.actions.startSaving();
+		expect(store.get()).toBe(closed);
+		store.actions.saveFailed();
+		expect(store.get()).toBe(closed);
+		store.actions.open({ kind: SESSION_WORKFLOW_INTENT.NEW });
+		store.actions.close();
+		expect(store.get()).toEqual({ phase: SESSION_WORKFLOW_PHASE.CLOSED });
 	});
 });

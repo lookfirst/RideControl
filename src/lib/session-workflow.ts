@@ -11,39 +11,26 @@ export interface SessionWorkflowController {
 	startNew: () => void;
 }
 
+export const SESSION_WORKFLOW_INTENT = {
+	CONTINUE: 'continue',
+	END: 'end',
+	NEW: 'new',
+} as const;
+
+export const SESSION_WORKFLOW_PHASE = {
+	CLOSED: 'closed',
+	PROMPT: 'prompt',
+	SAVING: 'saving',
+} as const;
+
 export type SessionWorkflowIntent =
-	| { kind: 'end' }
-	| { kind: 'new' }
-	| { kind: 'continue'; session: SavedSession };
+	| { kind: typeof SESSION_WORKFLOW_INTENT.END }
+	| { kind: typeof SESSION_WORKFLOW_INTENT.NEW }
+	| { kind: typeof SESSION_WORKFLOW_INTENT.CONTINUE; session: SavedSession };
 
 export type SessionWorkflowState =
-	| { phase: 'closed' }
-	| { intent: SessionWorkflowIntent; phase: 'prompt' | 'saving' };
-
-export type SessionWorkflowAction =
-	| { type: 'close' }
-	| { intent: SessionWorkflowIntent; type: 'open' }
-	| { type: 'save-failed' }
-	| { type: 'start-saving' };
-
-export function initialSessionWorkflowState(open: boolean): SessionWorkflowState {
-	return open ? { intent: { kind: 'end' }, phase: 'prompt' } : { phase: 'closed' };
-}
-
-export function sessionWorkflowReducer(
-	state: SessionWorkflowState,
-	action: SessionWorkflowAction
-): SessionWorkflowState {
-	switch (action.type) {
-		case 'close':
-			return { phase: 'closed' };
-		case 'open':
-			return { intent: action.intent, phase: 'prompt' };
-		case 'save-failed':
-			return state.phase === 'saving' ? { ...state, phase: 'prompt' } : state;
-		case 'start-saving':
-			return state.phase === 'prompt' ? { ...state, phase: 'saving' } : state;
-		default:
-			return state;
-	}
-}
+	| { phase: typeof SESSION_WORKFLOW_PHASE.CLOSED }
+	| {
+			intent: SessionWorkflowIntent;
+			phase: typeof SESSION_WORKFLOW_PHASE.PROMPT | typeof SESSION_WORKFLOW_PHASE.SAVING;
+	  };

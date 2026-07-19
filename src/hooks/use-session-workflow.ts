@@ -1,4 +1,5 @@
-import { useCallback, useState } from 'react';
+import { useSelector } from '@tanstack/react-store';
+import { useCallback, useRef } from 'react';
 import { errorMessage } from '../lib/errors';
 import {
 	createSavedSession,
@@ -6,11 +7,12 @@ import {
 	saveSession,
 } from '../lib/saved-sessions';
 import {
-	initialSessionWorkflowState,
+	SESSION_WORKFLOW_INTENT,
+	SESSION_WORKFLOW_PHASE,
 	type SessionWorkflowController,
 	type SessionWorkflowIntent,
-	sessionWorkflowReducer,
 } from '../lib/session-workflow';
+import { createSessionWorkflowStore } from '../stores/session-workflow-store';
 import type { SavedSession, SessionMetadata } from '../types';
 
 export function useSessionWorkflow(
@@ -18,63 +20,61 @@ export function useSessionWorkflow(
 	setNotice: (notice: string) => void
 ) {
 	const sessionIsSaved = Boolean(session.savedSessionId);
-	const [state, setState] = useState(() =>
-		initialSessionWorkflowState(session.ended && !sessionIsSaved)
-	);
-	const dispatch = useCallback((action: Parameters<typeof sessionWorkflowReducer>[1]) => {
-		setState((current) => sessionWorkflowReducer(current, action));
-	}, []);
+	const storeRef = useRef<ReturnType<typeof createSessionWorkflowStore> | undefined>(undefined);
+	storeRef.current ??= createSessionWorkflowStore(session.ended && !sessionIsSaved);
+	const store = storeRef.current;
+	const state = useSelector(store);
 
 	const startNewSession = useCallback(() => {
 		session.startNew();
-		dispatch({ type: 'close' });
+		store.actions.close();
 		setNotice('New session ready.');
-	}, [dispatch, session.startNew, setNotice]);
+	}, [session.startNew, setNotice, store]);
 
 	const continueSession = useCallback(
 		(savedSession: SavedSession) => {
 			session.continueFrom(savedSession);
-			dispatch({ type: 'close' });
+			store.actions.close();
 			setNotice('Session continued.');
 		},
-		[dispatch, session.continueFrom, setNotice]
+		[session.continueFrom, setNotice, store]
 	);
 
 	const completeIntent = useCallback(
 		(intent: SessionWorkflowIntent, saved: boolean) => {
-			if (intent.kind === 'continue') {
+			if (intent.kind === SESSION_WORKFLOW_INTENT.CONTINUE) {
 				session.continueFrom(intent.session);
 				setNotice(
 					saved ? 'Session saved. Selected session continued.' : 'Session continued.'
 				);
-			} else if (intent.kind === 'new' || !saved) {
+			} else if (intent.kind === SESSION_WORKFLOW_INTENT.NEW || !saved) {
 				session.startNew();
 				setNotice(saved ? 'Session saved. New session ready.' : 'New session ready.');
 			} else {
 				setNotice('Session saved.');
 			}
-			dispatch({ type: 'close' });
+			store.actions.close();
 		},
-		[dispatch, session.continueFrom, session.startNew, setNotice]
+		[session.continueFrom, session.startNew, setNotice, store]
 	);
 
 	const endSession = useCallback(() => {
 		session.endSession();
-		dispatch({ intent: { kind: 'end' }, type: 'open' });
-	}, [dispatch, session.endSession]);
+		store.actions.open({ kind: SESSION_WORKFLOW_INTENT.END });
+	}, [session.endSession, store]);
 
 	const requestNewSession = useCallback(() => {
 		if (session.ended) {
 			if (sessionIsSaved) {
 				startNewSession();
 			} else {
-				dispatch({ intent: { kind: 'new' }, type: 'open' });
+				store.actions.open({ kind: SESSION_WORKFLOW_INTENT.NEW });
 			}
 			return;
 		}
 		if (session.elapsedSeconds > 0) {
 			session.endSession();
-			dispatch({ intent: { kind: 'new' }, type: 'open' });
+			store.actions.open({ kind: SESSION_WORKFLOW_INTENT.NEW });
 			return;
 		}
 		startNewSession();
@@ -84,7 +84,7 @@ export function useSessionWorkflow(
 		session.ended,
 		sessionIsSaved,
 		startNewSession,
-		dispatch,
+		store,
 	]);
 
 	const requestContinuation = useCallback(
@@ -99,47 +99,47 @@ export function useSessionWorkflow(
 			if (!session.ended) {
 				session.endSession();
 			}
-			dispatch({ intent: { kind: 'continue', session: savedSession }, type: 'open' });
+			store.actions.open({ kind: SESSION_WORKFLOW_INTENT.CONTINUE, session: savedSession });
 		},
 		[
 			continueSession,
-			dispatch,
 			session.elapsedSeconds,
 			session.endSession,
 			session.ended,
 			sessionIsSaved,
+			store,
 		]
 	);
 
 	const saveCurrentSession = useCallback(
 		async (metadata: SessionMetadata) => {
-			if (state.phase === 'closed') {
+			if (state.phase === SESSION_WORKFLOW_PHASE.CLOSED) {
 				return;
 			}
 			const { intent } = state;
-			dispatch({ type: 'start-saving' });
+			store.actions.startSaving();
 			try {
 				const savedSession = createSavedSession(session.snapshot, metadata);
 				await saveSession(savedSession);
 				session.markSaved(savedSession.id);
 				completeIntent(intent, true);
 			} catch (error) {
-				dispatch({ type: 'save-failed' });
+				store.actions.saveFailed();
 				setNotice(`Session could not be saved: ${errorMessage(error)}`);
 			}
 		},
-		[completeIntent, dispatch, session.markSaved, session.snapshot, setNotice, state]
+		[completeIntent, session.markSaved, session.snapshot, setNotice, state, store]
 	);
 
 	const proceedWithoutSaving = useCallback(() => {
-		if (state.phase !== 'closed') {
+		if (state.phase !== SESSION_WORKFLOW_PHASE.CLOSED) {
 			completeIntent(state.intent, false);
 		}
 	}, [completeIntent, state]);
-	const closeSaveDialog = useCallback(() => dispatch({ type: 'close' }), [dispatch]);
+	const closeSaveDialog = useCallback(() => store.actions.close(), [store]);
 	const openSaveDialog = useCallback(
-		() => dispatch({ intent: { kind: 'end' }, type: 'open' }),
-		[dispatch]
+		() => store.actions.open({ kind: SESSION_WORKFLOW_INTENT.END }),
+		[store]
 	);
 	const requestPersistentStorage = useCallback(
 		() => requestPersistentSessionStorage().catch(() => false),
@@ -148,7 +148,9 @@ export function useSessionWorkflow(
 
 	return {
 		closeSaveDialog,
-		continuing: state.phase !== 'closed' && state.intent.kind === 'continue',
+		continuing:
+			state.phase !== SESSION_WORKFLOW_PHASE.CLOSED &&
+			state.intent.kind === SESSION_WORKFLOW_INTENT.CONTINUE,
 		endSession,
 		openSaveDialog,
 		proceedWithoutSaving,
@@ -156,8 +158,8 @@ export function useSessionWorkflow(
 		requestNewSession,
 		requestPersistentStorage,
 		saveCurrentSession,
-		saveDialogOpen: state.phase !== 'closed',
-		saving: state.phase === 'saving',
+		saveDialogOpen: state.phase !== SESSION_WORKFLOW_PHASE.CLOSED,
+		saving: state.phase === SESSION_WORKFLOW_PHASE.SAVING,
 		sessionIsSaved,
 	};
 }
