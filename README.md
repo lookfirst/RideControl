@@ -7,7 +7,7 @@ Bike trainer control web app using Web Bluetooth. Tested with Wahoo KICKR Core 2
 ## Features
 
 - Welcomes first-time visitors with a concise introduction, open-source and local-data privacy details, a direct source-code link, and an optional “Don't show again” preference stored in the browser; the welcome screen remains available from the Ride Control footer link.
-- Manages the smart trainer, heart rate monitor, and both Zwift Click V2 controllers independently from one paired-devices panel, with blue pulsing dots for controllers awaiting connection and a green indicator once every paired device is ready; keeps the `+` controller above the `−` controller, automatically identifies each physical side, connects both controllers concurrently, routes mirrored Bluetooth notifications only to that side, glows only its row as it is pressed, remembers its identity, continuously retries saved Click connections after a refresh or controller sleep, and keeps the sleeping-controller display stable between retry attempts; stalled attempts can be retried immediately, and Click presses made while this panel is open stay in setup and do not shift the ride.
+- Manages the smart trainer, heart rate monitor, and both Zwift Click V2 controllers independently from one paired-devices tray that slides smoothly into and out of view, with blue pulsing dots and a consistent reconnecting status for controllers awaiting connection and a green indicator once every paired device is ready; keeps the `+` controller above the `−` controller, automatically identifies each physical side, connects both controllers concurrently, routes mirrored Bluetooth notifications only to that side, glows only its row as it is pressed, remembers its identity, continuously retries saved Click connections after a refresh or controller sleep, and keeps the sleeping-controller display stable between retry attempts; stalled attempts can be retried immediately, and Click presses made while this panel is open stay in setup and do not shift the ride.
 - Detects browsers outside the currently tested Chrome environment and replaces the pairing controls with a compatibility notice, while showing Chrome's automatic-reconnect setup steps directly in the paired-devices panel only when its persistent permission capability is unavailable and confirming when it is configured correctly.
 - Shows each deployment's build time in the viewer's local timezone and links it to the GitHub pull request that produced the build, falling back to the closed pull-request list when no associated PR is available.
 - Connects to compatible bike trainers and standard Bluetooth heart rate monitors through Web Bluetooth, remembers authorized devices, and automatically reconnects when possible.
@@ -43,8 +43,9 @@ connection phase instead of independently managed status flags. Shared reconnect
 notification subscriptions live in plain controllers, while device-specific adapters own GATT
 setup for heart-rate monitors, trainers, and Click controllers. Bluetooth objects and timers stay
 outside shared application state. The application component coordinates focused dashboard regions,
-uses an explicit overlay state for mutually exclusive trays, and delegates save/start/continue
-transitions to a reducer-backed session workflow. Temporary form inputs remain local React state.
+uses an explicit overlay state for mutually exclusive trays, renders every side tray through one
+animated and accessible shell, and delegates save/discard/start/continue transitions to a
+store-backed session workflow. Temporary form inputs remain local React state.
 Shared domain utilities own unit conversions, numeric bounds, storage keys, metric presentation,
 and repeated dialog and keyboard behavior so those rules stay consistent across views and exports.
 

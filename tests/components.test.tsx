@@ -300,12 +300,18 @@ describe('view components', () => {
 			/>
 		);
 		expect(panel).toContain('Paired devices');
+		expect(panel).toContain('data-side-tray="true"');
+		expect(panel).toContain('transition-opacity duration-200');
+		expect(panel).toContain('transition-transform duration-200');
+		expect(panel).toContain('translate-x-0');
 		expect(panel).toContain('Smart trainer');
 		expect(panel).toContain('Heart rate');
 		expect(panel).toContain('Zwift Click V2');
-		expect(panel).toContain('Waiting for controllers…');
+		expect(panel).toContain('Reconnecting…');
+		expect(panel).not.toContain('Waiting for controllers…');
 		expect(panel).not.toContain('Retry');
-		expect(panel).toContain('Reconnect');
+		expect(panel).toContain('Connecting…');
+		expect(panel).not.toContain('>Reconnect</button>');
 		expect(panel.match(/animate-pulse/g)).toHaveLength(2);
 		expect(panel.match(/animate-pulse bg-sky-400/g)).toHaveLength(1);
 		expect(panel).toContain('Automatic reconnect in Chrome');
@@ -661,6 +667,7 @@ describe('view components', () => {
 			/>
 		);
 		expect(html).toContain('Session history');
+		expect(html).toContain('data-side-tray="true"');
 		expect(html).toContain('No saved sessions yet');
 		expect(html).toContain('ml-auto');
 		expect(html).toContain('translate-x-0');

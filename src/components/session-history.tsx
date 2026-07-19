@@ -16,6 +16,7 @@ import type { SavedSession, SpeedUnit } from '../types';
 import { KeyboardShortcutsDialog } from './keyboard-shortcuts-dialog';
 import { SessionDetail } from './session-detail';
 import { SessionHistoryList } from './session-history-list';
+import { SideTray } from './side-tray';
 
 function shouldIgnoreHistoryAction(event: KeyboardEvent) {
 	return (
@@ -50,29 +51,12 @@ export function SessionHistory({
 	} = useSessionHistory(open);
 	const [deleteConfirmationOpen, setDeleteConfirmationOpen] = useState(false);
 	const [historyHelpOpen, setHistoryHelpOpen] = useState(false);
-	const [rendered, setRendered] = useState(open);
-	const [trayVisible, setTrayVisible] = useState(open);
 
 	useEffect(() => {
-		let frame: number | undefined;
-		let timeout: number | undefined;
-		if (open) {
-			setRendered(true);
-			frame = window.requestAnimationFrame(() => setTrayVisible(true));
-		} else {
-			setTrayVisible(false);
+		if (!open) {
 			setDeleteConfirmationOpen(false);
 			setHistoryHelpOpen(false);
-			timeout = window.setTimeout(() => setRendered(false), 200);
 		}
-		return () => {
-			if (frame !== undefined) {
-				window.cancelAnimationFrame(frame);
-			}
-			if (timeout !== undefined) {
-				window.clearTimeout(timeout);
-			}
-		};
 	}, [open]);
 
 	const selectSession = useCallback(
@@ -160,10 +144,6 @@ export function SessionHistory({
 		summaries,
 	]);
 
-	if (!rendered) {
-		return null;
-	}
-
 	let detail: ReactNode = null;
 	if (loading) {
 		detail = (
@@ -195,20 +175,14 @@ export function SessionHistory({
 	}
 
 	return (
-		<div
-			className={`fixed inset-0 z-40 bg-black/35 transition-opacity duration-200 ${trayVisible ? 'opacity-100' : 'pointer-events-none opacity-0'}`}
-		>
-			<button
-				aria-label="Close session history"
-				className="absolute inset-0 cursor-default"
-				onClick={onClose}
-				type="button"
-			/>
-			<section
-				aria-labelledby="session-history-title"
-				aria-modal="true"
-				className={`relative z-10 ml-auto flex h-full w-full max-w-6xl flex-col overflow-hidden border-slate-600 border-l bg-panel shadow-2xl shadow-black/60 transition-transform duration-200 ease-out sm:w-[min(72rem,calc(100vw-2rem))] ${trayVisible ? 'translate-x-0' : 'translate-x-full'}`}
-				role="dialog"
+		<>
+			<SideTray
+				closeLabel="Close session history"
+				closeOnEscape={false}
+				labelledBy="session-history-title"
+				onClose={onClose}
+				open={open}
+				panelClassName="flex max-w-6xl flex-col overflow-hidden sm:w-[min(72rem,calc(100vw-2rem))]"
 			>
 				<header className="flex items-center justify-between border-line border-b px-5 py-4">
 					<div>
@@ -253,7 +227,7 @@ export function SessionHistory({
 					/>
 					{detail}
 				</div>
-			</section>
+			</SideTray>
 			<KeyboardShortcutsDialog
 				handleEscape={false}
 				onClose={() => setHistoryHelpOpen(false)}
@@ -261,6 +235,6 @@ export function SessionHistory({
 				shortcuts={historyKeyboardShortcuts}
 				title="History keyboard controls"
 			/>
-		</div>
+		</>
 	);
 }

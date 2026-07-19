@@ -1,4 +1,36 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
+
+const TRAY_TRANSITION_MS = 200;
+
+export function useAnimatedTray(open: boolean): {
+	rendered: boolean;
+	visible: boolean;
+} {
+	const [rendered, setRendered] = useState(open);
+	const [visible, setVisible] = useState(open);
+
+	useEffect(() => {
+		let frame: number | undefined;
+		let timeout: number | undefined;
+		if (open) {
+			setRendered(true);
+			frame = window.requestAnimationFrame(() => setVisible(true));
+		} else {
+			setVisible(false);
+			timeout = window.setTimeout(() => setRendered(false), TRAY_TRANSITION_MS);
+		}
+		return () => {
+			if (frame !== undefined) {
+				window.cancelAnimationFrame(frame);
+			}
+			if (timeout !== undefined) {
+				window.clearTimeout(timeout);
+			}
+		};
+	}, [open]);
+
+	return { rendered, visible };
+}
 
 export function useCloseOnEscape(enabled: boolean, onClose: () => void): void {
 	useEffect(() => {
