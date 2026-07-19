@@ -49,7 +49,14 @@ export function ChartPlot({
 				>
 					<title>{title}</title>
 					<path
-						d="M0 90H100 M0 52H100 M0 14H100 M25 14V90 M50 14V90 M75 14V90"
+						d="M0 14H100 M0 90H100"
+						fill="none"
+						stroke="#3a4654"
+						strokeWidth=".75"
+						vectorEffect="non-scaling-stroke"
+					/>
+					<path
+						d="M0 52H100 M25 14V90 M50 14V90 M75 14V90"
 						fill="none"
 						stroke="#3a4654"
 						strokeDasharray="2.5 2.5"

@@ -26,6 +26,10 @@ import { historyKeyboardShortcuts } from '../src/lib/keyboard';
 
 const render = (element: React.ReactNode) => renderToStaticMarkup(element);
 const enabledEndSessionButton = /<button(?![^>]*disabled)[^>]*>End session<\/button>/;
+const solidChartBoundaries =
+	/d="M0 14H100 M0 90H100"[^>]*stroke="#3a4654"(?![^>]*stroke-dasharray)/;
+const dashedChartGuides =
+	/d="M0 52H100 M25 14V90 M50 14V90 M75 14V90"[^>]*stroke-dasharray="2.5 2.5"/;
 
 describe('view components', () => {
 	test('renders known and fallback icons', () => {
@@ -292,6 +296,8 @@ describe('view components', () => {
 		expect(html).toContain('pointer-events-none relative h-full w-15 shrink-0');
 		expect(html).toContain('h-full min-w-0 flex-1 overflow-hidden');
 		expect(html).toContain('class="block h-full w-full"');
+		expect(html).toMatch(solidChartBoundaries);
+		expect(html).toMatch(dashedChartGuides);
 		expect(html).not.toContain('absolute top-[11%] bottom-[8%] left-1');
 	});
 
