@@ -46,11 +46,11 @@ export function KeyboardShortcutsDialog({
 					{shortcuts.map((shortcut, index) => (
 						<Fragment key={shortcut.label}>
 							{shortcut.group && shortcut.group !== shortcuts[index - 1]?.group ? (
-								<div className="border-line border-t bg-slate-800/40 px-3.5 py-2 font-bold text-[10px] text-slate-500 tracking-[.14em] first:border-t-0">
+								<div className="border-line not-first:border-t bg-slate-800/40 px-3.5 py-2 font-bold text-[10px] text-slate-500 tracking-[.14em]">
 									{shortcut.group.toUpperCase()}
 								</div>
 							) : null}
-							<div className="flex min-h-12 items-center justify-between gap-5 border-line border-t px-3.5 py-2.5 first:border-t-0">
+							<div className="flex min-h-12 items-center justify-between gap-5 border-line not-first:border-t px-3.5 py-2.5">
 								<span className="text-slate-300 text-sm">{shortcut.label}</span>
 								<span className="flex shrink-0 gap-1.5">
 									{shortcut.keys.map((key) => (

@@ -9,7 +9,8 @@
     "check": "biome check .",
     "fix": "biome check --write .",
     "test": "bun test",
-    "ci": "biome check . && bun test && tsc --noEmit && vite build",
+    "tailwind:check": "bun scripts/check-tailwind.ts",
+    "ci": "biome check . && bun run tailwind:check && bun test && tsc --noEmit && vite build",
     "preview": "vite preview --host localhost --port 4200"
   },
   "dependencies": {
@@ -22,6 +23,7 @@
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.4",
+    "@tailwindcss/language-server": "^0.16.0",
     "@types/bun": "^1.3.14",
     "@types/react": "^19.2.17",
     "@types/react-dom": "^19.2.3",

@@ -34,7 +34,7 @@ export function SessionHistoryList({
 			) : null}
 			{groups.map((group) => (
 				<div className="mb-4" key={group.key}>
-					<h3 className="px-2 pb-1.5 font-bold text-[10px] text-slate-500 tracking-[.1em]">
+					<h3 className="px-2 pb-1.5 font-bold text-[10px] text-slate-500 tracking-widest">
 						{group.date.toUpperCase()}
 					</h3>
 					<div className="space-y-1">

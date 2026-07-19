@@ -140,7 +140,7 @@ function AutomaticReconnectStatus({
 					{copied ? null : 'Open '}
 					<button
 						aria-label="Copy Chrome Bluetooth settings address"
-						className="max-w-full break-words text-left align-top font-semibold text-sky-300 underline underline-offset-2 hover:text-sky-200"
+						className="wrap-break-word max-w-full text-left align-top font-semibold text-sky-300 underline underline-offset-2 hover:text-sky-200"
 						onClick={onCopy}
 						type="button"
 					>

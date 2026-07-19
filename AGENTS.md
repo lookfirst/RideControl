@@ -1,7 +1,7 @@
 # Project instructions
 
 - After making any changes, always run `bun run ci` before handing work back.
-- `bun run ci` must run the Ultracite-configured Biome checks automatically, followed by the TypeScript check and production build.
+- `bun run ci` must run the Ultracite-configured Biome checks and Tailwind CSS language-server diagnostics automatically, followed by the unit tests, TypeScript check, and production build.
 - Fix all reported issues rather than bypassing or disabling checks unless the project requirements explicitly demand an exception.
 - Keep the codebase as DRY as practical: before adding constants, calculations, formatting, parsing, labels, or state-derivation logic, search for an existing domain utility and reuse or extend it. Consolidate meaningful duplication into clearly named domain modules, but do not introduce generic abstractions that hide simple behavior or couple unrelated concepts solely because their implementations look similar.
 - Do not scatter raw string literals for shared domain modes through comparisons or state construction. Define or reuse a named `as const` domain object, derive its union type from those values, centralize validation of persisted or external strings, and reference the named members in application code. Prefer an exhaustive `switch` when every variant has distinct behavior. Raw strings remain appropriate for display text, object property names, browser or protocol values, and boundary-focused tests.
