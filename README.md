@@ -2,6 +2,8 @@
 
 Bike trainer control web app using Web Bluetooth. Tested with Wahoo Kickr Core 2 with Zwift Cog.
 
+[Open Ride Control](https://ridecontrol.xyz)
+
 ## Features
 
 - Connects to compatible bike trainers through Web Bluetooth, remembers authorized devices, and automatically reconnects when possible.
@@ -26,6 +28,12 @@ bun run dev
 ```
 
 Open <http://localhost:4200> in current Chrome.
+
+## Deployment
+
+Pull requests and pushes to `main` run the complete `bun run ci` suite in GitHub Actions. After
+CI succeeds on `main`, a separate workflow runs `bun run build` and deploys the generated `dist`
+directory to GitHub Pages at [ridecontrol.xyz](https://ridecontrol.xyz).
 
 ## Automatic reconnect
 
