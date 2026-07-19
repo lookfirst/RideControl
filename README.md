@@ -8,7 +8,7 @@ Bike trainer control web app using Web Bluetooth. Tested with Wahoo KICKR Core 2
 
 - Welcomes first-time visitors with a concise introduction, open-source and local-data privacy details, a direct source-code link, and an optional “Don't show again” preference stored in the browser; the welcome screen remains available from the Ride Control footer link.
 - Manages the smart trainer, heart rate monitor, and both Zwift Click V2 controllers independently from one paired-devices panel, with blue pulsing dots for controllers awaiting connection and a green indicator once every paired device is ready; keeps the `+` controller above the `−` controller, automatically identifies each physical side, connects both controllers concurrently, routes mirrored Bluetooth notifications only to that side, glows only its row as it is pressed, remembers its identity, continuously retries saved Click connections after a refresh or controller sleep, and keeps the sleeping-controller display stable between retry attempts; stalled attempts can be retried immediately, and Click presses made while this panel is open stay in setup and do not shift the ride.
-- Detects browsers outside the currently tested Chrome environment and replaces the pairing controls with a compatibility notice, while showing Chrome's automatic-reconnect setup steps directly in the paired-devices panel.
+- Detects browsers outside the currently tested Chrome environment and replaces the pairing controls with a compatibility notice, while showing Chrome's automatic-reconnect setup steps directly in the paired-devices panel only when its persistent permission capability is unavailable and confirming when it is configured correctly.
 - Shows each deployment's build time in the viewer's local timezone and links it to the GitHub pull request that produced the build, falling back to the closed pull-request list when no associated PR is available.
 - Connects to compatible bike trainers and standard Bluetooth heart rate monitors through Web Bluetooth, remembers authorized devices, and automatically reconnects when possible.
 - Shows live speed, power, cadence, heart rate, elapsed time, distance, and estimated calories, with MPH and KM/H display modes.
@@ -64,6 +64,8 @@ Persistent Web Bluetooth permissions are disabled by default in current Chromium
 1. Open `chrome://flags/#enable-web-bluetooth-new-permissions-backend`.
 2. Enable **Use the new permissions backend for Web Bluetooth**.
 3. Relaunch Chrome and pair the device once more from the app.
+
+The paired-devices panel detects Chrome's persistent reconnect capability and replaces these setup steps with a configured confirmation when it is available.
 
 ## License
 

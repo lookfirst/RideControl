@@ -1,3 +1,5 @@
+import { isFunction } from './type-guards';
+
 interface BrowserBrand {
 	brand: string;
 }
@@ -8,6 +10,10 @@ interface BrowserNavigator {
 	userAgentData?: {
 		brands: readonly BrowserBrand[];
 	};
+}
+
+interface BluetoothReconnectCapability {
+	getDevices?: unknown;
 }
 
 const CHROME_USER_AGENT = /\bChrome\//;
@@ -44,4 +50,10 @@ export function bluetoothBrowserNotice(
 		return 'Bluetooth does not work in Brave. Chrome is currently the only browser tested with Ride Control.';
 	}
 	return 'Bluetooth is unavailable in this browser. Chrome is currently the only browser tested with Ride Control.';
+}
+
+export function automaticBluetoothReconnectConfigured(
+	bluetooth: BluetoothReconnectCapability | undefined = globalThis.navigator?.bluetooth
+): boolean {
+	return isFunction(bluetooth?.getDevices);
 }

@@ -18,7 +18,12 @@ import {
 import { SessionSaveDialog } from '../src/components/session-save-dialog';
 import { TrainingControl } from '../src/components/training-control';
 import { WelcomeDialog } from '../src/components/welcome-dialog';
-import { CHROME_BLUETOOTH_PERMISSION_MESSAGE, emptyMetrics, emptySession } from '../src/constants';
+import {
+	CHROME_BLUETOOTH_FLAGS_URL,
+	CHROME_BLUETOOTH_PERMISSION_MESSAGE,
+	emptyMetrics,
+	emptySession,
+} from '../src/constants';
 import { historyKeyboardShortcuts } from '../src/lib/keyboard';
 import { metricAccentClass, metricIconClass } from '../src/lib/metric-presentation';
 
@@ -318,6 +323,28 @@ describe('view components', () => {
 		expect(panel).toContain('bg-mint/10');
 		expect(panel).not.toContain('shadow-[inset_0_0_18px');
 		expect(panel).not.toContain('divide-y');
+		const configuredPanel = render(
+			<DevicePairingPanel
+				automaticReconnectConfigured
+				browserNotice=""
+				click={{
+					...common,
+					connectedCount: 0,
+					controllers: [],
+					onForgetController: () => undefined,
+					pairedCount: 0,
+					pairing: false,
+					reconnecting: false,
+				}}
+				heartRate={common}
+				onClose={() => undefined}
+				open
+				trainer={common}
+			/>
+		);
+		expect(configuredPanel).toContain('Automatic reconnect is configured correctly');
+		expect(configuredPanel).not.toContain(CHROME_BLUETOOTH_FLAGS_URL);
+		expect(configuredPanel).not.toContain('Use the new permissions backend for Web Bluetooth');
 		const unsupportedPanel = render(
 			<DevicePairingPanel
 				browserNotice="Bluetooth does not work in Brave. Chrome is currently the only browser tested with Ride Control."

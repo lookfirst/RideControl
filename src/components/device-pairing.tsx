@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { CHROME_BLUETOOTH_FLAGS_URL } from '../constants';
 import { useBodyScrollLock, useCloseOnEscape } from '../hooks/use-dialog-behavior';
-import { bluetoothBrowserNotice } from '../lib/browser';
+import { automaticBluetoothReconnectConfigured, bluetoothBrowserNotice } from '../lib/browser';
 import type { DeviceConnectionView } from '../lib/device-connection';
 import { MAX_CLICK_CONTROLLERS } from '../lib/zwift-click';
 import { Icon } from './icon';
@@ -104,6 +104,58 @@ function DeviceActions({ showBusy = true, slot }: { showBusy?: boolean; slot: De
 	);
 }
 
+function AutomaticReconnectStatus({
+	configured,
+	copied,
+	copyLabel,
+	onCopy,
+}: {
+	configured: boolean;
+	copied: boolean;
+	copyLabel: string;
+	onCopy: () => void | Promise<void>;
+}) {
+	if (configured) {
+		return (
+			<aside className="rounded-xl border border-mint/20 bg-mint/5 p-3 text-[11px] text-slate-400 leading-relaxed">
+				<p className="flex items-center gap-2 font-semibold text-mint text-xs">
+					<span
+						aria-hidden="true"
+						className="h-2 w-2 shrink-0 rounded-full bg-mint shadow-[0_0_8px_rgba(173,245,189,.45)]"
+					/>
+					Automatic reconnect is configured correctly
+				</p>
+			</aside>
+		);
+	}
+
+	return (
+		<aside className="rounded-xl border border-sky-400/20 bg-sky-400/5 p-3 text-[11px] text-slate-400 leading-relaxed">
+			<h3 className="font-semibold text-slate-200 text-xs">Automatic reconnect in Chrome</h3>
+			<p className="mt-1">
+				Chrome needs persistent Bluetooth permissions to reconnect devices after a refresh.
+			</p>
+			<ol className="mt-2 list-decimal space-y-1 pl-4">
+				<li>
+					{copied ? null : 'Open '}
+					<button
+						aria-label="Copy Chrome Bluetooth settings address"
+						className="max-w-full break-words text-left align-top font-semibold text-sky-300 underline underline-offset-2 hover:text-sky-200"
+						onClick={onCopy}
+						type="button"
+					>
+						{copyLabel}
+					</button>
+				</li>
+				<li>
+					Enable <strong>Use the new permissions backend for Web Bluetooth</strong>.
+				</li>
+				<li>Relaunch Chrome, then pair each device once more.</li>
+			</ol>
+		</aside>
+	);
+}
+
 function DeviceCard({
 	description,
 	icon,
@@ -187,6 +239,7 @@ export function DevicePairingButton({
 }
 
 export function DevicePairingPanel({
+	automaticReconnectConfigured = automaticBluetoothReconnectConfigured(),
 	browserNotice = bluetoothBrowserNotice(),
 	click,
 	heartRate,
@@ -194,6 +247,7 @@ export function DevicePairingPanel({
 	open,
 	trainer,
 }: {
+	automaticReconnectConfigured?: boolean;
 	browserNotice?: string;
 	click: ClickSlot;
 	heartRate: DeviceSlot;
@@ -368,36 +422,12 @@ export function DevicePairingPanel({
 								identified automatically and reconnect in the background.
 							</p>
 						</article>
-						<aside className="rounded-xl border border-sky-400/20 bg-sky-400/5 p-3 text-[11px] text-slate-400 leading-relaxed">
-							<h3 className="font-semibold text-slate-200 text-xs">
-								Automatic reconnect in Chrome
-							</h3>
-							<p className="mt-1">
-								Chrome needs persistent Bluetooth permissions to reconnect devices
-								after a refresh.
-							</p>
-							<ol className="mt-2 list-decimal space-y-1 pl-4">
-								<li>
-									{flagsUrlCopied ? null : 'Open '}
-									<button
-										aria-label="Copy Chrome Bluetooth settings address"
-										className="max-w-full break-words text-left align-top font-semibold text-sky-300 underline underline-offset-2 hover:text-sky-200"
-										onClick={copyChromeFlagsUrl}
-										type="button"
-									>
-										{chromeFlagsCopyLabel}
-									</button>
-								</li>
-								<li>
-									Enable{' '}
-									<strong>
-										Use the new permissions backend for Web Bluetooth
-									</strong>
-									.
-								</li>
-								<li>Relaunch Chrome, then pair each device once more.</li>
-							</ol>
-						</aside>
+						<AutomaticReconnectStatus
+							configured={automaticReconnectConfigured}
+							copied={flagsUrlCopied}
+							copyLabel={chromeFlagsCopyLabel}
+							onCopy={copyChromeFlagsUrl}
+						/>
 					</div>
 				)}
 			</section>
