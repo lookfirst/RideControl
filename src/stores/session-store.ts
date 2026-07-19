@@ -78,7 +78,12 @@ function selectWorkoutForState(
 	if (current.ended) {
 		return selectPlannedWorkout(current, course);
 	}
-	return workoutSelectionLocked(current) ? current : selectActiveWorkout(current, course);
+	if (!workoutSelectionLocked(current)) {
+		return selectActiveWorkout(current, course);
+	}
+	return current.workout?.course.id === course?.id
+		? selectActiveWorkout(current, course)
+		: current;
 }
 
 function elevationTotalsAfterTick(current: SessionStoreState, distance: number) {

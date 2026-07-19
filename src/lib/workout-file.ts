@@ -3,20 +3,34 @@ import { evenlySample } from './arrays';
 import { downloadBrowserFile } from './download';
 import { parseGpxDocument } from './gpx';
 import { isRecord } from './type-guards';
-import { isWorkoutDifficulty, WORKOUT_DIFFICULTY, type WorkoutDifficulty } from './workout-schema';
-import { restoreWorkoutCourse, WORKOUT_COURSES } from './workouts';
+import {
+	isWorkoutDifficulty,
+	isWorkoutRouteType,
+	WORKOUT_DIFFICULTY,
+	WORKOUT_ROUTE_TYPE,
+	type WorkoutDifficulty,
+	type WorkoutRouteType,
+} from './workout-schema';
+import {
+	outAndBackRoutePoints,
+	restoreWorkoutCourse,
+	WORKOUT_COURSES,
+	workoutRouteCloses,
+} from './workouts';
 import { xmlDescendant, xmlEscape, xmlNumber, xmlText } from './xml';
 
 export const CUSTOM_WORKOUTS_STORAGE_KEY = 'ride-control-custom-workouts';
 export const WORKOUT_GPX_EXTENSION_NAMESPACE =
 	'https://github.com/lookfirst/RideControl/xmlschemas/WorkoutExtension/v1';
-export const WORKOUT_GPX_FORMAT_VERSION = 1;
+export const WORKOUT_GPX_FORMAT_VERSION = 2;
 
 const WORKOUT_LIBRARY_FORMAT = 'ride-control-workout-library';
 const WORKOUT_LIBRARY_VERSION = 1;
 const WORKOUT_MIME_TYPE = 'application/gpx+xml';
 const MAX_CUSTOM_WORKOUTS = 50;
 const MAX_WORKOUT_FILE_POINTS = 200;
+const MAX_LOOP_SOURCE_POINTS = MAX_WORKOUT_FILE_POINTS - 1;
+const MAX_OUT_AND_BACK_SOURCE_POINTS = Math.floor((MAX_WORKOUT_FILE_POINTS - 1) / 2);
 const NON_FILENAME_CHARACTERS = /[^a-z0-9]+/g;
 const EDGE_HYPHENS = /^-+|-+$/g;
 const GPX_FILE_EXTENSION = /(?:\.workout)?\.gpx$/i;
@@ -82,19 +96,46 @@ function routeFingerprint(points: GeographicRoutePoint[]): string {
 function workoutMetadata(
 	container: Element,
 	points: GeographicRoutePoint[]
-): { baseResistance?: number; difficulty: WorkoutDifficulty; id: string } {
+): {
+	baseResistance?: number;
+	difficulty: WorkoutDifficulty;
+	id: string;
+	routeType?: WorkoutRouteType;
+} {
 	const difficultyValue = xmlText(xmlDescendant(container, 'Difficulty'));
+	const routeTypeValue = xmlText(xmlDescendant(container, 'CourseType'));
 	return {
 		baseResistance: xmlNumber(xmlDescendant(container, 'BaseResistance')),
 		difficulty: isWorkoutDifficulty(difficultyValue)
 			? difficultyValue
 			: WORKOUT_DIFFICULTY.MODERATE,
 		id: xmlText(xmlDescendant(container, 'WorkoutId')) || routeFingerprint(points),
+		routeType: isWorkoutRouteType(routeTypeValue) ? routeTypeValue : undefined,
 	};
 }
 
 function workoutNameFromFile(fileName: string): string {
 	return fileName.replace(GPX_FILE_EXTENSION, '').trim() || 'Imported GPX workout';
+}
+
+function outAndBackPoints(
+	points: GeographicRoutePoint[],
+	sourceCloses: boolean
+): GeographicRoutePoint[] {
+	let outbound = points;
+	if (sourceCloses) {
+		const halfway = (points.at(-1)?.distance ?? 0) / 2;
+		const turnaroundIndex = points.reduce(
+			(nearestIndex, point, index) =>
+				Math.abs(point.distance - halfway) <
+				Math.abs((points[nearestIndex]?.distance ?? 0) - halfway)
+					? index
+					: nearestIndex,
+			0
+		);
+		outbound = points.slice(0, turnaroundIndex + 1);
+	}
+	return outAndBackRoutePoints(evenlySample(outbound, MAX_OUT_AND_BACK_SOURCE_POINTS));
 }
 
 export function workoutIsBuiltIn(id: string): boolean {
@@ -118,6 +159,7 @@ export function workoutFileContents(course: WorkoutCourse): string {
 			<rc:WorkoutId>${xmlEscape(course.id)}</rc:WorkoutId>
 			<rc:Difficulty>${course.difficulty}</rc:Difficulty>
 			<rc:BaseResistance>${course.baseResistance.toFixed(1)}</rc:BaseResistance>
+			<rc:CourseType>${course.routeType}</rc:CourseType>
 		</extensions>
 		<trkseg>${points}
 		</trkseg>
@@ -147,8 +189,17 @@ export function parseWorkoutFile(
 		throw new Error('The GPX file does not contain a track or route.');
 	}
 	const sourcePoints = parsed.points;
-	const points = evenlySample(sourcePoints, MAX_WORKOUT_FILE_POINTS);
 	const metadata = workoutMetadata(container, sourcePoints);
+	const sourceCloses = workoutRouteCloses(sourcePoints);
+	const routeType =
+		metadata.routeType ??
+		(sourceCloses ? WORKOUT_ROUTE_TYPE.LOOP : WORKOUT_ROUTE_TYPE.OUT_AND_BACK);
+	let points: GeographicRoutePoint[];
+	if (routeType === WORKOUT_ROUTE_TYPE.OUT_AND_BACK) {
+		points = outAndBackPoints(sourcePoints, sourceCloses);
+	} else {
+		points = evenlySample(sourcePoints, MAX_LOOP_SOURCE_POINTS);
+	}
 	const distance = points.at(-1)?.distance ?? 0;
 	const course = restoreWorkoutCourse({
 		baseResistance: metadata.baseResistance,
@@ -158,10 +209,11 @@ export function parseWorkoutFile(
 		id: metadata.id,
 		name: parsed.name || fallbackName,
 		points,
+		routeType,
 	});
 	if (!course) {
 		throw new Error(
-			'The GPX route must be a closed loop with increasing distance and valid elevation data.'
+			'The GPX route must describe a valid loop or out-and-back course with increasing distance and elevation data.'
 		);
 	}
 	return course;

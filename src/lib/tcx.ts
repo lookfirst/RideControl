@@ -103,6 +103,7 @@ function workoutSummaryXml(workout?: SessionWorkout): string {
 							<rc:Description>${xmlEscape(course.description)}</rc:Description>
 							<rc:Difficulty>${course.difficulty}</rc:Difficulty>
 							<rc:BaseResistance>${course.baseResistance.toFixed(1)}</rc:BaseResistance>
+							<rc:CourseType>${course.routeType}</rc:CourseType>
 							<rc:Distance>${course.distance.toFixed(3)}</rc:Distance>${points}
 						</rc:Workout>`;
 }

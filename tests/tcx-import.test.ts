@@ -83,6 +83,7 @@ describe('TCX import', () => {
 			distance: course.distance,
 			id: course.id,
 			name: course.name,
+			routeType: course.routeType,
 		});
 		expect(imported?.workout?.course.points).toHaveLength(course.points.length);
 		expect(imported?.workout?.course.points[1]?.latitude).toBeCloseTo(

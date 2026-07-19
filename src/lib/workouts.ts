@@ -1,3 +1,4 @@
+import { emptyElevationTotals } from '../constants';
 import type {
 	ElevationTotals,
 	GeographicRoutePoint,
@@ -12,13 +13,21 @@ import { distanceBetween } from './gpx';
 import { clamp, nonNegativeNumber } from './numbers';
 import { clampResistance } from './resistance';
 import { isFiniteNumber, isRecord, isString } from './type-guards';
-import { isWorkoutDifficulty, WORKOUT_DIFFICULTY, type WorkoutDifficulty } from './workout-schema';
+import {
+	isWorkoutDifficulty,
+	isWorkoutRouteType,
+	WORKOUT_DIFFICULTY,
+	WORKOUT_ROUTE_TYPE,
+	type WorkoutDifficulty,
+	type WorkoutRouteType,
+} from './workout-schema';
 
 const DEFAULT_TERRAIN_RESISTANCE = 12;
 const RESISTANCE_PER_GRADE_PERCENT = 2.25;
 const MIN_TERRAIN_RESISTANCE = 4;
 const MAX_TERRAIN_RESISTANCE = 55;
 const MAX_SAVED_WORKOUT_POINTS = 200;
+const MAX_OUT_AND_BACK_OUTBOUND_POINTS = Math.floor((MAX_SAVED_WORKOUT_POINTS + 1) / 2);
 const MIN_ROUTE_POINTS = 3;
 const MAP_MINIMUM = 0;
 const MAP_MAXIMUM = 100;
@@ -26,9 +35,16 @@ const MAP_PADDING = 8;
 const GENERATED_COURSE_LATITUDE = 39;
 const GENERATED_COURSE_LONGITUDE = -105;
 const METERS_PER_LATITUDE_DEGREE = 111_320;
-const LOOP_CLOSURE_METERS = 100;
-const LOOP_ELEVATION_TOLERANCE_METERS = 20;
+const COURSE_CLOSURE_METERS = 100;
+const COURSE_ELEVATION_TOLERANCE_METERS = 20;
+const OUT_AND_BACK_MATCH_METERS = 1;
+const OUT_AND_BACK_ELEVATION_TOLERANCE_METERS = 0.1;
 const ROUTE_VALUE_EPSILON = 0.000_001;
+const LOW_CLIMB_ELEVATION_GAIN_METERS = 50;
+const MODERATE_CLIMB_ELEVATION_GAIN_METERS = 150;
+const PROFILE_REFERENCE_ELEVATION_SPAN_METERS = 200;
+export const WORKOUT_SHORT_FLAT_START_DISTANCE = 0.4;
+export const WORKOUT_MODERATE_FLAT_START_DISTANCE = 0.8;
 export const WORKOUT_FLAT_START_DISTANCE = 1.5;
 
 interface CourseMapPoint extends RoutePoint {
@@ -36,23 +52,127 @@ interface CourseMapPoint extends RoutePoint {
 	y: number;
 }
 
+interface WorkoutDashboardSource {
+	distance: number;
+	elevationTotals: ElevationTotals;
+	ended: boolean;
+	selectedWorkout?: SessionWorkout;
+	workout?: SessionWorkout;
+}
+
+export function workoutDashboardPreview(source: WorkoutDashboardSource) {
+	const plannedWorkout = source.ended ? source.selectedWorkout : undefined;
+	return plannedWorkout
+		? {
+				distance: 0,
+				elevationTotals: emptyElevationTotals,
+				workout: plannedWorkout,
+			}
+		: {
+				distance: source.distance,
+				elevationTotals: source.elevationTotals,
+				workout: source.workout,
+			};
+}
+
 function approximatelyEqual(left: number, right: number): boolean {
 	return Math.abs(left - right) <= ROUTE_VALUE_EPSILON;
 }
 
-function elevationGain(points: WorkoutRoutePoint[]): number {
+function elevationGain(points: RoutePoint[]): number {
 	return elevationTotalsForSamples(points).ascent;
 }
 
-function withFlatCourseStart<T extends RoutePoint>(points: T[]): T[] {
-	const startElevation = points[0]?.elevation;
-	return startElevation === undefined
-		? points
-		: points.map((point) =>
-				point.distance <= WORKOUT_FLAT_START_DISTANCE
-					? { ...point, elevation: startElevation }
-					: point
-			);
+function flatStartDistanceForElevationGain(elevationGainMeters: number): number {
+	if (elevationGainMeters < LOW_CLIMB_ELEVATION_GAIN_METERS) {
+		return WORKOUT_SHORT_FLAT_START_DISTANCE;
+	}
+	if (elevationGainMeters < MODERATE_CLIMB_ELEVATION_GAIN_METERS) {
+		return WORKOUT_MODERATE_FLAT_START_DISTANCE;
+	}
+	return WORKOUT_FLAT_START_DISTANCE;
+}
+
+export function workoutFlatStartDistance(course: Pick<WorkoutCourse, 'elevationGain'>): number {
+	return flatStartDistanceForElevationGain(course.elevationGain);
+}
+
+function flatRouteStart(
+	points: GeographicRoutePoint[],
+	rolloutDistance: number,
+	maximumPoints = MAX_SAVED_WORKOUT_POINTS
+): GeographicRoutePoint[] {
+	const [first] = points;
+	const last = points.at(-1);
+	if (!(first && last && rolloutDistance > 0 && rolloutDistance < last.distance)) {
+		return points;
+	}
+	const rightIndex = points.findIndex((point) => point.distance >= rolloutDistance);
+	if (rightIndex <= 0) {
+		return points;
+	}
+	const flattened = points.map((point) =>
+		point.distance <= rolloutDistance ? { ...point, elevation: first.elevation } : point
+	);
+	const right = points[rightIndex];
+	if (!(right && !approximatelyEqual(right.distance, rolloutDistance))) {
+		return flattened;
+	}
+	const left = points[rightIndex - 1];
+	if (!left || right.distance <= left.distance) {
+		return flattened;
+	}
+	const progress = (rolloutDistance - left.distance) / (right.distance - left.distance);
+	const boundary: GeographicRoutePoint = {
+		distance: rolloutDistance,
+		elevation: first.elevation,
+		latitude: left.latitude + (right.latitude - left.latitude) * progress,
+		longitude: left.longitude + (right.longitude - left.longitude) * progress,
+	};
+	if (flattened.length >= maximumPoints) {
+		return [...flattened.slice(0, rightIndex), boundary, ...flattened.slice(rightIndex + 1)];
+	}
+	return [...flattened.slice(0, rightIndex), boundary, ...flattened.slice(rightIndex)];
+}
+
+function withFlatCourseStart(
+	points: GeographicRoutePoint[],
+	distance: number,
+	routeType: WorkoutRouteType,
+	rolloutDistance: number
+): GeographicRoutePoint[] {
+	if (routeType === WORKOUT_ROUTE_TYPE.LOOP) {
+		return flatRouteStart(points, rolloutDistance);
+	}
+	const outbound = points.filter((point) => point.distance <= distance / 2 + ROUTE_VALUE_EPSILON);
+	return outAndBackRoutePoints(
+		flatRouteStart(outbound, rolloutDistance, MAX_OUT_AND_BACK_OUTBOUND_POINTS)
+	);
+}
+
+export function workoutRouteCloses(points: GeographicRoutePoint[]): boolean {
+	const [first] = points;
+	const last = points.at(-1);
+	return Boolean(
+		first &&
+			last &&
+			distanceBetween(first.latitude, first.longitude, last.latitude, last.longitude) <=
+				COURSE_CLOSURE_METERS
+	);
+}
+
+export function outAndBackRoutePoints(points: GeographicRoutePoint[]): GeographicRoutePoint[] {
+	const turnaroundDistance = points.at(-1)?.distance ?? 0;
+	return [
+		...points,
+		...points
+			.slice(0, -1)
+			.reverse()
+			.map((point) => ({
+				...point,
+				distance: turnaroundDistance * 2 - point.distance,
+			})),
+	];
 }
 
 function mapCoordinates(points: GeographicRoutePoint[]): WorkoutRoutePoint[] {
@@ -112,9 +232,11 @@ function createGeographicCourse(
 	difficulty: WorkoutDifficulty,
 	distance: number,
 	points: GeographicRoutePoint[],
-	baseResistance = DEFAULT_TERRAIN_RESISTANCE
+	baseResistance = DEFAULT_TERRAIN_RESISTANCE,
+	routeType: WorkoutRouteType = WORKOUT_ROUTE_TYPE.LOOP
 ): WorkoutCourse {
 	const [first] = points;
+	const rolloutDistance = flatStartDistanceForElevationGain(elevationGain(points));
 	const terrainPoints = mapCoordinates(
 		withFlatCourseStart(
 			first
@@ -128,7 +250,10 @@ function createGeographicCourse(
 								}
 							: point
 					)
-				: points
+				: points,
+			distance,
+			routeType,
+			rolloutDistance
 		)
 	);
 	return {
@@ -140,6 +265,7 @@ function createGeographicCourse(
 		id,
 		name,
 		points: terrainPoints,
+		routeType,
 	};
 }
 
@@ -172,8 +298,8 @@ export const WORKOUT_COURSES: WorkoutCourse[] = [
 		6.4,
 		[
 			{ distance: 0, elevation: 18, x: 18, y: 40 },
-			{ distance: 0.8, elevation: 18, x: 33, y: 18 },
-			{ distance: 1.6, elevation: 18, x: 60, y: 12 },
+			{ distance: 0.8, elevation: 21, x: 33, y: 18 },
+			{ distance: 1.6, elevation: 24, x: 60, y: 12 },
 			{ distance: 2.4, elevation: 28, x: 86, y: 27 },
 			{ distance: 3.2, elevation: 24, x: 68, y: 45 },
 			{ distance: 4, elevation: 20, x: 88, y: 70 },
@@ -189,16 +315,16 @@ export const WORKOUT_COURSES: WorkoutCourse[] = [
 		WORKOUT_DIFFICULTY.GENTLE,
 		24.140_16,
 		[
-			{ distance: 0, elevation: 30, x: 50, y: 50 },
-			{ distance: 1.5, elevation: 30, x: 34, y: 17 },
-			{ distance: 4, elevation: 69, x: 9, y: 29 },
-			{ distance: 6.5, elevation: 30, x: 17, y: 70 },
-			{ distance: 9.25, elevation: 69, x: 40, y: 87 },
-			{ distance: 12, elevation: 30, x: 50, y: 50 },
-			{ distance: 15, elevation: 69, x: 66, y: 15 },
-			{ distance: 18, elevation: 30, x: 91, y: 31 },
-			{ distance: 21, elevation: 69, x: 82, y: 75 },
-			{ distance: 24.140_16, elevation: 30, x: 50, y: 50 },
+			{ distance: 0, elevation: 30, x: 12, y: 52 },
+			{ distance: 1.5, elevation: 30, x: 18, y: 27 },
+			{ distance: 4, elevation: 69, x: 38, y: 13 },
+			{ distance: 6.5, elevation: 30, x: 55, y: 25 },
+			{ distance: 9.25, elevation: 69, x: 76, y: 12 },
+			{ distance: 12, elevation: 30, x: 92, y: 36 },
+			{ distance: 15, elevation: 69, x: 76, y: 55 },
+			{ distance: 18, elevation: 30, x: 90, y: 77 },
+			{ distance: 21, elevation: 69, x: 52, y: 88 },
+			{ distance: 24.140_16, elevation: 30, x: 12, y: 52 },
 		],
 		20
 	),
@@ -211,7 +337,7 @@ export const WORKOUT_COURSES: WorkoutCourse[] = [
 		[
 			{ distance: 0, elevation: 46, x: 15, y: 24 },
 			{ distance: 0.8, elevation: 46, x: 34, y: 12 },
-			{ distance: 1.6, elevation: 46, x: 56, y: 18 },
+			{ distance: 1.6, elevation: 60, x: 56, y: 18 },
 			{ distance: 2.4, elevation: 82, x: 78, y: 10 },
 			{ distance: 3.2, elevation: 58, x: 92, y: 28 },
 			{ distance: 4, elevation: 91, x: 77, y: 45 },
@@ -250,7 +376,52 @@ export const WORKOUT_COURSES: WorkoutCourse[] = [
 			{ distance: 12, elevation: 74, x: 50, y: 50 },
 		]
 	),
+	createCourse(
+		'granite-switchbacks',
+		'Granite Switchbacks',
+		'A sustained four-mile switchback climb with steep hairpins, a high ridge, and a sweeping descent.',
+		WORKOUT_DIFFICULTY.CHALLENGING,
+		18,
+		[
+			{ distance: 0, elevation: 80, x: 12, y: 88 },
+			{ distance: 0.75, elevation: 80, x: 10, y: 80 },
+			{ distance: 1.5, elevation: 80, x: 16, y: 72 },
+			{ distance: 2.2, elevation: 108, x: 76, y: 72 },
+			{ distance: 2.32, elevation: 120, x: 86, y: 67 },
+			{ distance: 2.47, elevation: 126, x: 76, y: 62 },
+			{ distance: 3.15, elevation: 153, x: 24, y: 62 },
+			{ distance: 3.27, elevation: 165, x: 14, y: 57 },
+			{ distance: 3.42, elevation: 171, x: 24, y: 52 },
+			{ distance: 4.1, elevation: 198, x: 76, y: 52 },
+			{ distance: 4.22, elevation: 210, x: 86, y: 47 },
+			{ distance: 4.37, elevation: 216, x: 76, y: 42 },
+			{ distance: 5.05, elevation: 243, x: 24, y: 42 },
+			{ distance: 5.17, elevation: 255, x: 14, y: 37 },
+			{ distance: 5.32, elevation: 261, x: 24, y: 32 },
+			{ distance: 6, elevation: 288, x: 76, y: 32 },
+			{ distance: 6.12, elevation: 300, x: 86, y: 27 },
+			{ distance: 6.27, elevation: 306, x: 76, y: 22 },
+			{ distance: 6.95, elevation: 333, x: 24, y: 22 },
+			{ distance: 7.07, elevation: 345, x: 14, y: 17 },
+			{ distance: 7.22, elevation: 351, x: 24, y: 12 },
+			{ distance: 7.94, elevation: 380, x: 68, y: 12 },
+			{ distance: 8.6, elevation: 388, x: 82, y: 15 },
+			{ distance: 9.5, elevation: 340, x: 94, y: 28 },
+			{ distance: 10.6, elevation: 280, x: 96, y: 48 },
+			{ distance: 11.8, elevation: 200, x: 94, y: 70 },
+			{ distance: 13, elevation: 130, x: 82, y: 90 },
+			{ distance: 14.2, elevation: 105, x: 60, y: 94 },
+			{ distance: 15.4, elevation: 90, x: 36, y: 92 },
+			{ distance: 16.5, elevation: 82, x: 20, y: 95 },
+			{ distance: 17.3, elevation: 80, x: 10, y: 90 },
+			{ distance: 18, elevation: 80, x: 12, y: 88 },
+		]
+	),
 ];
+
+const BUILT_IN_WORKOUT_COURSES_BY_ID = new Map(
+	WORKOUT_COURSES.map((course) => [course.id, course])
+);
 
 function loopDistance(courseDistance: number, totalDistance: number): number {
 	if (courseDistance <= 0) {
@@ -416,15 +587,19 @@ export function workoutMapProgressPath(course: WorkoutCourse, terrain: WorkoutTe
 	if (!first) {
 		return '';
 	}
+	const progressDistance =
+		course.routeType === WORKOUT_ROUTE_TYPE.OUT_AND_BACK
+			? Math.min(terrain.distance, course.distance / 2)
+			: terrain.distance;
 	const curves: string[] = [];
 	for (const segment of workoutMapSegments(course)) {
-		if (segment.endDistance <= terrain.distance) {
+		if (segment.endDistance <= progressDistance) {
 			curves.push(curvePathCommand(segment));
 			continue;
 		}
-		if (segment.startDistance < terrain.distance) {
+		if (segment.startDistance < progressDistance) {
 			const progress =
-				(terrain.distance - segment.startDistance) /
+				(progressDistance - segment.startDistance) /
 				(segment.endDistance - segment.startDistance);
 			curves.push(curvePathCommand(partialCurveSegment(segment, progress)));
 		}
@@ -533,12 +708,34 @@ function mapCoordinateTangents(
 	});
 }
 
+function workoutMapCourse(course: WorkoutCourse): WorkoutCourse {
+	if (course.routeType === WORKOUT_ROUTE_TYPE.LOOP) {
+		return course;
+	}
+	const turnaroundDistance = course.distance / 2;
+	return {
+		...course,
+		distance: turnaroundDistance,
+		points: course.points.filter(
+			(point) => point.distance <= turnaroundDistance + ROUTE_VALUE_EPSILON
+		),
+	};
+}
+
+function workoutMapDistance(course: WorkoutCourse, distance: number): number {
+	const position = loopDistance(course.distance, distance);
+	return course.routeType === WORKOUT_ROUTE_TYPE.OUT_AND_BACK && position > course.distance / 2
+		? course.distance - position
+		: position;
+}
+
 function workoutMapSegments(course: WorkoutCourse): MapCurveSegment[] {
-	const xTangents = mapCoordinateTangents(course, (point) => point.x);
-	const yTangents = mapCoordinateTangents(course, (point) => point.y);
+	const mapCourse = workoutMapCourse(course);
+	const xTangents = mapCoordinateTangents(mapCourse, (point) => point.x);
+	const yTangents = mapCoordinateTangents(mapCourse, (point) => point.y);
 	const tension = 0.75;
-	return course.points.slice(0, -1).flatMap((from, index) => {
-		const to = course.points[index + 1];
+	return mapCourse.points.slice(0, -1).flatMap((from, index) => {
+		const to = mapCourse.points[index + 1];
 		if (!to) {
 			return [];
 		}
@@ -563,7 +760,7 @@ function workoutMapSegments(course: WorkoutCourse): MapCurveSegment[] {
 }
 
 function workoutMapPosition(course: WorkoutCourse, distance: number): CurvePoint {
-	const position = loopDistance(course.distance, distance);
+	const position = workoutMapDistance(course, distance);
 	const segments = workoutMapSegments(course);
 	const segment =
 		segments.find((candidate) => candidate.endDistance >= position) ?? segments.at(-1);
@@ -581,7 +778,7 @@ function workoutProfilePoints(course: WorkoutCourse): CurvePoint[] {
 	const elevations = course.points.map((point) => point.elevation);
 	const minimum = Math.min(...elevations);
 	const maximum = Math.max(...elevations);
-	const span = maximum - minimum || 1;
+	const span = Math.max(maximum - minimum, PROFILE_REFERENCE_ELEVATION_SPAN_METERS);
 	return course.points.map((point) => ({
 		x: (point.distance / course.distance) * 100,
 		y: 88 - ((point.elevation - minimum) / span) * 72,
@@ -750,7 +947,7 @@ function geographicPoints(
 	}
 }
 
-function isValidLoop(points: GeographicRoutePoint[], distance: number): boolean {
+function isValidClosedCourse(points: GeographicRoutePoint[], distance: number): boolean {
 	const [first] = points;
 	const last = points.at(-1);
 	if (!(first && last)) {
@@ -764,17 +961,54 @@ function isValidLoop(points: GeographicRoutePoint[], distance: number): boolean 
 		distancesIncrease &&
 		approximatelyEqual(first.distance, 0) &&
 		approximatelyEqual(last.distance, distance) &&
-		Math.abs(first.elevation - last.elevation) <= LOOP_ELEVATION_TOLERANCE_METERS &&
-		distanceBetween(first.latitude, first.longitude, last.latitude, last.longitude) <=
-			LOOP_CLOSURE_METERS
+		Math.abs(first.elevation - last.elevation) <= COURSE_ELEVATION_TOLERANCE_METERS &&
+		workoutRouteCloses(points)
 	);
+}
+
+function isValidOutAndBack(points: GeographicRoutePoint[], distance: number): boolean {
+	if (!(isValidClosedCourse(points, distance) && points.length % 2 === 1)) {
+		return false;
+	}
+	return points.every((point, index) => {
+		const mirrored = points.at(-(index + 1));
+		return Boolean(
+			mirrored &&
+				approximatelyEqual(point.distance + mirrored.distance, distance) &&
+				Math.abs(point.elevation - mirrored.elevation) <=
+					OUT_AND_BACK_ELEVATION_TOLERANCE_METERS &&
+				distanceBetween(
+					point.latitude,
+					point.longitude,
+					mirrored.latitude,
+					mirrored.longitude
+				) <= OUT_AND_BACK_MATCH_METERS
+		);
+	});
+}
+
+function isValidCourse(
+	points: GeographicRoutePoint[],
+	distance: number,
+	routeType: WorkoutRouteType
+): boolean {
+	return routeType === WORKOUT_ROUTE_TYPE.OUT_AND_BACK
+		? isValidOutAndBack(points, distance)
+		: isValidClosedCourse(points, distance);
 }
 
 export function restoreWorkoutCourse(value: unknown): WorkoutCourse | undefined {
 	if (!isRecord(value)) {
 		return;
 	}
-	const { baseResistance, description, difficulty, distance, id, name, points } = value;
+	const { baseResistance, description, difficulty, distance, id, name, points, routeType } =
+		value;
+	let restoredRouteType: WorkoutRouteType | undefined;
+	if (routeType === undefined) {
+		restoredRouteType = WORKOUT_ROUTE_TYPE.LOOP;
+	} else if (isWorkoutRouteType(routeType)) {
+		restoredRouteType = routeType;
+	}
 	if (
 		!(
 			isString(description) &&
@@ -783,6 +1017,7 @@ export function restoreWorkoutCourse(value: unknown): WorkoutCourse | undefined 
 			isString(id) &&
 			isString(name) &&
 			Array.isArray(points) &&
+			restoredRouteType &&
 			id.trim().length > 0 &&
 			name.trim().length > 0
 		)
@@ -810,7 +1045,7 @@ export function restoreWorkoutCourse(value: unknown): WorkoutCourse | undefined 
 		!restoredPoints ||
 		restoredPoints.length < MIN_ROUTE_POINTS ||
 		distance <= 0 ||
-		!isValidLoop(restoredPoints, distance)
+		!isValidCourse(restoredPoints, distance, restoredRouteType)
 	) {
 		return;
 	}
@@ -821,7 +1056,8 @@ export function restoreWorkoutCourse(value: unknown): WorkoutCourse | undefined 
 		difficulty,
 		distance,
 		restoredPoints,
-		restoredBaseResistance
+		restoredBaseResistance,
+		restoredRouteType
 	);
 }
 
@@ -830,7 +1066,12 @@ export function restoreSessionWorkout(value: unknown): SessionWorkout | undefine
 		return;
 	}
 	const restoredCourse = restoreWorkoutCourse(value.course);
-	return restoredCourse ? { course: restoredCourse } : undefined;
+	if (!restoredCourse) {
+		return;
+	}
+	return {
+		course: BUILT_IN_WORKOUT_COURSES_BY_ID.get(restoredCourse.id) ?? restoredCourse,
+	};
 }
 
 export function workoutDifficultyLabel(difficulty: WorkoutDifficulty): string {

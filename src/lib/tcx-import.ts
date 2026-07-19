@@ -188,6 +188,7 @@ function activityWorkout(activity: Element): SessionWorkout | undefined {
 			id: text(child(workout, 'CourseId')),
 			name: text(child(workout, 'Name')),
 			points,
+			routeType: text(child(workout, 'CourseType')) || undefined,
 		},
 	});
 }

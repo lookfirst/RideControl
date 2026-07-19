@@ -1,16 +1,23 @@
 import { describe, expect, test } from 'bun:test';
+import { WORKOUT_ROUTE_TYPE } from '../src/lib/workout-schema';
 import {
+	outAndBackRoutePoints,
 	restoreSessionWorkout,
 	restoreWorkoutCourse,
 	WORKOUT_COURSES,
 	WORKOUT_FLAT_START_DISTANCE,
+	WORKOUT_MODERATE_FLAT_START_DISTANCE,
+	WORKOUT_SHORT_FLAT_START_DISTANCE,
 	workoutCompletedLaps,
+	workoutDashboardPreview,
 	workoutElevationTotalsAtDistance,
+	workoutFlatStartDistance,
 	workoutLap,
 	workoutMapPath,
 	workoutMapProgressPath,
 	workoutMaximumGrade,
 	workoutProfilePath,
+	workoutProfilePosition,
 	workoutProgress,
 	workoutSelectionLocked,
 	workoutTerrainAtDistance,
@@ -19,9 +26,45 @@ import {
 const course = WORKOUT_COURSES.find((workout) => workout.id === 'cedar-circuit');
 
 describe('terrain workouts', () => {
+	test('previews a newly planned workout instead of the completed course', () => {
+		const [completedCourse, plannedCourse] = WORKOUT_COURSES;
+		if (!(completedCourse && plannedCourse)) {
+			throw new Error('Expected built-in workout courses');
+		}
+		const completedWorkout = { course: completedCourse };
+		const plannedWorkout = { course: plannedCourse };
+		expect(
+			workoutDashboardPreview({
+				distance: 4.2,
+				elevationTotals: { ascent: 80, descent: 60 },
+				ended: true,
+				selectedWorkout: plannedWorkout,
+				workout: completedWorkout,
+			})
+		).toEqual({
+			distance: 0,
+			elevationTotals: { ascent: 0, descent: 0 },
+			workout: plannedWorkout,
+		});
+		expect(
+			workoutDashboardPreview({
+				distance: 4.2,
+				elevationTotals: { ascent: 80, descent: 60 },
+				ended: false,
+				selectedWorkout: completedWorkout,
+				workout: completedWorkout,
+			})
+		).toMatchObject({ distance: 4.2, workout: completedWorkout });
+		expect(workoutTerrainAtDistance(plannedCourse, 0)).toMatchObject({
+			distance: 0,
+			progress: 0,
+		});
+	});
+
 	test('defines original closed-loop courses with useful terrain metadata', () => {
-		expect(WORKOUT_COURSES).toHaveLength(4);
+		expect(WORKOUT_COURSES).toHaveLength(5);
 		for (const workout of WORKOUT_COURSES) {
+			expect(workout.routeType).toBe(WORKOUT_ROUTE_TYPE.LOOP);
 			expect(workout.distance).toBeGreaterThan(0);
 			expect(workout.elevationGain).toBeGreaterThan(0);
 			expect(workout.points[0]).toMatchObject({
@@ -33,11 +76,66 @@ describe('terrain workouts', () => {
 		}
 	});
 
+	test('makes switchback corners briefly steeper during a four-mile climb', () => {
+		const switchbacks = WORKOUT_COURSES.find((workout) => workout.id === 'granite-switchbacks');
+		if (!switchbacks) {
+			throw new Error('Expected the Granite Switchbacks workout course');
+		}
+		const climbStart = 1.5;
+		const climbEnd = 7.94;
+		const straightGrade = workoutTerrainAtDistance(switchbacks, 2.7).grade;
+		const cornerGrade = workoutTerrainAtDistance(switchbacks, 2.2).grade;
+		const smoothedGrade = workoutTerrainAtDistance(switchbacks, 2.47).grade;
+		expect((climbEnd - climbStart) / 1.609_344).toBeCloseTo(4, 2);
+		expect(cornerGrade).toBeGreaterThan(straightGrade + 2);
+		expect(smoothedGrade).toBeCloseTo(straightGrade, 0);
+		expect(workoutMaximumGrade(switchbacks)).toBeWithin(9.5, 10.5);
+	});
+
+	test('traverses out-and-back courses to the turnaround and back to the start', () => {
+		if (!course) {
+			throw new Error('Expected a built-in workout course');
+		}
+		const outbound = course.points.slice(0, 6).map(({ x: _x, y: _y, ...point }) => point);
+		const points = outAndBackRoutePoints(outbound);
+		const distance = points.at(-1)?.distance ?? 0;
+		const outAndBack = restoreWorkoutCourse({
+			...course,
+			distance,
+			id: 'ridge-out-and-back',
+			points,
+			routeType: WORKOUT_ROUTE_TYPE.OUT_AND_BACK,
+		});
+		if (!outAndBack) {
+			throw new Error('Expected a valid out-and-back workout course');
+		}
+		const outboundPosition = workoutTerrainAtDistance(outAndBack, 2.4);
+		const returnPosition = workoutTerrainAtDistance(outAndBack, distance - 2.4);
+		expect(outAndBack.distance).toBeCloseTo((outbound.at(-1)?.distance ?? 0) * 2);
+		expect(outAndBack.points).toHaveLength(outbound.length * 2 - 1);
+		expect(outboundPosition.elevation).toBeCloseTo(returnPosition.elevation);
+		expect(outboundPosition.x).toBeCloseTo(returnPosition.x);
+		expect(outboundPosition.y).toBeCloseTo(returnPosition.y);
+		expect(workoutProgress(outAndBack, distance / 2)).toBeCloseTo(0.5);
+		expect(workoutCompletedLaps(outAndBack, distance)).toBe(1);
+		expect(workoutTerrainAtDistance(outAndBack, distance).distance).toBe(0);
+		expect(workoutMapPath(outAndBack)).toStartWith('M ');
+	});
+
 	test('offers a fifteen-mile course with long rollers centered on 20% resistance', () => {
 		const rollingCourse = WORKOUT_COURSES.find((workout) => workout.id === 'prairie-roll');
 		if (!rollingCourse) {
 			throw new Error('Expected the Prairie Roll workout course');
 		}
+		const [start] = rollingCourse.points;
+		if (!start) {
+			throw new Error('Expected Prairie Roll route points');
+		}
+		expect(
+			rollingCourse.points
+				.slice(1, -1)
+				.every((point) => Math.hypot(point.x - start.x, point.y - start.y) > 1)
+		).toBeTrue();
 		const resistances = Array.from(
 			{ length: 500 },
 			(_, index) =>
@@ -53,19 +151,49 @@ describe('terrain workouts', () => {
 		expect(average).toBeWithin(19, 21);
 	});
 
-	test('starts every course with a flat rollout before the first hill', () => {
+	test('keeps gentle elevation profiles visually low beside climbing courses', () => {
+		const prairie = WORKOUT_COURSES.find((workout) => workout.id === 'prairie-roll');
+		const highland = WORKOUT_COURSES.find((workout) => workout.id === 'highland-loop');
+		if (!(prairie && highland)) {
+			throw new Error('Expected the Prairie Roll and Highland Loop workout courses');
+		}
+		const prairiePeak = prairie.points.reduce((peak, point) =>
+			point.elevation > peak.elevation ? point : peak
+		);
+		const highlandPeak = highland.points.reduce((peak, point) =>
+			point.elevation > peak.elevation ? point : peak
+		);
+		const prairiePosition = workoutProfilePosition(
+			prairie,
+			workoutTerrainAtDistance(prairie, prairiePeak.distance)
+		);
+		const highlandPosition = workoutProfilePosition(
+			highland,
+			workoutTerrainAtDistance(highland, highlandPeak.distance)
+		);
+		expect(prairiePosition.y).toBeGreaterThan(70);
+		expect(highlandPosition.y).toBeLessThan(20);
+	});
+
+	test('scales the flat rollout to total course climbing before the first hill', () => {
+		const harbor = WORKOUT_COURSES.find((workout) => workout.id === 'harbor-ring');
+		const cedar = WORKOUT_COURSES.find((workout) => workout.id === 'cedar-circuit');
+		const prairie = WORKOUT_COURSES.find((workout) => workout.id === 'prairie-roll');
+		expect(harbor && workoutFlatStartDistance(harbor)).toBe(WORKOUT_SHORT_FLAT_START_DISTANCE);
+		expect(cedar && workoutFlatStartDistance(cedar)).toBe(WORKOUT_MODERATE_FLAT_START_DISTANCE);
+		expect(prairie && workoutFlatStartDistance(prairie)).toBe(WORKOUT_FLAT_START_DISTANCE);
 		for (const workout of WORKOUT_COURSES) {
 			const startElevation = workout.points[0]?.elevation;
+			const rolloutDistance = workoutFlatStartDistance(workout);
 			const rolloutPoints = workout.points.filter(
-				(point) => point.distance <= WORKOUT_FLAT_START_DISTANCE
+				(point) => point.distance <= rolloutDistance
 			);
 			expect(rolloutPoints.length).toBeGreaterThan(1);
+			expect(rolloutPoints.at(-1)?.distance).toBeCloseTo(rolloutDistance);
 			for (const point of rolloutPoints) {
 				expect(point.elevation).toBe(startElevation);
 			}
-			expect(
-				workoutTerrainAtDistance(workout, WORKOUT_FLAT_START_DISTANCE / 2).grade
-			).toBeCloseTo(0);
+			expect(workoutTerrainAtDistance(workout, rolloutDistance / 2).grade).toBeCloseTo(0);
 		}
 	});
 
@@ -169,6 +297,31 @@ describe('terrain workouts', () => {
 		}
 		expect(restoreWorkoutCourse(course)).toEqual(course);
 		expect(restoreSessionWorkout({ course })).toEqual({ course });
+		const cedar = WORKOUT_COURSES.find((workout) => workout.id === 'cedar-circuit');
+		if (!cedar) {
+			throw new Error('Expected Cedar Circuit');
+		}
+		const roundLegacyCedar = {
+			...cedar,
+			points: cedar.points.map((point, index, points) => {
+				const angle = (Math.PI * 2 * index) / (points.length - 1);
+				return {
+					distance: point.distance,
+					elevation: point.elevation,
+					x: 50 + Math.cos(angle) * 40,
+					y: 50 + Math.sin(angle) * 28,
+				};
+			}),
+		};
+		expect(restoreWorkoutCourse(roundLegacyCedar)).toBeDefined();
+		expect(restoreSessionWorkout({ course: roundLegacyCedar })?.course).toBe(cedar);
+		expect(restoreWorkoutCourse({ ...course, routeType: undefined })).toMatchObject({
+			routeType: WORKOUT_ROUTE_TYPE.LOOP,
+		});
+		expect(restoreWorkoutCourse({ ...course, routeType: 'somewhere-else' })).toBeUndefined();
+		expect(
+			restoreWorkoutCourse({ ...course, routeType: WORKOUT_ROUTE_TYPE.OUT_AND_BACK })
+		).toBeUndefined();
 		expect(restoreWorkoutCourse({ ...course, baseResistance: undefined })).toMatchObject({
 			baseResistance: 12,
 		});

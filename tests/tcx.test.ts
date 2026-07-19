@@ -58,6 +58,7 @@ describe('TCX export', () => {
 		expect(tcx).toContain('<rc:WorkoutLap>1</rc:WorkoutLap>');
 		expect(tcx).toContain('<rc:CourseId>cedar-circuit</rc:CourseId>');
 		expect(tcx).toContain('<rc:BaseResistance>12.0</rc:BaseResistance>');
+		expect(tcx).toContain('<rc:CourseType>loop</rc:CourseType>');
 		expect(tcx).toContain('<rc:TotalAscentMeters>82.50</rc:TotalAscentMeters>');
 		expect(tcx).toContain('<rc:TotalDescentMeters>30.25</rc:TotalDescentMeters>');
 		expect(tcx).toContain('<rc:Name>Cedar Circuit</rc:Name>');

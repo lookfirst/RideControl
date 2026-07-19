@@ -12,6 +12,7 @@ import {
 	workoutFileContents,
 	workoutFilename,
 } from '../src/lib/workout-file';
+import { WORKOUT_ROUTE_TYPE } from '../src/lib/workout-schema';
 import { WORKOUT_COURSES } from '../src/lib/workouts';
 import type { WorkoutCourse } from '../src/types';
 
@@ -45,6 +46,22 @@ function thirdPartyGpx(name = 'Neighborhood loop'): string {
 </gpx>`;
 }
 
+function openThirdPartyGpx(): string {
+	return `<?xml version="1.0"?>
+<gpx version="1.1" creator="Bike computer" xmlns="http://www.topografix.com/GPX/1/1">
+	<trk>
+		<name>Ridgeline turnaround</name>
+		<desc>A point-to-point GPX track</desc>
+		<trkseg>
+			<trkpt lat="37.000000" lon="-122.000000"><ele>12</ele></trkpt>
+			<trkpt lat="37.020000" lon="-122.000000"><ele>22</ele></trkpt>
+			<trkpt lat="37.020000" lon="-122.020000"><ele>18</ele></trkpt>
+			<trkpt lat="37.040000" lon="-122.040000"><ele>12</ele></trkpt>
+		</trkseg>
+	</trk>
+</gpx>`;
+}
+
 describe('workout GPX files', () => {
 	test('round trips geographic workout source data through standard GPX', async () => {
 		const workout = customWorkout();
@@ -52,9 +69,11 @@ describe('workout GPX files', () => {
 		expect(contents).toStartWith('<?xml version="1.0" encoding="UTF-8"?>');
 		expect(contents).toContain('<gpx version="1.1"');
 		expect(contents).toContain(`xmlns:rc="${WORKOUT_GPX_EXTENSION_NAMESPACE}"`);
+		expect(contents).toContain('<rc:FormatVersion>2</rc:FormatVersion>');
 		expect(contents).toContain('<trkpt lat=');
 		expect(contents).toContain('<ele>');
 		expect(contents).toContain('<rc:BaseResistance>12.0</rc:BaseResistance>');
+		expect(contents).toContain('<rc:CourseType>loop</rc:CourseType>');
 		expect(contents).not.toContain('elevationGain');
 		expect(contents).not.toContain('<rc:X>');
 		const parsed = parseWorkoutFile(
@@ -68,6 +87,7 @@ describe('workout GPX files', () => {
 			distance: workout.distance,
 			id: workout.id,
 			name: workout.name,
+			routeType: WORKOUT_ROUTE_TYPE.LOOP,
 		});
 		expect(parsed.points).toHaveLength(workout.points.length);
 		expect(parsed.points[1]?.latitude).toBeCloseTo(workout.points[1]?.latitude ?? 0, 7);
@@ -89,22 +109,53 @@ describe('workout GPX files', () => {
 			description: 'A real GPX loop',
 			difficulty: 'moderate',
 			name: 'Neighborhood loop',
+			routeType: WORKOUT_ROUTE_TYPE.LOOP,
 		});
 		expect(first.id).toStartWith('gpx-');
 		expect(second.id).toBe(first.id);
 	});
 
-	test('rejects malformed, open, and built-in workout imports', async () => {
+	test('imports open GPX tracks as complete out-and-back courses', () => {
+		const parser = new DOMParser() as unknown as globalThis.DOMParser;
+		const workout = parseWorkoutFile(openThirdPartyGpx(), parser);
+		const turnaroundIndex = (workout.points.length - 1) / 2;
+		const turnaround = workout.points[turnaroundIndex];
+		expect(workout).toMatchObject({
+			name: 'Ridgeline turnaround',
+			routeType: WORKOUT_ROUTE_TYPE.OUT_AND_BACK,
+		});
+		expect(workout.points).toHaveLength(9);
+		expect(turnaround?.distance).toBeCloseTo(workout.distance / 2);
+		expect(workout.points.at(-1)).toMatchObject({
+			elevation: workout.points[0]?.elevation,
+			latitude: workout.points[0]?.latitude,
+			longitude: workout.points[0]?.longitude,
+		});
+		expect(workout.points.map((point) => point.elevation)).toEqual([
+			12, 12, 22, 18, 12, 18, 22, 12, 12,
+		]);
+
+		const exported = workoutFileContents(workout);
+		expect(exported).toContain('<rc:CourseType>out-and-back</rc:CourseType>');
+		const roundTripped = parseWorkoutFile(exported, parser);
+		expect(roundTripped).toMatchObject({
+			description: workout.description,
+			id: workout.id,
+			name: workout.name,
+			routeType: WORKOUT_ROUTE_TYPE.OUT_AND_BACK,
+		});
+		expect(roundTripped.distance).toBeCloseTo(workout.distance, 5);
+		expect(roundTripped.points).toHaveLength(workout.points.length);
+		for (const [index, point] of roundTripped.points.entries()) {
+			expect(point.distance).toBeCloseTo(workout.points[index]?.distance ?? 0, 5);
+			expect(point.elevation).toBeCloseTo(workout.points[index]?.elevation ?? 0);
+		}
+	});
+
+	test('rejects malformed and built-in workout imports', async () => {
 		await expect(
 			readWorkoutFile({ name: 'broken.gpx', text: async () => '<gpx><broken' })
 		).rejects.toThrow();
-		const openRoute = thirdPartyGpx().replace(
-			'<trkpt lat="37.000000" lon="-122.000000"><ele>12</ele></trkpt>\n\t\t</trkseg>',
-			'<trkpt lat="37.002000" lon="-122.002000"><ele>12</ele></trkpt>\n\t\t</trkseg>'
-		);
-		expect(() =>
-			parseWorkoutFile(openRoute, new DOMParser() as unknown as globalThis.DOMParser)
-		).toThrow('The GPX route must be a closed loop');
 		const [builtIn] = WORKOUT_COURSES;
 		if (!builtIn) {
 			throw new Error('Expected a built-in workout course');

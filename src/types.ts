@@ -1,5 +1,5 @@
 import type { ControlMode } from './lib/control-mode';
-import type { WorkoutDifficulty } from './lib/workout-schema';
+import type { WorkoutDifficulty, WorkoutRouteType } from './lib/workout-schema';
 
 export type { ChartMode } from './lib/chart-mode';
 export type { ControlMode } from './lib/control-mode';
@@ -37,6 +37,7 @@ export interface WorkoutCourse {
 	id: string;
 	name: string;
 	points: WorkoutRoutePoint[];
+	routeType: WorkoutRouteType;
 }
 
 export interface SessionWorkout {

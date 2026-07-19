@@ -183,6 +183,18 @@ describe('session store', () => {
 
 		store.actions.selectWorkout(workout);
 		expect(store.get().workout?.course).toBe(workout);
+
+		store.actions.selectWorkout(staleDefinition);
+		store.actions.syncRiding(true);
+		store.actions.recordTick({
+			control: { gear: 12, mode: 'resistance', resistance: 20 },
+			metrics: liveMetrics,
+			seconds: 1,
+		});
+		store.actions.selectWorkout(workout);
+		expect(store.get().workout?.course).toBe(workout);
+		store.actions.selectWorkout(WORKOUT_COURSES[0]);
+		expect(store.get().workout?.course).toBe(workout);
 	});
 
 	test('coordinates pause, end, reset, and continuation transitions', () => {
