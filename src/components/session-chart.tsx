@@ -1,11 +1,6 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import {
-	CHART_MODE_STORAGE_KEY,
-	chartModesForControl,
-	chartPath,
-	roundedChartMaximum,
-	storedChartMode,
-} from '../lib/chart';
+import { useSelector } from '@tanstack/react-store';
+import { useCallback, useEffect, useMemo } from 'react';
+import { chartModesForControl, chartPath, roundedChartMaximum } from '../lib/chart';
 import { CONTROL_MODE, isControlMode } from '../lib/control-mode';
 import { eventTargetsEditableControl, keyboardEventHasModifiers } from '../lib/dom';
 import { formatChartSeconds } from '../lib/format';
@@ -13,6 +8,7 @@ import { MAX_GEAR, MIN_GEAR } from '../lib/gears';
 import { METRIC_PRESENTATION, STANDARD_METRIC_KEYS } from '../lib/metric-presentation';
 import { MAX_RESISTANCE, MIN_RESISTANCE } from '../lib/resistance';
 import { convertSpeed, minimumSpeedChartMaximum, speedUnitLabel } from '../lib/units';
+import { preferencesStore } from '../stores/preferences-store';
 import type { ChartMode, ControlMode, MetricSample, RoutePoint, SpeedUnit } from '../types';
 
 interface PlotProps {
@@ -101,7 +97,7 @@ export function SessionChart({
 	route: readonly RoutePoint[];
 	speedUnit: SpeedUnit;
 }) {
-	const [selectedMode, setSelectedMode] = useState<ChartMode>(storedChartMode);
+	const selectedMode = useSelector(preferencesStore, (preferences) => preferences.chartMode);
 	const resolvedControlMode =
 		controlMode ??
 		(history.some((sample) => sample.gear !== undefined)
@@ -195,10 +191,10 @@ export function SessionChart({
 	const historySeconds =
 		history.length > 1 ? (history.at(-1)?.elapsedSeconds ?? 0) - historyStart : 0;
 
-	const selectMode = useCallback((mode: ChartMode) => {
-		setSelectedMode(mode);
-		localStorage.setItem(CHART_MODE_STORAGE_KEY, mode);
-	}, []);
+	const selectMode = useCallback(
+		(mode: ChartMode) => preferencesStore.actions.selectChartMode(mode),
+		[]
+	);
 
 	useEffect(() => {
 		if (!keyboardEnabled) {

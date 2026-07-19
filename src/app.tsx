@@ -1,3 +1,4 @@
+import { useSelector } from '@tanstack/react-store';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { AppFooter } from './components/app-footer';
 import { Dashboard, DashboardToolbar, DashboardWorkspace } from './components/dashboard-layout';
@@ -22,9 +23,9 @@ import { CONTROL_MODE, type ControlMode } from './lib/control-mode';
 import { eventTargetsInteractiveControl, keyboardEventHasModifiers } from './lib/dom';
 import { type AppShortcut, appShortcutForKey, gearingKeyboardShortcuts } from './lib/keyboard';
 import { requestUnloadConfirmation, sessionNeedsUnloadWarning } from './lib/session';
-import { SPEED_UNIT_STORAGE_KEY, storedSpeedUnit } from './lib/units';
 import { rememberWelcomeDismissal, shouldShowWelcome } from './lib/welcome';
-import type { Metrics, SavedSession, SpeedUnit } from './types';
+import { preferencesStore } from './stores/preferences-store';
+import type { Metrics, SavedSession } from './types';
 
 type AppOverlay = 'devices' | 'history' | 'shortcuts' | 'welcome';
 
@@ -67,7 +68,7 @@ export function App() {
 		heartRate.heartRate
 	);
 	const { connected } = trainer;
-	const [speedUnit, setSpeedUnit] = useState<SpeedUnit>(storedSpeedUnit);
+	const speedUnit = useSelector(preferencesStore, (preferences) => preferences.speedUnit);
 	const gearControl = useGearControl({
 		active: click.paired,
 		connected: trainer.connected,
@@ -177,11 +178,6 @@ export function App() {
 		workflow.saveDialogOpen,
 	]);
 
-	function selectSpeedUnit(unit: SpeedUnit) {
-		setSpeedUnit(unit);
-		localStorage.setItem(SPEED_UNIT_STORAGE_KEY, unit);
-	}
-
 	const closeWelcome = useCallback((dontShowAgain: boolean) => {
 		if (dontShowAgain) {
 			rememberWelcomeDismissal();
@@ -226,7 +222,7 @@ export function App() {
 						onOpenDevices={() => setActiveOverlay('devices')}
 						onOpenHistory={() => setActiveOverlay('history')}
 						onOpenShortcuts={() => setActiveOverlay('shortcuts')}
-						onSelectSpeedUnit={selectSpeedUnit}
+						onSelectSpeedUnit={preferencesStore.actions.selectSpeedUnit}
 						pairedDeviceCount={pairedDeviceCount}
 						speedUnit={speedUnit}
 					/>
