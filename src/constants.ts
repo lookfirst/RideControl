@@ -1,5 +1,5 @@
 import { CONTROL_MODE } from './lib/control-mode';
-import type { Metrics, StoredSession } from './types';
+import type { ElevationTotals, Metrics, StoredSession } from './types';
 
 export const FITNESS_MACHINE = 0x18_26;
 export const CYCLING_POWER = 0x18_18;
@@ -39,6 +39,11 @@ export const emptyMetrics: Metrics = {
 	speed: 0,
 };
 
+export const emptyElevationTotals: ElevationTotals = {
+	ascent: 0,
+	descent: 0,
+};
+
 export const emptySession: StoredSession = {
 	aggregates: {
 		cadence: { count: 0, sum: 0 },
@@ -52,6 +57,7 @@ export const emptySession: StoredSession = {
 	discarded: false,
 	distance: 0,
 	elapsedSeconds: 0,
+	elevationTotals: emptyElevationTotals,
 	ended: false,
 	endedAt: 0,
 	history: [],

@@ -17,6 +17,7 @@ export const savedSessionFixture: SavedSession = {
 	controlMode: CONTROL_MODE.RESISTANCE,
 	distance: 1.5,
 	elapsedSeconds: 2,
+	elevationTotals: { ascent: 0, descent: 0 },
 	endedAt: SAVED_SESSION_STARTED_AT + 2000,
 	feeling: 'good',
 	history: [

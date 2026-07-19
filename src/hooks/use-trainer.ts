@@ -24,6 +24,7 @@ export function useTrainer() {
 	const resistanceRampTimer = useRef<number | undefined>(undefined);
 	const resistanceKeyFlashTimer = useRef<number | undefined>(undefined);
 	const appliedResistance = useRef(store.get().resistance);
+	const rememberedResistance = useRef(store.get().resistance);
 	const resistanceTarget = useRef(store.get().resistance);
 	const keyboardControlsEnabled = useRef(true);
 	const gearControlsEnabled = useRef(false);
@@ -90,12 +91,15 @@ export function useTrainer() {
 		[setNotice, setResistanceRamp, trainerConnection.sendResistance]
 	);
 
-	const updateResistance = useCallback(
-		(value: number) => {
+	const queueResistance = useCallback(
+		(value: number, remember: boolean) => {
 			const next = clampResistance(value);
 			resistanceTarget.current = next;
 			setResistance(next);
-			localStorage.setItem(RESISTANCE_STORAGE_KEY, String(next));
+			if (remember) {
+				rememberedResistance.current = next;
+				localStorage.setItem(RESISTANCE_STORAGE_KEY, String(next));
+			}
 			window.clearTimeout(resistanceTimer.current);
 			window.clearTimeout(resistanceRampTimer.current);
 			const { current } = appliedResistance;
@@ -112,6 +116,18 @@ export function useTrainer() {
 		},
 		[rampResistance, setResistance, setResistanceRamp]
 	);
+	const updateResistance = useCallback(
+		(value: number) => queueResistance(value, true),
+		[queueResistance]
+	);
+	const updateProgramResistance = useCallback(
+		(value: number) => queueResistance(value, false),
+		[queueResistance]
+	);
+	const restoreManualResistance = useCallback(
+		() => queueResistance(rememberedResistance.current, false),
+		[queueResistance]
+	);
 
 	const shiftResistanceBy = useCallback(
 		(change: number) => {
@@ -120,6 +136,7 @@ export function useTrainer() {
 			window.clearTimeout(resistanceRampTimer.current);
 			resistanceTarget.current = next;
 			appliedResistance.current = next;
+			rememberedResistance.current = next;
 			setResistance(next);
 			setResistanceRamp({
 				current: next,
@@ -207,11 +224,13 @@ export function useTrainer() {
 		resistance: state.resistance,
 		resistanceKeyFlash: state.resistanceKeyFlash,
 		resistanceRamp: state.resistanceRamp,
+		restoreManualResistance,
 		setGearControlsEnabled,
 		setKeyboardControlsEnabled,
 		setNotice,
 		shiftResistanceBy,
 		trainerReportsDistance: trainerConnection.trainerReportsDistance,
+		updateProgramResistance,
 		updateResistance,
 	};
 }

@@ -1,4 +1,4 @@
-import type { ChartMode } from '../types';
+import { CHART_MODE, type ChartMode, isPersistedChartMode } from './chart-mode';
 import { CONTROL_MODE, type ControlMode } from './control-mode';
 import { METRIC_PRESENTATION, STANDARD_METRIC_KEYS } from './metric-presentation';
 import { clamp } from './numbers';
@@ -7,8 +7,8 @@ import { isFiniteNumber } from './type-guards';
 export const CHART_MODE_STORAGE_KEY = 'trainer-chart-mode';
 
 const baseChartModes: { label: string; value: ChartMode }[] = [
-	{ label: 'All', value: 'all' },
-	{ label: METRIC_PRESENTATION.speed.label, value: 'speed' },
+	{ label: 'All', value: CHART_MODE.ALL },
+	{ label: METRIC_PRESENTATION.speed.label, value: CHART_MODE.SPEED },
 	...STANDARD_METRIC_KEYS.map((key) => ({
 		label: METRIC_PRESENTATION[key].label,
 		value: key,
@@ -26,17 +26,7 @@ export function chartModesForControl(controlMode: ControlMode) {
 
 export function storedChartMode(storage: Pick<Storage, 'getItem'> = localStorage): ChartMode {
 	const saved = storage.getItem(CHART_MODE_STORAGE_KEY);
-	return [
-		'all',
-		'speed',
-		'power',
-		'cadence',
-		'heartRate',
-		CONTROL_MODE.GEAR,
-		CONTROL_MODE.RESISTANCE,
-	].includes(saved ?? '')
-		? (saved as ChartMode)
-		: 'all';
+	return isPersistedChartMode(saved) ? saved : CHART_MODE.ALL;
 }
 
 export function chartPath(

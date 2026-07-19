@@ -13,22 +13,26 @@ import { SessionOverview } from './components/session-overview';
 import { SessionSaveDialog } from './components/session-save-dialog';
 import { TrainingControl } from './components/training-control';
 import { WelcomeDialog } from './components/welcome-dialog';
+import { WorkoutPanel } from './components/workout-panel';
+import { WorkoutProgress } from './components/workout-progress';
 import { useGearControl } from './hooks/use-gear-control';
 import { useHeartRateMonitor } from './hooks/use-heart-rate-monitor';
 import { useSession } from './hooks/use-session';
 import { useSessionWorkflow } from './hooks/use-session-workflow';
 import { useTrainer } from './hooks/use-trainer';
+import { useWorkout } from './hooks/use-workout';
+import { useWorkoutLibrary } from './hooks/use-workout-library';
 import { useZwiftClick } from './hooks/use-zwift-click';
+import { APP_OVERLAY, type AppOverlay } from './lib/app-overlay';
 import { CONTROL_MODE, type ControlMode } from './lib/control-mode';
 import { eventTargetsInteractiveControl, keyboardEventHasModifiers } from './lib/dom';
 import { type AppShortcut, appShortcutForKey, gearingKeyboardShortcuts } from './lib/keyboard';
 import { requestUnloadConfirmation, sessionNeedsUnloadWarning } from './lib/session';
 import { rememberWelcomeDismissal, shouldShowWelcome } from './lib/welcome';
+import { workoutSelectionLocked } from './lib/workouts';
 import { MAX_CLICK_CONTROLLERS } from './lib/zwift-click';
 import { preferencesStore } from './stores/preferences-store';
-import type { Metrics, SavedSession } from './types';
-
-type AppOverlay = 'devices' | 'history' | 'shortcuts' | 'welcome';
+import type { Metrics, SavedSession, WorkoutCourse } from './types';
 
 function shouldIgnoreShortcut(event: KeyboardEvent) {
 	return (
@@ -56,9 +60,9 @@ function controlModeForClick(paired: boolean): ControlMode {
 export function App() {
 	const trainer = useTrainer();
 	const [activeOverlay, setActiveOverlay] = useState<AppOverlay | undefined>(() =>
-		shouldShowWelcome() ? 'welcome' : undefined
+		shouldShowWelcome() ? APP_OVERLAY.WELCOME : undefined
 	);
-	const devicesOpen = activeOverlay === 'devices';
+	const devicesOpen = activeOverlay === APP_OVERLAY.DEVICES;
 	const clickShiftRef = useRef<(change: number) => void>(() => undefined);
 	const handleClickShift = useCallback((change: number) => clickShiftRef.current(change), []);
 	const click = useZwiftClick(handleClickShift, trainer.setNotice, devicesOpen);
@@ -70,6 +74,7 @@ export function App() {
 	);
 	const { connected } = trainer;
 	const speedUnit = useSelector(preferencesStore, (preferences) => preferences.speedUnit);
+	const workoutLibrary = useWorkoutLibrary();
 	const virtualShiftingReady =
 		trainer.connected && click.connectedCount === MAX_CLICK_CONTROLLERS;
 	const gearControl = useGearControl({
@@ -89,11 +94,20 @@ export function App() {
 		trainer.lastPedalingAt,
 		trainer.trainerReportsDistance
 	);
+	const workoutTerrain = useWorkout({
+		active: !session.ended,
+		connected: trainer.connected,
+		distance: session.rideDistance,
+		onResistanceChange: trainer.updateProgramResistance,
+		onRestoreResistance: trainer.restoreManualResistance,
+		workout: session.workout,
+	});
 	const workflow = useSessionWorkflow(session, trainer.setNotice);
 	const dashboardKeyboardEnabled = activeOverlay === undefined && !workflow.saveDialogOpen;
+	const virtualShiftingActive = click.paired && !session.workout;
 	clickShiftRef.current = shiftHandlerUnlessBlocked(
 		gearControl.shiftGear,
-		!dashboardKeyboardEnabled
+		!(dashboardKeyboardEnabled && virtualShiftingActive)
 	);
 	const handleNewSessionShortcut = useCallback(
 		(event: KeyboardEvent) => {
@@ -123,15 +137,16 @@ export function App() {
 	}, [warnBeforeUnload]);
 
 	useEffect(() => {
-		trainer.setKeyboardControlsEnabled(dashboardKeyboardEnabled);
-		trainer.setGearControlsEnabled(click.paired);
-		gearControl.setKeyboardControlsEnabled(dashboardKeyboardEnabled);
+		trainer.setKeyboardControlsEnabled(dashboardKeyboardEnabled && !session.workout);
+		trainer.setGearControlsEnabled(virtualShiftingActive);
+		gearControl.setKeyboardControlsEnabled(dashboardKeyboardEnabled && virtualShiftingActive);
 	}, [
-		click.paired,
 		dashboardKeyboardEnabled,
 		gearControl.setKeyboardControlsEnabled,
 		trainer.setGearControlsEnabled,
 		trainer.setKeyboardControlsEnabled,
+		session.workout,
+		virtualShiftingActive,
 	]);
 
 	useEffect(() => {
@@ -145,7 +160,7 @@ export function App() {
 			},
 			history: (event) => {
 				event.preventDefault();
-				setActiveOverlay('history');
+				setActiveOverlay(APP_OVERLAY.HISTORY);
 			},
 			newSession: handleNewSessionShortcut,
 			pause: (event) => {
@@ -154,7 +169,7 @@ export function App() {
 			},
 			shortcuts: (event) => {
 				event.preventDefault();
-				setActiveOverlay('shortcuts');
+				setActiveOverlay(APP_OVERLAY.SHORTCUTS);
 			},
 		};
 		const handleShortcut = (event: KeyboardEvent) => {
@@ -194,10 +209,41 @@ export function App() {
 		},
 		[workflow.requestContinuation]
 	);
+	const selectWorkout = useCallback(
+		(course?: WorkoutCourse) => {
+			session.selectWorkout(course);
+			setActiveOverlay(undefined);
+		},
+		[session.selectWorkout]
+	);
+	const selectedWorkoutCourse = session.selectedWorkout?.course;
+	const selectedWorkoutId = selectedWorkoutCourse?.id;
+	const workoutLocked = workoutSelectionLocked(session);
+	useEffect(() => {
+		if (!(selectedWorkoutCourse && !workoutLocked)) {
+			return;
+		}
+		const currentDefinition = workoutLibrary.courses.find(
+			(course) => course.id === selectedWorkoutCourse.id
+		);
+		if (currentDefinition && currentDefinition !== selectedWorkoutCourse) {
+			session.selectWorkout(currentDefinition);
+		}
+	}, [selectedWorkoutCourse, session.selectWorkout, workoutLibrary.courses, workoutLocked]);
+	const removeWorkout = useCallback(
+		(courseId: string) => {
+			if (selectedWorkoutId === courseId) {
+				session.selectWorkout(undefined);
+			}
+			workoutLibrary.removeCourse(courseId);
+		},
+		[selectedWorkoutId, session.selectWorkout, workoutLibrary.removeCourse]
+	);
 
 	const connectedDeviceCount =
 		Number(trainer.connected) + Number(heartRate.connected) + click.connectedCount;
 	const pairedDeviceCount = Number(trainer.paired) + Number(heartRate.paired) + click.pairedCount;
+	const workoutName = selectedWorkoutCourse?.name;
 	const devicesConnecting = [
 		trainer.connectionBusy,
 		heartRate.busy,
@@ -214,17 +260,20 @@ export function App() {
 						isRiding={session.isRiding}
 						manuallyPaused={session.manuallyPaused}
 						onEnd={workflow.endSession}
+						onOpenWorkouts={() => setActiveOverlay(APP_OVERLAY.WORKOUTS)}
 						onRequestNew={workflow.requestNewSession}
 						onSave={workflow.openSaveDialog}
 						onTogglePause={session.togglePause}
 						saveResolved={workflow.sessionIsResolved}
+						workoutName={workoutName}
+						workoutSelectionLocked={workoutLocked}
 					/>
 					<DashboardTools
 						connectedDeviceCount={connectedDeviceCount}
 						devicesConnecting={devicesConnecting}
-						onOpenDevices={() => setActiveOverlay('devices')}
-						onOpenHistory={() => setActiveOverlay('history')}
-						onOpenShortcuts={() => setActiveOverlay('shortcuts')}
+						onOpenDevices={() => setActiveOverlay(APP_OVERLAY.DEVICES)}
+						onOpenHistory={() => setActiveOverlay(APP_OVERLAY.HISTORY)}
+						onOpenShortcuts={() => setActiveOverlay(APP_OVERLAY.SHORTCUTS)}
 						onSelectSpeedUnit={preferencesStore.actions.selectSpeedUnit}
 						pairedDeviceCount={pairedDeviceCount}
 						speedUnit={speedUnit}
@@ -238,6 +287,15 @@ export function App() {
 					rideDistance={session.rideDistance}
 					speedUnit={speedUnit}
 				/>
+				{session.workout && workoutTerrain ? (
+					<WorkoutProgress
+						elevationTotals={session.elevationTotals}
+						isRiding={session.isRiding}
+						speedUnit={speedUnit}
+						terrain={workoutTerrain}
+						workout={session.workout}
+					/>
+				) : null}
 				<DashboardWorkspace>
 					<SessionOverview
 						controlMode={session.controlMode}
@@ -247,29 +305,32 @@ export function App() {
 						rideCalories={session.rideCalories}
 						rideDistance={session.rideDistance}
 						speedUnit={speedUnit}
+						workout={session.workout}
 					/>
-					<TrainingControl
-						connected={click.paired ? virtualShiftingReady : connected}
-						control={
-							click.paired
-								? {
-										gear: gearControl.gear,
-										mode: CONTROL_MODE.GEAR,
-										onShift: gearControl.shiftGear,
-										shiftFlash: gearControl.shiftFlash,
-									}
-								: {
-										keyboardFlash: trainer.resistanceKeyFlash,
-										mode: CONTROL_MODE.RESISTANCE,
-										onChange: trainer.updateResistance,
-										ramp: trainer.resistanceRamp,
-										resistance: trainer.resistance,
-									}
-						}
-					/>
+					{workoutTerrain ? null : (
+						<TrainingControl
+							connected={virtualShiftingActive ? virtualShiftingReady : connected}
+							control={
+								virtualShiftingActive
+									? {
+											gear: gearControl.gear,
+											mode: CONTROL_MODE.GEAR,
+											onShift: gearControl.shiftGear,
+											shiftFlash: gearControl.shiftFlash,
+										}
+									: {
+											keyboardFlash: trainer.resistanceKeyFlash,
+											mode: CONTROL_MODE.RESISTANCE,
+											onChange: trainer.updateResistance,
+											ramp: trainer.resistanceRamp,
+											resistance: trainer.resistance,
+										}
+							}
+						/>
+					)}
 				</DashboardWorkspace>
 			</Dashboard>
-			<AppFooter onOpenWelcome={() => setActiveOverlay('welcome')} />
+			<AppFooter onOpenWelcome={() => setActiveOverlay(APP_OVERLAY.WELCOME)} />
 			<Notification
 				connected={connected}
 				notice={trainer.notice}
@@ -288,7 +349,20 @@ export function App() {
 			<SessionHistory
 				onClose={() => setActiveOverlay(undefined)}
 				onStartNew={continueFromHistory}
-				open={activeOverlay === 'history'}
+				open={activeOverlay === APP_OVERLAY.HISTORY}
+				speedUnit={speedUnit}
+			/>
+			<WorkoutPanel
+				activeCourse={session.selectedWorkout?.course}
+				courses={workoutLibrary.courses}
+				customCourseIds={workoutLibrary.customCourseIds}
+				ended={session.ended}
+				onClose={() => setActiveOverlay(undefined)}
+				onImportFile={workoutLibrary.importFile}
+				onRemoveCourse={removeWorkout}
+				onSelect={selectWorkout}
+				open={activeOverlay === APP_OVERLAY.WORKOUTS}
+				selectionLocked={workoutLocked}
 				speedUnit={speedUnit}
 			/>
 			<DevicePairingPanel
@@ -325,10 +399,10 @@ export function App() {
 			/>
 			<KeyboardShortcutsDialog
 				onClose={() => setActiveOverlay(undefined)}
-				open={activeOverlay === 'shortcuts'}
-				shortcuts={click.paired ? gearingKeyboardShortcuts : undefined}
+				open={activeOverlay === APP_OVERLAY.SHORTCUTS}
+				shortcuts={virtualShiftingActive ? gearingKeyboardShortcuts : undefined}
 			/>
-			<WelcomeDialog onClose={closeWelcome} open={activeOverlay === 'welcome'} />
+			<WelcomeDialog onClose={closeWelcome} open={activeOverlay === APP_OVERLAY.WELCOME} />
 		</main>
 	);
 }

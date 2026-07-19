@@ -17,6 +17,7 @@ import {
 	sessionListAfterDelete,
 	sessionSummary,
 } from '../src/lib/saved-sessions';
+import { WORKOUT_COURSES } from '../src/lib/workouts';
 import type { SavedSession, SavedSessionSummary, SessionSnapshot } from '../src/types';
 
 const snapshot: SessionSnapshot = {
@@ -25,6 +26,7 @@ const snapshot: SessionSnapshot = {
 	controlMode: 'resistance',
 	distance: 10,
 	elapsedSeconds: 1800,
+	elevationTotals: emptySession.elevationTotals,
 	endedAt: new Date(2026, 6, 18, 9).getTime(),
 	history: [
 		{
@@ -79,6 +81,13 @@ describe('saved session utilities', () => {
 		expect(sessionSummary({ ...session, importedAt: 5678 }).importedAt).toBe(5678);
 		expect(isImportedSession({ id: 'tcx:legacy-import' })).toBe(true);
 		expect(isImportedSession({ id: session.id })).toBe(false);
+		const [workout] = WORKOUT_COURSES;
+		if (!workout) {
+			throw new Error('Expected a built-in workout course');
+		}
+		expect(sessionSummary({ ...session, workout: { course: workout } }).workoutName).toBe(
+			workout.name
+		);
 	});
 
 	test('writes and deletes both full and summary session records', () => {

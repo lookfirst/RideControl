@@ -6,8 +6,11 @@ import type {
 	SavedSession,
 	SessionAggregates,
 	SessionFeeling,
+	SessionWorkout,
 } from '../types';
+import { evenlySample } from './arrays';
 import { CONTROL_MODE } from './control-mode';
+import { elevationTotalsForSamples } from './elevation';
 import { errorMessage } from './errors';
 import { clampGear } from './gears';
 import { nonNegativeNumber } from './numbers';
@@ -20,13 +23,22 @@ import {
 	kilometersForMeters,
 	secondsForMilliseconds,
 } from './units';
+import { restoreSessionWorkout } from './workouts';
+import {
+	xmlChild as child,
+	childElements,
+	xmlDescendant as descendant,
+	xmlDescendants as descendants,
+	elementName,
+	xmlNumber as numberValue,
+	xmlText as text,
+} from './xml';
 
 const TCX_FILE_EXTENSION = /\.tcx$/i;
 const ZIP_FILE_EXTENSION = /\.zip$/i;
 const MAX_TCX_FILES_PER_IMPORT = 500;
 const MAX_TCX_FILE_BYTES = 20 * 1024 * 1024;
 const MAX_TCX_ARCHIVE_BYTES = 100 * 1024 * 1024;
-const ELEMENT_NODE = 1;
 const LINE_BREAK = /\r?\n/;
 const FEELING_NOTE = /^Feeling:\s*(.+)$/i;
 const COMMENTS_NOTE_PREFIX = /^Comments:\s*/i;
@@ -59,39 +71,6 @@ const DEFAULT_IMPORT_DEPENDENCIES: ImportDependencies = {
 	saveSession,
 };
 
-function elementName(element: Element): string {
-	return element.localName || element.nodeName.split(':').at(-1) || element.nodeName;
-}
-
-function childElements(element: Element): Element[] {
-	return Array.from(element.childNodes).filter(
-		(node): node is Element => node.nodeType === ELEMENT_NODE
-	);
-}
-
-function child(element: Element, name: string): Element | undefined {
-	return childElements(element).find((candidate) => elementName(candidate) === name);
-}
-
-function descendants(element: Element, name: string): Element[] {
-	return Array.from(element.getElementsByTagName('*')).filter(
-		(candidate) => elementName(candidate) === name
-	);
-}
-
-function descendant(element: Element, name: string): Element | undefined {
-	return descendants(element, name)[0];
-}
-
-function text(element: Element | undefined): string {
-	return element?.textContent?.trim() ?? '';
-}
-
-function numberValue(element: Element | undefined): number | undefined {
-	const value = Number(text(element));
-	return Number.isFinite(value) ? value : undefined;
-}
-
 function dateValue(value: string): number | undefined {
 	const timestamp = Date.parse(value);
 	return Number.isFinite(timestamp) ? timestamp : undefined;
@@ -103,16 +82,6 @@ function positiveSum(values: (number | undefined)[]): number {
 
 function maximum(values: number[]): number {
 	return values.reduce((highest, value) => Math.max(highest, value), 0);
-}
-
-function evenlySample<T>(values: T[], limit: number): T[] {
-	if (values.length <= limit) {
-		return values;
-	}
-	return Array.from({ length: limit }, (_, index) => {
-		const sourceIndex = Math.round((index * (values.length - 1)) / (limit - 1));
-		return values[sourceIndex] as T;
-	});
 }
 
 function notesMetadata(activity: Element): Pick<SavedSession, 'comments' | 'feeling'> {
@@ -164,12 +133,18 @@ function trackpointSample(
 			: 0;
 	const gear = numberValue(descendant(trackpoint, 'Gear'));
 	const resistance = numberValue(descendant(trackpoint, 'Resistance'));
+	const elevation = numberValue(child(trackpoint, 'AltitudeMeters'));
+	const grade = numberValue(descendant(trackpoint, 'Grade'));
+	const workoutDistance = numberValue(descendant(trackpoint, 'WorkoutDistance'));
+	const workoutLap = numberValue(descendant(trackpoint, 'WorkoutLap'));
 	return {
 		distanceMeters,
 		sample: {
 			cadence: Math.max(0, numberValue(child(trackpoint, 'Cadence')) ?? 0),
 			elapsedSeconds,
+			elevation: elevation === undefined ? undefined : Math.max(0, elevation),
 			gear: gear === undefined ? undefined : clampGear(gear),
+			grade,
 			heartRate: Math.max(
 				0,
 				numberValue(descendant(child(trackpoint, 'HeartRateBpm') ?? trackpoint, 'Value')) ??
@@ -181,9 +156,40 @@ function trackpointSample(
 				recordedSpeed === undefined
 					? calculatedSpeed
 					: Math.max(0, recordedSpeed) * KILOMETERS_PER_HOUR_PER_METER_PER_SECOND,
+			workoutDistance:
+				workoutDistance === undefined ? undefined : Math.max(0, workoutDistance),
+			workoutLap: workoutLap === undefined ? undefined : Math.max(1, Math.round(workoutLap)),
 		},
 		timestamp,
 	};
+}
+
+function activityWorkout(activity: Element): SessionWorkout | undefined {
+	const workout = descendant(activity, 'Workout');
+	if (!workout) {
+		return;
+	}
+	const points = childElements(workout)
+		.filter((element) => elementName(element) === 'Point')
+		.map((point) => ({
+			distance: numberValue(child(point, 'Distance')),
+			elevation: numberValue(child(point, 'Elevation')),
+			latitude: numberValue(child(point, 'Latitude')),
+			longitude: numberValue(child(point, 'Longitude')),
+			x: numberValue(child(point, 'X')),
+			y: numberValue(child(point, 'Y')),
+		}));
+	return restoreSessionWorkout({
+		course: {
+			baseResistance: numberValue(child(workout, 'BaseResistance')),
+			description: text(child(workout, 'Description')),
+			difficulty: text(child(workout, 'Difficulty')),
+			distance: numberValue(child(workout, 'Distance')),
+			id: text(child(workout, 'CourseId')),
+			name: text(child(workout, 'Name')),
+			points,
+		},
+	});
 }
 
 function fallbackAggregate(laps: Element[], names: string[]): MetricAggregate {
@@ -293,6 +299,9 @@ function parseActivity(activity: Element): SavedSession {
 		fallbackAggregate(laps, ['AverageHeartRateBpm'])
 	);
 	aggregates = withAggregateFallback(aggregates, 'power', fallbackAggregate(laps, ['AvgWatts']));
+	const sampledElevationTotals = elevationTotalsForSamples(allSamples);
+	const recordedAscent = numberValue(descendant(activity, 'TotalAscentMeters'));
+	const recordedDescent = numberValue(descendant(activity, 'TotalDescentMeters'));
 
 	return {
 		...notesMetadata(activity),
@@ -301,6 +310,10 @@ function parseActivity(activity: Element): SavedSession {
 		controlMode: hasGear ? CONTROL_MODE.GEAR : CONTROL_MODE.RESISTANCE,
 		distance: kilometersForMeters(distanceMeters),
 		elapsedSeconds,
+		elevationTotals: {
+			ascent: nonNegativeNumber(recordedAscent ?? sampledElevationTotals.ascent),
+			descent: nonNegativeNumber(recordedDescent ?? sampledElevationTotals.descent),
+		},
 		endedAt,
 		history: evenlySample(allSamples, MAX_SESSION_HISTORY_SAMPLES),
 		id:
@@ -330,6 +343,7 @@ function parseActivity(activity: Element): SavedSession {
 			),
 		},
 		startedAt,
+		workout: activityWorkout(activity),
 	};
 }
 

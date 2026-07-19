@@ -32,3 +32,8 @@ export function aggregateMaximum(aggregate: MetricAggregate): number {
 export function formatWholeNumber(value: number): string {
 	return String(Math.round(value));
 }
+
+export function formatGrade(grade: number): string {
+	const rounded = Number(grade.toFixed(1));
+	return rounded === 0 ? '0%' : `${rounded > 0 ? '+' : ''}${rounded.toFixed(1)}%`;
+}

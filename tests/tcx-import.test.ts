@@ -4,6 +4,7 @@ import { strToU8, zipSync } from 'fflate';
 import { CONTROL_MODE } from '../src/lib/control-mode';
 import { sessionToTcx } from '../src/lib/tcx';
 import { importTcxUpload, parseTcxSessions, tcxImportResultMessage } from '../src/lib/tcx-import';
+import { WORKOUT_COURSES, workoutTerrainAtDistance } from '../src/lib/workouts';
 import type { SavedSession } from '../src/types';
 import { savedSessionFixture } from './fixtures/saved-session';
 
@@ -51,6 +52,50 @@ describe('TCX import', () => {
 		const [second] = parseTcxSessions(withoutSessionId);
 		expect(first?.id).toStartWith('tcx:');
 		expect(second?.id).toBe(first?.id);
+	});
+
+	test('round trips terrain workout definitions and progress samples', () => {
+		const course = WORKOUT_COURSES.find((workout) => workout.id === 'highland-loop');
+		expect(course).toBeDefined();
+		if (!course) {
+			return;
+		}
+		const workoutSession: SavedSession = {
+			...session,
+			elevationTotals: { ascent: 205.5, descent: 91.25 },
+			history: session.history.map((sample, index) => {
+				const terrain = workoutTerrainAtDistance(course, index + 1);
+				return {
+					...sample,
+					elevation: terrain.elevation,
+					grade: terrain.grade,
+					workoutDistance: terrain.distance,
+					workoutLap: terrain.lap,
+				};
+			}),
+			workout: { course },
+		};
+		const [imported] = parseTcxSessions(sessionToTcx(workoutSession));
+		expect(imported?.workout?.course).toMatchObject({
+			baseResistance: course.baseResistance,
+			description: course.description,
+			difficulty: course.difficulty,
+			distance: course.distance,
+			id: course.id,
+			name: course.name,
+		});
+		expect(imported?.workout?.course.points).toHaveLength(course.points.length);
+		expect(imported?.workout?.course.points[1]?.latitude).toBeCloseTo(
+			course.points[1]?.latitude ?? 0,
+			7
+		);
+		expect(imported?.history[0]).toMatchObject({
+			workoutDistance: 1,
+			workoutLap: 1,
+		});
+		expect(imported?.history[0]?.elevation).toBeNumber();
+		expect(imported?.history[0]?.grade).toBeNumber();
+		expect(imported?.elevationTotals).toEqual({ ascent: 205.5, descent: 91.25 });
 	});
 
 	test('imports TCX files in nested ZIP folders and skips duplicate sessions', async () => {

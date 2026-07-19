@@ -5,6 +5,7 @@ import {
 	formatAggregateAverage,
 	formatChartSeconds,
 	formatDuration,
+	formatGrade,
 } from '../src/lib/format';
 
 describe('format utilities', () => {
@@ -22,6 +23,14 @@ describe('format utilities', () => {
 		expect(formatAggregateAverage({ count: 0, sum: 0 }, 0)).toBe('0');
 		expect(aggregateMaximum({ count: 2, maximum: 8, sum: 11 })).toBe(8);
 		expect(aggregateMaximum({ count: 2, sum: 11 })).toBe(0);
+	});
+
+	test('formats flat grades without an unstable sign', () => {
+		expect(formatGrade(0)).toBe('0%');
+		expect(formatGrade(0.04)).toBe('0%');
+		expect(formatGrade(-0.04)).toBe('0%');
+		expect(formatGrade(3.14)).toBe('+3.1%');
+		expect(formatGrade(-2.96)).toBe('-3.0%');
 	});
 });
 

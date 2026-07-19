@@ -11,10 +11,12 @@ import {
 	isImportedSession,
 } from '../lib/saved-sessions';
 import { downloadSessionTcx } from '../lib/tcx';
+import { workoutTerrainAtDistance } from '../lib/workouts';
 import type { SavedSession, SpeedUnit } from '../types';
 import { SessionMetric } from './metrics';
 import { SessionChart } from './session-chart';
 import { SessionSummary } from './session-summary';
+import { WorkoutProgress } from './workout-progress';
 
 export function DeleteSessionDialog({
 	deleting,
@@ -99,6 +101,9 @@ export function SessionDetail({
 }) {
 	const usesGear = session.controlMode === CONTROL_MODE.GEAR;
 	const imported = isImportedSession(session);
+	const workoutTerrain = session.workout
+		? workoutTerrainAtDistance(session.workout.course, session.distance)
+		: undefined;
 	const controlMetric = usesGear
 		? {
 				accent: 'mint',
@@ -198,6 +203,15 @@ export function SessionDetail({
 					timeLabel="RECORDED"
 				/>
 			</div>
+			{session.workout && workoutTerrain ? (
+				<WorkoutProgress
+					elevationTotals={session.elevationTotals}
+					isRiding={false}
+					speedUnit={speedUnit}
+					terrain={workoutTerrain}
+					workout={session.workout}
+				/>
+			) : null}
 			<div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
 				{[...standardMetrics, controlMetric].map((metric) => (
 					<SessionMetric key={metric.label} {...metric} />
@@ -223,7 +237,7 @@ export function SessionDetail({
 				controlMode={session.controlMode}
 				history={session.history}
 				keyboardEnabled={chartKeyboardEnabled}
-				route={EMPTY_ROUTE}
+				route={session.workout?.course.points ?? EMPTY_ROUTE}
 				speedUnit={speedUnit}
 			/>
 		</div>

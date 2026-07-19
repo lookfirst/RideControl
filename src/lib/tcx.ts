@@ -1,4 +1,4 @@
-import type { MetricSample, SavedSession } from '../types';
+import type { MetricSample, SavedSession, SessionWorkout } from '../types';
 import { CONTROL_MODE } from './control-mode';
 import { downloadBrowserFile } from './download';
 import { aggregateAverage, aggregateMaximum } from './format';
@@ -9,15 +9,7 @@ import {
 	TCX_NAMESPACE,
 } from './tcx-schema';
 import { metersForKilometers, metersPerSecond, millisecondsForSeconds } from './units';
-
-function xmlEscape(value: string): string {
-	return value
-		.replaceAll('&', '&amp;')
-		.replaceAll('<', '&lt;')
-		.replaceAll('>', '&gt;')
-		.replaceAll('"', '&quot;')
-		.replaceAll("'", '&apos;');
-}
+import { xmlEscape } from './xml';
 
 function trackpointDistances(session: SavedSession): number[] {
 	let elapsed = 0;
@@ -46,14 +38,29 @@ function trackpointDistances(session: SavedSession): number[] {
 
 function trackpointXml(sample: MetricSample, timestamp: number, distanceMeters: number): string {
 	const heartRate = nonNegativeNumber(sample.heartRate);
+	const altitude =
+		sample.elevation === undefined
+			? ''
+			: `\n\t\t\t\t\t\t<AltitudeMeters>${nonNegativeNumber(sample.elevation).toFixed(2)}</AltitudeMeters>`;
 	const controlExtension =
 		sample.gear === undefined
 			? `<rc:Resistance>${nonNegativeNumber(sample.resistance).toFixed(1)}</rc:Resistance>`
 			: `<rc:Gear>${Math.round(nonNegativeNumber(sample.gear))}</rc:Gear>`;
+	const workoutExtensions = [
+		sample.grade === undefined ? '' : `<rc:Grade>${sample.grade.toFixed(2)}</rc:Grade>`,
+		sample.workoutDistance === undefined
+			? ''
+			: `<rc:WorkoutDistance>${nonNegativeNumber(sample.workoutDistance).toFixed(3)}</rc:WorkoutDistance>`,
+		sample.workoutLap === undefined
+			? ''
+			: `<rc:WorkoutLap>${Math.max(1, Math.round(sample.workoutLap))}</rc:WorkoutLap>`,
+	]
+		.filter(Boolean)
+		.join('\n\t\t\t\t\t\t\t');
 	return `
 					<Trackpoint>
 						<Time>${new Date(timestamp).toISOString()}</Time>
-						<DistanceMeters>${distanceMeters.toFixed(3)}</DistanceMeters>${
+						<DistanceMeters>${distanceMeters.toFixed(3)}</DistanceMeters>${altitude}${
 							heartRate > 0
 								? `
 						<HeartRateBpm><Value>${Math.round(heartRate)}</Value></HeartRateBpm>`
@@ -66,9 +73,38 @@ function trackpointXml(sample: MetricSample, timestamp: number, distanceMeters: 
 								<ns3:Speed>${metersPerSecond(nonNegativeNumber(sample.speed)).toFixed(3)}</ns3:Speed>
 								<ns3:Watts>${Math.round(nonNegativeNumber(sample.power))}</ns3:Watts>
 							</ns3:TPX>
-							${controlExtension}
+							${controlExtension}${workoutExtensions ? `\n\t\t\t\t\t\t\t${workoutExtensions}` : ''}
 						</Extensions>
 					</Trackpoint>`;
+}
+
+function workoutSummaryXml(workout?: SessionWorkout): string {
+	if (!workout) {
+		return '';
+	}
+	const { course } = workout;
+	const points = course.points
+		.map(
+			(point) => `
+							<rc:Point>
+								<rc:Distance>${point.distance.toFixed(3)}</rc:Distance>
+								<rc:Elevation>${point.elevation.toFixed(2)}</rc:Elevation>
+								<rc:Latitude>${point.latitude.toFixed(8)}</rc:Latitude>
+								<rc:Longitude>${point.longitude.toFixed(8)}</rc:Longitude>
+								<rc:X>${point.x.toFixed(2)}</rc:X>
+								<rc:Y>${point.y.toFixed(2)}</rc:Y>
+							</rc:Point>`
+		)
+		.join('');
+	return `
+						<rc:Workout>
+							<rc:CourseId>${xmlEscape(course.id)}</rc:CourseId>
+							<rc:Name>${xmlEscape(course.name)}</rc:Name>
+							<rc:Description>${xmlEscape(course.description)}</rc:Description>
+							<rc:Difficulty>${course.difficulty}</rc:Difficulty>
+							<rc:BaseResistance>${course.baseResistance.toFixed(1)}</rc:BaseResistance>
+							<rc:Distance>${course.distance.toFixed(3)}</rc:Distance>${points}
+						</rc:Workout>`;
 }
 
 export function sessionToTcx(session: SavedSession): string {
@@ -135,7 +171,9 @@ export function sessionToTcx(session: SavedSession): string {
 					</ns3:LX>
 					<rc:Summary>
 						<rc:SessionId>${xmlEscape(session.id)}</rc:SessionId>
-						${controlSummary}
+						<rc:TotalAscentMeters>${nonNegativeNumber(session.elevationTotals.ascent).toFixed(2)}</rc:TotalAscentMeters>
+						<rc:TotalDescentMeters>${nonNegativeNumber(session.elevationTotals.descent).toFixed(2)}</rc:TotalDescentMeters>
+						${controlSummary}${workoutSummaryXml(session.workout)}
 					</rc:Summary>
 				</Extensions>
 			</Lap>${

@@ -12,6 +12,7 @@ import {
 	sessionNeedsUnloadWarning,
 	storedResistance,
 } from '../src/lib/session';
+import { WORKOUT_COURSES } from '../src/lib/workouts';
 
 const storageWith = (value: string | null) => ({
 	getItem: () => value,
@@ -32,6 +33,7 @@ describe('session utilities', () => {
 			controlMode: 'resistance' as const,
 			distance: 14,
 			elapsedSeconds: 1800,
+			elevationTotals: { ascent: 220, descent: 180 },
 			endedAt: 5000,
 			history: [
 				{
@@ -136,41 +138,69 @@ describe('session utilities', () => {
 	});
 
 	test('loads and sanitizes a stored session', () => {
+		const [workout] = WORKOUT_COURSES;
+		if (!workout) {
+			throw new Error('Expected a built-in workout course');
+		}
 		const stored = JSON.stringify({
 			calories: -10,
 			distance: 12,
 			elapsedSeconds: 65,
+			elevationTotals: { ascent: 120, descent: 80 },
 			ended: true,
 			endedAt: 5000,
 			history: [
 				{
 					cadence: 90,
 					elapsedSeconds: 65,
+					elevation: 24,
+					grade: 2.4,
 					heartRate: 150,
 					power: 200,
 					resistance: 42,
 					speed: Number.NaN,
+					workoutDistance: 1.2,
+					workoutLap: 2,
 				},
 			],
 			maximums: { cadence: 95, heartRate: 160, power: 250, speed: 35 },
+			plannedWorkout: { course: workout },
 			savedSessionId: 'saved-session',
 			startedAt: 1000,
+			workout: { course: workout },
 		});
 		const session = loadStoredSession(storageWith(stored));
 		expect(session.calories).toBe(0);
 		expect(session.distance).toBe(12);
+		expect(session.elevationTotals).toEqual({ ascent: 120, descent: 80 });
 		expect(session.discarded).toBe(false);
 		expect(session.ended).toBe(true);
 		expect(session.endedAt).toBe(5000);
 		expect(session.history[0]?.speed).toBe(0);
 		expect(session.history[0]?.resistance).toBe(42);
 		expect(session.history[0]?.gear).toBeUndefined();
+		expect(session.history[0]).toMatchObject({
+			elevation: 24,
+			grade: 2.4,
+			workoutDistance: 1.2,
+			workoutLap: 2,
+		});
 		expect(session.controlMode).toBe('resistance');
 		expect(session.aggregates.power).toEqual({ count: 1, maximum: 200, sum: 200 });
 		expect(session.aggregates.resistance).toEqual({ count: 1, maximum: 42, sum: 42 });
 		expect(session.maximums.speed).toBe(35);
+		const { plannedWorkout } = session;
+		if (!plannedWorkout) {
+			throw new Error('Expected the planned workout to be restored');
+		}
+		expect(plannedWorkout.course.id).toBe(workout.id);
 		expect(session.savedSessionId).toBe('saved-session');
 		expect(session.startedAt).toBe(1000);
+		const restoredWorkout = session.workout;
+		if (!restoredWorkout) {
+			throw new Error('Expected the stored workout to be restored');
+		}
+		expect(restoredWorkout.course.id).toBe(workout.id);
 	});
 
 	test('uses an empty session for absent or malformed storage', () => {

@@ -2,9 +2,12 @@ import { describe, expect, test } from 'bun:test';
 import {
 	averageSpeed,
 	convertDistance,
+	convertElevation,
 	convertSpeed,
 	formatDistance,
+	formatDistanceProgress,
 	formatDistanceValue,
+	formatElevation,
 	kilometersForMeters,
 	kilometersTraveled,
 	metersForKilometers,
@@ -17,10 +20,15 @@ import {
 describe('unit conversions', () => {
 	test('converts metric ride values to imperial display values', () => {
 		expect(convertDistance(1.609_344, 'mph')).toBeCloseTo(1);
+		expect(convertElevation(304.8, 'mph')).toBeCloseTo(1000);
 		expect(convertSpeed(32.186_88, 'mph')).toBeCloseTo(20);
 		expect(formatDistance(16.093_44, 'mph')).toBe('10.00 mi');
 		expect(formatDistance(16.093_44, 'kmh')).toBe('16.09 km');
+		expect(formatDistanceProgress(5.793_638_4, 9.656_064, 'mph')).toBe('3.6 / 6 mi');
+		expect(formatDistanceProgress(3.6, 6, 'kmh')).toBe('3.6 / 6 km');
 		expect(formatDistanceValue(16.093_44, 'mph')).toBe('10.00');
+		expect(formatElevation(304.8, 'mph')).toBe('1000 ft');
+		expect(formatElevation(304.8, 'kmh')).toBe('305 m');
 	});
 
 	test('converts stored SI and ride timing values consistently', () => {
