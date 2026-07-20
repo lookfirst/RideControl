@@ -40,14 +40,9 @@ export function WelcomeDialog({
 				role="dialog"
 			>
 				<div className="flex items-start justify-between gap-4">
-					<div>
-						<p className="font-bold text-[11px] text-mint tracking-[.14em]">
-							WELCOME TO
-						</p>
-						<h2 className="mt-1 font-bold text-2xl" id="welcome-title">
-							RideControl.xyz
-						</h2>
-					</div>
+					<h2 className="font-bold text-2xl" id="welcome-title">
+						RideControl.xyz
+					</h2>
 					<button
 						aria-label="Close welcome message"
 						className="grid h-8 w-8 place-items-center rounded-lg text-slate-400 hover:bg-slate-700 hover:text-white"

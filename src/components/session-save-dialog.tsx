@@ -74,10 +74,7 @@ export function SessionSaveDialog({
 			>
 				<div className="flex items-start justify-between gap-4">
 					<div>
-						<p className="font-bold text-[11px] text-mint tracking-[.14em]">
-							SESSION ENDED
-						</p>
-						<h2 className="mt-1 font-bold text-2xl" id="save-session-title">
+						<h2 className="font-bold text-2xl" id="save-session-title">
 							Save this session?
 						</h2>
 						<p className="mt-1 text-slate-400 text-sm">

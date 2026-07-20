@@ -648,7 +648,7 @@ describe('view components', () => {
 		expect(html).toContain('href="https://github.com/lookfirst/RideControl"');
 		expect(html).toContain('href="https://github.com/sponsors/lookfirst"');
 		expect(html).toContain('Sponsor');
-		expect(html).toContain('WELCOME TO');
+		expect(html).not.toContain('WELCOME TO');
 		expect(html).toContain('show again');
 		expect(html).toContain('tracking-wide transition hover:text-slate-400');
 		expect(html).toContain('type="button">Ride Control</button>');
@@ -661,7 +661,7 @@ describe('view components', () => {
 		expect(render(<WelcomeDialog onClose={() => undefined} open={false} />)).toBe('');
 		const html = render(<WelcomeDialog onClose={() => undefined} open />);
 		expect(html).toContain('aria-modal="true"');
-		expect(html).toContain('WELCOME TO');
+		expect(html).not.toContain('WELCOME TO');
 		expect(html).toContain('RideControl.xyz');
 		expect(html).toContain('show again');
 		expect(html).toContain('Get started');
@@ -856,6 +856,7 @@ describe('view components', () => {
 			/>
 		);
 		expect(html).toContain('Save this session?');
+		expect(html).not.toContain('SESSION ENDED');
 		expect(html).toContain('How did it feel?');
 		expect(html).toContain('Continue without saving');
 		expect(html).toContain('Save &amp; continue');

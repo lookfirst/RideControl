@@ -24,7 +24,12 @@ import { useTrainer } from './hooks/use-trainer';
 import { useWorkoutResistance } from './hooks/use-workout';
 import { useWorkoutLibrary } from './hooks/use-workout-library';
 import { useZwiftClick } from './hooks/use-zwift-click';
-import { APP_OVERLAY, type AppOverlay } from './lib/app-overlay';
+import {
+	APP_OVERLAY,
+	type AppOverlay,
+	loadOpenSideTray,
+	persistOpenSideTray,
+} from './lib/app-overlay';
 import { CONTROL_MODE, type ControlMode } from './lib/control-mode';
 import { eventTargetsInteractiveControl, keyboardEventHasModifiers } from './lib/dom';
 import { resistanceForVirtualGear } from './lib/gears';
@@ -66,9 +71,13 @@ function controlModeForClick(paired: boolean): ControlMode {
 export function App() {
 	const rememberedDevices = useRememberedBluetoothDevices();
 	const trainer = useTrainer(rememberedDevices);
-	const [activeOverlay, setActiveOverlay] = useState<AppOverlay | undefined>(() =>
-		shouldShowWelcome() ? APP_OVERLAY.WELCOME : undefined
+	const [activeOverlay, setActiveOverlayState] = useState<AppOverlay | undefined>(
+		() => loadOpenSideTray() ?? (shouldShowWelcome() ? APP_OVERLAY.WELCOME : undefined)
 	);
+	const setActiveOverlay = useCallback((overlay: AppOverlay | undefined) => {
+		persistOpenSideTray(overlay);
+		setActiveOverlayState(overlay);
+	}, []);
 	const devicesOpen = activeOverlay === APP_OVERLAY.DEVICES;
 	const clickShiftRef = useRef<(change: number) => void>(() => undefined);
 	const handleClickShift = useCallback((change: number) => clickShiftRef.current(change), []);
@@ -229,29 +238,33 @@ export function App() {
 		handleNewSessionShortcut,
 		session.ended,
 		session.togglePause,
+		setActiveOverlay,
 		workflow.endSession,
 		workflow.saveDialogOpen,
 	]);
 
-	const closeWelcome = useCallback((dontShowAgain: boolean) => {
-		if (dontShowAgain) {
-			rememberWelcomeDismissal();
-		}
-		setActiveOverlay(undefined);
-	}, []);
+	const closeWelcome = useCallback(
+		(dontShowAgain: boolean) => {
+			if (dontShowAgain) {
+				rememberWelcomeDismissal();
+			}
+			setActiveOverlay(undefined);
+		},
+		[setActiveOverlay]
+	);
 	const continueFromHistory = useCallback(
 		(savedSession: SavedSession) => {
 			setActiveOverlay(undefined);
 			workflow.requestContinuation(savedSession);
 		},
-		[workflow.requestContinuation]
+		[setActiveOverlay, workflow.requestContinuation]
 	);
 	const selectWorkout = useCallback(
 		(course?: WorkoutCourse) => {
 			session.selectWorkout(course);
 			setActiveOverlay(undefined);
 		},
-		[session.selectWorkout]
+		[session.selectWorkout, setActiveOverlay]
 	);
 	const selectedWorkoutCourse = session.selectedWorkout?.course;
 	const selectedWorkoutId = selectedWorkoutCourse?.id;
