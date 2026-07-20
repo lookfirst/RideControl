@@ -1,7 +1,6 @@
 import { useSelector } from '@tanstack/react-store';
 import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { RECORDING_PAUSE_DELAY_MS } from '../constants';
-import { CONTROL_MODE } from '../lib/control-mode';
 import { loadStoredSession, SESSION_STORAGE_KEY } from '../lib/session';
 import { MILLISECONDS_PER_SECOND, secondsForMilliseconds } from '../lib/units';
 import {
@@ -61,13 +60,6 @@ interface SessionController {
 	workout?: SessionWorkout;
 }
 
-function controlForWorkout(
-	control: SessionControlState,
-	workout?: SessionWorkout
-): SessionControlState {
-	return workout ? { ...control, mode: CONTROL_MODE.RESISTANCE } : control;
-}
-
 export function useSession(
 	metrics: Metrics,
 	control: SessionControlState,
@@ -76,9 +68,8 @@ export function useSession(
 ): SessionController {
 	const store = useMemo(() => createSessionStore(loadStoredSession()), []);
 	const state = useSelector(store);
-	const effectiveControl = controlForWorkout(control, state.workout);
 	const latestMetrics = useRef(metrics);
-	const latestControl = useRef(effectiveControl);
+	const latestControl = useRef(control);
 	const lastTrainerDistance = useRef<number | undefined>(undefined);
 
 	useEffect(() => {
@@ -87,9 +78,9 @@ export function useSession(
 	}, [metrics, store]);
 
 	useEffect(() => {
-		latestControl.current = effectiveControl;
-		store.actions.observeControlMode(effectiveControl.mode);
-	}, [effectiveControl, store]);
+		latestControl.current = control;
+		store.actions.observeControlMode(control.mode);
+	}, [control, store]);
 
 	useEffect(() => {
 		persistSessionState(store.get());

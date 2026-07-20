@@ -17,6 +17,7 @@ import { WorkoutPanel } from './components/workout-panel';
 import { WorkoutProgress } from './components/workout-progress';
 import { useGearControl } from './hooks/use-gear-control';
 import { useHeartRateMonitor } from './hooks/use-heart-rate-monitor';
+import { useRememberedBluetoothDevices } from './hooks/use-remembered-bluetooth-devices';
 import { useSession } from './hooks/use-session';
 import { useSessionWorkflow } from './hooks/use-session-workflow';
 import { useTrainer } from './hooks/use-trainer';
@@ -26,6 +27,7 @@ import { useZwiftClick } from './hooks/use-zwift-click';
 import { APP_OVERLAY, type AppOverlay } from './lib/app-overlay';
 import { CONTROL_MODE, type ControlMode } from './lib/control-mode';
 import { eventTargetsInteractiveControl, keyboardEventHasModifiers } from './lib/dom';
+import { resistanceForVirtualGear } from './lib/gears';
 import { type AppShortcut, appShortcutForKey, gearingKeyboardShortcuts } from './lib/keyboard';
 import { requestUnloadConfirmation, sessionNeedsUnloadWarning } from './lib/session';
 import { rememberWelcomeDismissal, shouldShowWelcome } from './lib/welcome';
@@ -62,15 +64,21 @@ function controlModeForClick(paired: boolean): ControlMode {
 }
 
 export function App() {
-	const trainer = useTrainer();
+	const rememberedDevices = useRememberedBluetoothDevices();
+	const trainer = useTrainer(rememberedDevices);
 	const [activeOverlay, setActiveOverlay] = useState<AppOverlay | undefined>(() =>
 		shouldShowWelcome() ? APP_OVERLAY.WELCOME : undefined
 	);
 	const devicesOpen = activeOverlay === APP_OVERLAY.DEVICES;
 	const clickShiftRef = useRef<(change: number) => void>(() => undefined);
 	const handleClickShift = useCallback((change: number) => clickShiftRef.current(change), []);
-	const click = useZwiftClick(handleClickShift, trainer.setNotice, devicesOpen);
-	const heartRate = useHeartRateMonitor(trainer.setNotice);
+	const heartRate = useHeartRateMonitor(rememberedDevices, trainer.setNotice);
+	const click = useZwiftClick(
+		handleClickShift,
+		trainer.setNotice,
+		devicesOpen,
+		rememberedDevices
+	);
 	const liveMetrics = metricsWithHeartRate(
 		trainer.metrics,
 		heartRate.connected,
@@ -81,11 +89,17 @@ export function App() {
 	const workoutLibrary = useWorkoutLibrary();
 	const virtualShiftingReady =
 		trainer.connected && click.connectedCount === MAX_CLICK_CONTROLLERS;
+	const gearResistanceRef = useRef<(fromGear: number, toGear: number) => void>(
+		trainer.shiftResistanceForGears
+	);
+	const handleGearChange = useCallback(
+		(fromGear: number, toGear: number) => gearResistanceRef.current(fromGear, toGear),
+		[]
+	);
 	const gearControl = useGearControl({
 		active: click.paired,
-		onResistanceChange: trainer.shiftResistanceBy,
+		onGearChange: handleGearChange,
 		ready: virtualShiftingReady,
-		resistance: trainer.resistance,
 		setNotice: trainer.setNotice,
 	});
 	const session = useSession(
@@ -108,16 +122,26 @@ export function App() {
 	const workoutTerrain = dashboardWorkout.workout
 		? workoutTerrainAtDistance(dashboardWorkout.workout.course, dashboardWorkout.distance)
 		: undefined;
+	const virtualShiftingActive = click.paired;
+	let workoutResistance = workoutTerrain?.resistance;
+	if (workoutTerrain && virtualShiftingActive) {
+		workoutResistance = resistanceForVirtualGear(workoutTerrain.resistance, gearControl.gear);
+	}
+	gearResistanceRef.current = workoutTerrain
+		? (_fromGear, toGear) =>
+				trainer.updateProgramShiftResistance(
+					resistanceForVirtualGear(workoutTerrain.resistance, toGear)
+				)
+		: trainer.shiftResistanceForGears;
 	useWorkoutResistance({
 		active: !session.ended,
 		connected: trainer.connected,
 		onResistanceChange: trainer.updateProgramResistance,
 		onRestoreResistance: trainer.restoreManualResistance,
-		terrain: workoutTerrain,
+		resistance: workoutResistance,
 	});
 	const workflow = useSessionWorkflow(session, trainer.setNotice, trainer.settleAfterRide);
 	const dashboardKeyboardEnabled = activeOverlay === undefined && !workflow.saveDialogOpen;
-	const virtualShiftingActive = click.paired && !dashboardWorkout.workout;
 	clickShiftRef.current = shiftHandlerUnlessBlocked(
 		gearControl.shiftGear,
 		!(dashboardKeyboardEnabled && virtualShiftingActive)
@@ -305,6 +329,7 @@ export function App() {
 						elevationTotals={dashboardWorkout.elevationTotals}
 						isRiding={session.isRiding}
 						speedUnit={speedUnit}
+						targetResistance={workoutResistance}
 						terrain={workoutTerrain}
 						workout={dashboardWorkout.workout}
 					/>
@@ -320,7 +345,7 @@ export function App() {
 						speedUnit={speedUnit}
 						workout={session.workout}
 					/>
-					{workoutTerrain ? null : (
+					{workoutTerrain && !virtualShiftingActive ? null : (
 						<TrainingControl
 							connected={virtualShiftingActive ? virtualShiftingReady : connected}
 							control={

@@ -1,5 +1,7 @@
 import { describe, expect, test } from 'bun:test';
+import { HEART_RATE } from '../src/constants';
 import { parseHeartRateMeasurement } from '../src/lib/heart-rate';
+import { connectHeartRateDevice } from '../src/lib/heart-rate-device';
 import {
 	clickControllerRoleFromManufacturerData,
 	clickV2StartCommand,
@@ -39,6 +41,98 @@ describe('paired device protocols', () => {
 		expect(parseHeartRateMeasurement(view([0, 142]))).toBe(142);
 		expect(parseHeartRateMeasurement(view([1, 44, 1]))).toBe(300);
 		expect(parseHeartRateMeasurement(view([1, 44]))).toBeUndefined();
+	});
+
+	test('retries a remembered heart rate monitor in separate bounded cycles', async () => {
+		let attempts = 0;
+		let notificationsStarted = 0;
+		const measurement = {
+			addEventListener: () => undefined,
+			removeEventListener: () => undefined,
+			startNotifications: () => {
+				notificationsStarted += 1;
+				return Promise.resolve(measurement);
+			},
+		} as unknown as BluetoothRemoteGATTCharacteristic;
+		const server = {
+			getPrimaryService: (service: BluetoothServiceUUID) => {
+				if (service !== HEART_RATE) {
+					return Promise.reject(new Error('Battery unavailable'));
+				}
+				return Promise.resolve({
+					getCharacteristic: () => Promise.resolve(measurement),
+				} as unknown as BluetoothRemoteGATTService);
+			},
+		} as BluetoothRemoteGATTServer;
+		const device = {
+			addEventListener: () => undefined,
+			gatt: {
+				connect: () => {
+					attempts += 1;
+					return attempts === 1
+						? Promise.reject(new Error('stale browser connection'))
+						: Promise.resolve(server);
+				},
+				disconnect: () => undefined,
+			},
+			removeEventListener: () => undefined,
+		} as unknown as BluetoothDevice;
+		const callbacks = {
+			onBattery: () => undefined,
+			onDisconnect: () => undefined,
+			onHeartRate: () => undefined,
+		};
+		await expect(connectHeartRateDevice(device, true, callbacks)).rejects.toThrow(
+			'stale browser connection'
+		);
+		const connection = await connectHeartRateDevice(device, true, callbacks);
+		expect(attempts).toBe(2);
+		expect(notificationsStarted).toBe(1);
+		connection.cleanup();
+	});
+
+	test('releases a stalled heart rate notification attempt so it can be retried', async () => {
+		const listeners = new Set<EventListenerOrEventListenerObject>();
+		let notificationAttempts = 0;
+		const measurement = {
+			addEventListener: (_type: string, listener: EventListenerOrEventListenerObject) =>
+				listeners.add(listener),
+			removeEventListener: (_type: string, listener: EventListenerOrEventListenerObject) =>
+				listeners.delete(listener),
+			startNotifications: () => {
+				notificationAttempts += 1;
+				return notificationAttempts === 1
+					? new Promise(() => undefined)
+					: Promise.resolve(measurement);
+			},
+		} as unknown as BluetoothRemoteGATTCharacteristic;
+		const server = {
+			getPrimaryService: () =>
+				Promise.resolve({
+					getCharacteristic: () => Promise.resolve(measurement),
+				} as unknown as BluetoothRemoteGATTService),
+		} as unknown as BluetoothRemoteGATTServer;
+		const device = {
+			addEventListener: () => undefined,
+			gatt: { connect: () => Promise.resolve(server) },
+			removeEventListener: () => undefined,
+		} as unknown as BluetoothDevice;
+		const callbacks = {
+			onBattery: () => undefined,
+			onDisconnect: () => undefined,
+			onHeartRate: () => undefined,
+		};
+
+		await expect(connectHeartRateDevice(device, false, callbacks, 1)).rejects.toThrow(
+			'Bluetooth notification setup timed out.'
+		);
+		expect(listeners.size).toBe(0);
+
+		const connection = await connectHeartRateDevice(device, false, callbacks, 100);
+		expect(notificationAttempts).toBe(2);
+		expect(listeners.size).toBe(1);
+		connection.cleanup();
+		expect(listeners.size).toBe(0);
 	});
 
 	test('starts a Click V2 session with its RideOn command', () => {
@@ -90,57 +184,32 @@ describe('paired device protocols', () => {
 		).toBeUndefined();
 	});
 
-	test('connects an awake Click immediately and rediscovers after a failed probe', async () => {
-		const originalWindow = Object.getOwnPropertyDescriptor(globalThis, 'window');
-		Object.defineProperty(globalThis, 'window', {
-			configurable: true,
-			value: { clearTimeout, setTimeout },
-		});
+	test('connects an awake Click immediately and retries failures in separate cycles', async () => {
 		const server = {} as BluetoothRemoteGATTServer;
-		let advertisementWatches = 0;
 		const awakeDevice = {
-			addEventListener: () => undefined,
 			gatt: {
 				connect: () => Promise.resolve(server),
 			},
-			removeEventListener: () => undefined,
-			watchAdvertisements: () => {
-				advertisementWatches += 1;
-				return Promise.reject(new Error('advertisement already fresh'));
+		} as unknown as BluetoothDevice;
+		expect(await connectClickGatt(awakeDevice, true)).toBe(server);
+
+		let attempts = 0;
+		const sleepingDevice = {
+			gatt: {
+				connect: () => {
+					attempts += 1;
+					return attempts === 1
+						? Promise.reject(new Error('temporarily unavailable'))
+						: Promise.resolve(server);
+				},
+				disconnect: () => undefined,
 			},
 		} as unknown as BluetoothDevice;
-		try {
-			expect(await connectClickGatt(awakeDevice, true)).toBe(server);
-			expect(advertisementWatches).toBe(0);
-
-			let attempts = 0;
-			const sleepingDevice = {
-				addEventListener: () => undefined,
-				gatt: {
-					connect: () => {
-						attempts += 1;
-						return attempts === 1
-							? Promise.reject(new Error('temporarily unavailable'))
-							: Promise.resolve(server);
-					},
-					disconnect: () => undefined,
-				},
-				removeEventListener: () => undefined,
-				watchAdvertisements: () => {
-					advertisementWatches += 1;
-					return Promise.reject(new Error('advertisement already fresh'));
-				},
-			} as unknown as BluetoothDevice;
-			expect(await connectClickGatt(sleepingDevice, true)).toBe(server);
-			expect(attempts).toBe(2);
-			expect(advertisementWatches).toBe(1);
-		} finally {
-			if (originalWindow) {
-				Object.defineProperty(globalThis, 'window', originalWindow);
-			} else {
-				Reflect.deleteProperty(globalThis, 'window');
-			}
-		}
+		await expect(connectClickGatt(sleepingDevice, true)).rejects.toThrow(
+			'temporarily unavailable'
+		);
+		expect(await connectClickGatt(sleepingDevice, true)).toBe(server);
+		expect(attempts).toBe(2);
 	});
 
 	test('emits only new Click V2 minus and plus press edges', () => {

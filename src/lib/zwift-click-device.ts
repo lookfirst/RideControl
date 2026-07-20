@@ -1,9 +1,7 @@
 import { createBluetoothNotificationSubscription } from './bluetooth-notifications';
 import {
-	type ClickShift,
 	clickV2StartCommand,
 	connectClickGatt,
-	waitForUsableClickNotification,
 	withClickConnectionTimeout,
 	ZWIFT_ASYNC_CHARACTERISTIC,
 	ZWIFT_CLICK_SERVICE,
@@ -33,7 +31,6 @@ async function clickService(server: BluetoothRemoteGATTServer) {
 interface ClickDeviceCallbacks {
 	isCurrent: () => boolean;
 	isOperational: () => boolean;
-	onControllerRole: (role: ClickShift) => void;
 	onDisconnect: () => void;
 	onMessage: (event: Event) => void;
 }
@@ -41,29 +38,27 @@ interface ClickDeviceCallbacks {
 export async function connectClickDevice(
 	device: BluetoothDevice,
 	rediscover: boolean,
-	{ isCurrent, isOperational, onControllerRole, onDisconnect, onMessage }: ClickDeviceCallbacks
+	{ isCurrent, isOperational, onDisconnect, onMessage }: ClickDeviceCallbacks
 ): Promise<() => void> {
-	const server = await connectClickGatt(device, rediscover, onControllerRole);
+	const server = await connectClickGatt(device, rediscover);
 	ensureCurrentConnection(isCurrent);
 	const service = await withClickConnectionTimeout(
 		clickService(server),
 		CLICK_SETUP_STEP_TIMEOUT_MS
 	);
 	ensureCurrentConnection(isCurrent);
-	const [asyncCharacteristic, syncTxCharacteristic, syncRxCharacteristic] = await Promise.all([
-		withClickConnectionTimeout(
-			service.getCharacteristic(ZWIFT_ASYNC_CHARACTERISTIC),
-			CLICK_SETUP_STEP_TIMEOUT_MS
-		),
-		withClickConnectionTimeout(
-			service.getCharacteristic(ZWIFT_SYNC_TX_CHARACTERISTIC),
-			CLICK_SETUP_STEP_TIMEOUT_MS
-		),
-		withClickConnectionTimeout(
-			service.getCharacteristic(ZWIFT_SYNC_RX_CHARACTERISTIC),
-			CLICK_SETUP_STEP_TIMEOUT_MS
-		),
-	]);
+	const asyncCharacteristic = await withClickConnectionTimeout(
+		service.getCharacteristic(ZWIFT_ASYNC_CHARACTERISTIC),
+		CLICK_SETUP_STEP_TIMEOUT_MS
+	);
+	const syncTxCharacteristic = await withClickConnectionTimeout(
+		service.getCharacteristic(ZWIFT_SYNC_TX_CHARACTERISTIC),
+		CLICK_SETUP_STEP_TIMEOUT_MS
+	);
+	const syncRxCharacteristic = await withClickConnectionTimeout(
+		service.getCharacteristic(ZWIFT_SYNC_RX_CHARACTERISTIC),
+		CLICK_SETUP_STEP_TIMEOUT_MS
+	);
 	ensureCurrentConnection(isCurrent);
 	const asyncNotifications = createBluetoothNotificationSubscription(
 		asyncCharacteristic,
@@ -80,13 +75,22 @@ export async function connectClickDevice(
 	};
 	device.addEventListener('gattserverdisconnected', onDisconnect, { once: true });
 	try {
-		await waitForUsableClickNotification(
-			[
-				withClickConnectionTimeout(asyncNotifications.start(), CLICK_SETUP_STEP_TIMEOUT_MS),
-				withClickConnectionTimeout(syncNotifications.start(), CLICK_SETUP_STEP_TIMEOUT_MS),
-			],
-			isOperational
-		);
+		let notificationStarted = false;
+		let notificationError: unknown;
+		for (const notifications of [asyncNotifications, syncNotifications]) {
+			try {
+				await withClickConnectionTimeout(
+					notifications.start(),
+					CLICK_SETUP_STEP_TIMEOUT_MS
+				);
+				notificationStarted = true;
+			} catch (error) {
+				notificationError = error;
+			}
+		}
+		if (!(notificationStarted || isOperational())) {
+			throw notificationError;
+		}
 		ensureCurrentConnection(isCurrent);
 		try {
 			await withClickConnectionTimeout(

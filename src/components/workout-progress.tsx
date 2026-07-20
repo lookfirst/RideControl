@@ -41,6 +41,7 @@ function WorkoutStats({
 export function WorkoutProgress({
 	elevationTotals,
 	isRiding,
+	targetResistance,
 	speedUnit,
 	terrain,
 	workout,
@@ -48,6 +49,7 @@ export function WorkoutProgress({
 	elevationTotals: ElevationTotals;
 	isRiding: boolean;
 	speedUnit: SpeedUnit;
+	targetResistance?: number;
 	terrain: WorkoutTerrain;
 	workout: SessionWorkout;
 }) {
@@ -65,7 +67,10 @@ export function WorkoutProgress({
 			label: 'Grade',
 			value: formatGrade(terrain.grade),
 		},
-		{ label: 'Resistance', value: `${terrain.resistance}%` },
+		{
+			label: 'Resistance',
+			value: `${Math.round(targetResistance ?? terrain.resistance)}%`,
+		},
 	];
 	return (
 		<section className="mt-6 overflow-hidden rounded-2xl border border-mint/20 bg-panel">

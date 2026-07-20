@@ -3,8 +3,6 @@ import { CONTROL_FLASH_MS } from '../constants';
 import { eventTargetsEditableControl, keyboardEventHasModifiers } from '../lib/dom';
 import {
 	GEAR_STORAGE_KEY,
-	gearForResistance,
-	resistanceChangeForGears,
 	SHIFTING_CONNECTION_MESSAGE,
 	shiftedGear,
 	storedGear,
@@ -14,18 +12,16 @@ import type { ResistanceAdjustmentDirection } from '../types';
 
 export function useGearControl({
 	active,
-	onResistanceChange,
+	onGearChange,
 	ready,
-	resistance,
 	setNotice,
 }: {
 	active: boolean;
-	onResistanceChange: (change: number) => void;
+	onGearChange: (fromGear: number, toGear: number) => void;
 	ready: boolean;
-	resistance: number;
 	setNotice: (notice: string) => void;
 }) {
-	const [gear, setGear] = useState(() => storedGear(localStorage, gearForResistance(resistance)));
+	const [gear, setGear] = useState(() => storedGear());
 	const [shiftFlash, setShiftFlash] = useState<ResistanceAdjustmentDirection | undefined>();
 	const gearRef = useRef(gear);
 	const keyboardControlsEnabled = useRef(true);
@@ -51,9 +47,9 @@ export function useGearControl({
 			gearRef.current = next;
 			setGear(next);
 			localStorage.setItem(GEAR_STORAGE_KEY, String(next));
-			onResistanceChange(resistanceChangeForGears(previous, next));
+			onGearChange(previous, next);
 		},
-		[onResistanceChange, ready, setNotice]
+		[onGearChange, ready, setNotice]
 	);
 
 	useEffect(() => {

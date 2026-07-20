@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react';
 import { EMPTY_ROUTE } from '../constants';
 import { CONTROL_MODE } from '../lib/control-mode';
 import { aggregateMaximum, formatAggregateAverage, formatWholeNumber } from '../lib/format';
+import { resistanceForVirtualGear } from '../lib/gears';
 import { METRIC_PRESENTATION, STANDARD_METRIC_KEYS } from '../lib/metric-presentation';
 import {
 	feelingLabel,
@@ -104,6 +105,11 @@ export function SessionDetail({
 	const workoutTerrain = session.workout
 		? workoutTerrainAtDistance(session.workout.course, session.distance)
 		: undefined;
+	const finalGear = session.history.findLast((sample) => sample.gear !== undefined)?.gear;
+	const workoutResistance =
+		workoutTerrain && finalGear !== undefined
+			? resistanceForVirtualGear(workoutTerrain.resistance, finalGear)
+			: undefined;
 	const controlMetric = usesGear
 		? {
 				accent: 'mint',
@@ -194,7 +200,7 @@ export function SessionDetail({
 					/>
 				) : null}
 			</div>
-			<div className="mt-5 grid grid-cols-3 divide-x divide-line rounded-xl border border-line bg-[#12171d]">
+			<div className="mt-5 grid grid-cols-3 divide-x divide-line rounded-xl bg-[#12171d] ring-1 ring-line ring-inset">
 				<SessionSummary
 					calories={session.calories}
 					distance={session.distance}
@@ -208,6 +214,7 @@ export function SessionDetail({
 					elevationTotals={session.elevationTotals}
 					isRiding={false}
 					speedUnit={speedUnit}
+					targetResistance={workoutResistance}
 					terrain={workoutTerrain}
 					workout={session.workout}
 				/>

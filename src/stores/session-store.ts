@@ -66,7 +66,6 @@ function selectActiveWorkout(
 	}
 	return {
 		...current,
-		controlMode: course ? CONTROL_MODE.RESISTANCE : current.controlMode,
 		workout: course ? { course } : undefined,
 	};
 }
@@ -245,7 +244,7 @@ export function createSessionStore(restored: StoredSession, now = Date.now()) {
 				return {
 					...emptySession,
 					aggregates: emptySession.aggregates,
-					controlMode: workout ? CONTROL_MODE.RESISTANCE : controlMode,
+					controlMode,
 					isRiding: false,
 					manuallyPaused: false,
 					maximums: emptyMetrics,

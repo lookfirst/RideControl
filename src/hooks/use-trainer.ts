@@ -4,8 +4,10 @@ import { CONTROL_FLASH_MS } from '../constants';
 import { deviceConnectionView } from '../lib/device-connection';
 import { eventTargetsEditableControl, keyboardEventHasModifiers } from '../lib/dom';
 import { errorMessage } from '../lib/errors';
+import { resistanceAfterGearShift } from '../lib/gears';
 import { scheduleNoticeDismissal } from '../lib/notification';
 import { clamp } from '../lib/numbers';
+import type { RememberedBluetoothDeviceCatalog } from '../lib/remembered-bluetooth-devices';
 import {
 	clampResistance,
 	DEFAULT_RESISTANCE,
@@ -17,7 +19,7 @@ import { RESISTANCE_STORAGE_KEY } from '../lib/session';
 import { createTrainerStore } from '../stores/trainer-store';
 import { useTrainerConnection } from './use-trainer-connection';
 
-export function useTrainer() {
+export function useTrainer(rememberedDevices: RememberedBluetoothDeviceCatalog) {
 	const store = useMemo(() => createTrainerStore(), []);
 	const state = useSelector(store);
 	const { setNotice, setResistance, setResistanceKeyFlash, setResistanceRamp } = store.actions;
@@ -29,7 +31,12 @@ export function useTrainer() {
 	const resistanceTarget = useRef(store.get().resistance);
 	const keyboardControlsEnabled = useRef(true);
 	const gearControlsEnabled = useRef(false);
-	const trainerConnection = useTrainerConnection(store, appliedResistance, resistanceTarget);
+	const trainerConnection = useTrainerConnection(
+		store,
+		appliedResistance,
+		resistanceTarget,
+		rememberedDevices
+	);
 	const connection = deviceConnectionView(state.connectionPhase);
 
 	useEffect(
@@ -145,14 +152,13 @@ export function useTrainer() {
 		[connection.connected, queueResistance]
 	);
 
-	const shiftResistanceBy = useCallback(
-		(change: number) => {
-			const next = clampResistance(resistanceTarget.current + change);
+	const applyResistanceImmediately = useCallback(
+		(value: number, remember: boolean) => {
+			const next = clampResistance(value);
 			window.clearTimeout(resistanceTimer.current);
 			window.clearTimeout(resistanceRampTimer.current);
 			resistanceTarget.current = next;
 			appliedResistance.current = next;
-			rememberedResistance.current = next;
 			setResistance(next);
 			setResistanceRamp({
 				current: next,
@@ -161,12 +167,28 @@ export function useTrainer() {
 				progress: 1,
 				to: next,
 			});
-			localStorage.setItem(RESISTANCE_STORAGE_KEY, String(next));
+			if (remember) {
+				rememberedResistance.current = next;
+				localStorage.setItem(RESISTANCE_STORAGE_KEY, String(next));
+			}
 			trainerConnection
 				.sendResistance(next)
 				.catch((error: unknown) => setNotice(errorMessage(error)));
 		},
 		[setNotice, setResistance, setResistanceRamp, trainerConnection.sendResistance]
+	);
+	const shiftResistanceForGears = useCallback(
+		(fromGear: number, toGear: number) => {
+			applyResistanceImmediately(
+				resistanceAfterGearShift(resistanceTarget.current, fromGear, toGear),
+				true
+			);
+		},
+		[applyResistanceImmediately]
+	);
+	const updateProgramShiftResistance = useCallback(
+		(value: number) => applyResistanceImmediately(value, false),
+		[applyResistanceImmediately]
 	);
 
 	useEffect(() => {
@@ -245,9 +267,10 @@ export function useTrainer() {
 		setKeyboardControlsEnabled,
 		setNotice,
 		settleAfterRide,
-		shiftResistanceBy,
+		shiftResistanceForGears,
 		trainerReportsDistance: trainerConnection.trainerReportsDistance,
 		updateProgramResistance,
+		updateProgramShiftResistance,
 		updateResistance,
 	};
 }

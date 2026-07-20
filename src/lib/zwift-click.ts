@@ -1,4 +1,6 @@
-import { waitForFreshAdvertisement } from './bluetooth';
+import { BLUETOOTH_GATT_CONNECTION_TIMEOUT_MS } from '../constants';
+import { bluetoothGattCoordinator } from './bluetooth-gatt-coordinator';
+import { withPromiseTimeout } from './promise-timeout';
 import { isRecord, isString } from './type-guards';
 
 export const ZWIFT_CLICK_NAME = 'Zwift Click';
@@ -16,10 +18,7 @@ const CONTROLLER_NOTIFICATION = 0x23;
 const MINUS_BUTTON_MASK = 0x01_00;
 const PLUS_BUTTON_MASK = 0x10_00;
 const ALL_BUTTONS_RELEASED = 0xff_ff_ff_ff;
-const CLICK_CONNECTION_TIMEOUT_MS = 8000;
-const CLICK_RECONNECT_PROBE_TIMEOUT_MS = 2000;
-const CLICK_REDISCOVERY_TIMEOUT_MS = 1600;
-const CLICK_REDISCOVERED_CONNECTION_TIMEOUT_MS = 3500;
+const CLICK_CONNECTION_TIMEOUT_MS = BLUETOOTH_GATT_CONNECTION_TIMEOUT_MS;
 const CLICK_V2_RIGHT_SIDE = 0x0a;
 const CLICK_V2_LEFT_SIDE = 0x0b;
 
@@ -62,59 +61,30 @@ export async function waitForUsableClickNotification(
 	}
 }
 
-export async function withClickConnectionTimeout<T>(
+export function withClickConnectionTimeout<T>(
 	connection: Promise<T>,
 	timeoutMs = CLICK_CONNECTION_TIMEOUT_MS
 ): Promise<T> {
-	let timeout: ReturnType<typeof setTimeout> | undefined;
-	try {
-		return await Promise.race([
-			connection,
-			new Promise<never>((_, reject) => {
-				timeout = setTimeout(
-					() => reject(new Error('Controller did not respond. Wake it and try again.')),
-					timeoutMs
-				);
-			}),
-		]);
-	} finally {
-		clearTimeout(timeout);
-	}
+	return withPromiseTimeout(
+		connection,
+		timeoutMs,
+		() => new Error('Controller did not respond. Wake it and try again.')
+	);
 }
 
-export async function connectClickGatt(
+export function connectClickGatt(
 	device: BluetoothDevice,
-	rediscover: boolean,
-	onControllerRole?: (role: ClickShift) => void
+	_rediscover: boolean
 ): Promise<BluetoothRemoteGATTServer> {
 	const { gatt } = device;
 	if (!gatt) {
-		throw new Error('This controller does not expose Bluetooth services.');
+		return Promise.reject(new Error('This controller does not expose Bluetooth services.'));
 	}
-	const connect = (timeoutMs: number) => withClickConnectionTimeout(gatt.connect(), timeoutMs);
-	const observeController = () =>
-		waitForFreshAdvertisement(
-			device,
-			(event) => {
-				const role = clickControllerRoleFromManufacturerData(event.manufacturerData);
-				if (role) {
-					onControllerRole?.(role);
-				}
-			},
-			CLICK_REDISCOVERY_TIMEOUT_MS
-		);
-	// Observe the side identity concurrently so it does not slow an awake controller's
-	// direct connection. The same observation doubles as wake discovery if that probe fails.
-	const advertisement = onControllerRole ? observeController() : undefined;
-	try {
-		return await connect(
-			rediscover ? CLICK_RECONNECT_PROBE_TIMEOUT_MS : CLICK_CONNECTION_TIMEOUT_MS
-		);
-	} catch {
-		gatt.disconnect();
-		await (advertisement ?? observeController());
-		return connect(CLICK_REDISCOVERED_CONNECTION_TIMEOUT_MS);
-	}
+	return bluetoothGattCoordinator.connect(
+		device,
+		CLICK_CONNECTION_TIMEOUT_MS,
+		'Controller did not respond. Wake it and try again.'
+	);
 }
 
 export function shouldAcceptClickShift(

@@ -9,6 +9,11 @@ import {
 	recordPedaling,
 	resistanceCommand,
 } from '../src/lib/bluetooth';
+import {
+	loadRememberedBluetoothDevices,
+	rememberedBluetoothDevice,
+	rememberedBluetoothDevices,
+} from '../src/lib/remembered-bluetooth-devices';
 
 describe('Bluetooth data utilities', () => {
 	test('tracks meaningful pedaling activity', () => {
@@ -77,7 +82,7 @@ describe('Bluetooth data utilities', () => {
 		expect(resistanceCommand(50, { max: 30, min: -10 })).toEqual([4, 100, 0]);
 	});
 
-	test('prefers a saved device, then a named KICKR, then a sole device', async () => {
+	test('prefers a saved device and otherwise reconnects only a named KICKR', async () => {
 		const devices = [
 			{ id: 'one', name: 'Other' },
 			{ id: 'two', name: 'KICKR CORE' },
@@ -91,8 +96,30 @@ describe('Bluetooth data utilities', () => {
 			await findRememberedKickr({ getDevices: async () => [devices[0]] } as Bluetooth, {
 				getItem: () => null,
 			})
-		).toBe(devices[0]);
+		).toBeUndefined();
 		expect(await findRememberedKickr({} as Bluetooth, { getItem: () => null })).toBeUndefined();
+	});
+
+	test('loads and selects all saved device types from one permitted-device catalog', async () => {
+		const permitted = [
+			{ id: 'trainer' },
+			{ id: 'heart-rate' },
+			{ id: 'click-minus' },
+			{ id: 'click-plus' },
+		] as BluetoothDevice[];
+		let loads = 0;
+		const devices = await loadRememberedBluetoothDevices({
+			getDevices: () => {
+				loads += 1;
+				return Promise.resolve(permitted);
+			},
+		} as Bluetooth);
+
+		expect(loads).toBe(1);
+		expect(rememberedBluetoothDevice(devices, 'heart-rate')).toBe(permitted[1]);
+		expect(
+			rememberedBluetoothDevices(devices, ['click-plus', 'missing', 'click-minus'], 2)
+		).toEqual([permitted[3], permitted[2]]);
 	});
 
 	test('connects GATT', async () => {
@@ -103,41 +130,40 @@ describe('Bluetooth data utilities', () => {
 		expect(await connectGatt(device, false)).toBe(server);
 	});
 
-	test('rediscovers and retries a failed GATT connection', async () => {
-		const originalWindow = Object.getOwnPropertyDescriptor(globalThis, 'window');
-		Object.defineProperty(globalThis, 'window', {
-			configurable: true,
-			value: {
-				clearTimeout,
-				setTimeout,
-			},
-		});
-		const server = {} as BluetoothRemoteGATTServer;
+	test('uses one bounded GATT probe per reconnect cycle', async () => {
 		let attempts = 0;
 		const device = {
-			addEventListener: () => undefined,
 			gatt: {
 				connect: () => {
 					attempts += 1;
-					if (attempts === 1) {
-						return Promise.reject(new Error('temporarily unavailable'));
-					}
-					return Promise.resolve(server);
+					return Promise.reject(new Error('temporarily unavailable'));
 				},
+				disconnect: () => undefined,
 			},
-			removeEventListener: () => undefined,
-			watchAdvertisements: () => Promise.reject(new Error('advertisement already fresh')),
 		} as unknown as BluetoothDevice;
-		try {
-			expect(await connectGatt(device, true)).toBe(server);
-			expect(attempts).toBe(2);
-		} finally {
-			if (originalWindow) {
-				Object.defineProperty(globalThis, 'window', originalWindow);
-			} else {
-				Reflect.deleteProperty(globalThis, 'window');
-			}
-		}
+
+		await expect(connectGatt(device, true)).rejects.toThrow('temporarily unavailable');
+		expect(attempts).toBe(1);
+	});
+
+	test('times out stalled GATT reconnects so background retries can continue', async () => {
+		let attempts = 0;
+		const device = {
+			gatt: {
+				connect: () => {
+					attempts += 1;
+					return new Promise(() => undefined);
+				},
+				disconnect: () => undefined,
+			},
+		} as unknown as BluetoothDevice;
+		await expect(
+			connectGatt(device, true, {
+				directTimeoutMs: 1,
+				reconnectProbeTimeoutMs: 1,
+			})
+		).rejects.toThrow('Bluetooth device connection timed out.');
+		expect(attempts).toBe(1);
 	});
 
 	test('rejects devices without a GATT server', async () => {

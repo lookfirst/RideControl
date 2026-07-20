@@ -168,6 +168,33 @@ describe('session store', () => {
 		);
 	});
 
+	test('records virtual gears and workout terrain in the same ride samples', () => {
+		const workout = WORKOUT_COURSES.find((course) => course.id === 'cedar-circuit');
+		if (!workout) {
+			throw new Error('Expected a built-in workout course');
+		}
+		const store = createSessionStore(restoredSession({ controlMode: CONTROL_MODE.GEAR }), 1000);
+		store.actions.selectWorkout(workout);
+		expect(store.get().controlMode).toBe(CONTROL_MODE.GEAR);
+		store.actions.syncRiding(true);
+		store.actions.recordTick({
+			control: { gear: 8, mode: CONTROL_MODE.GEAR, resistance: 20 },
+			distanceDelta: 1,
+			metrics: liveMetrics,
+			seconds: 1,
+		});
+
+		expect(store.get().history[0]).toMatchObject({
+			gear: 8,
+			workoutDistance: 1,
+			workoutLap: 1,
+		});
+		expect(store.get().history[0]?.elevation).toBeGreaterThan(0);
+		expect(store.get().history[0]?.resistance).toBeUndefined();
+		expect(store.get().aggregates.gear).toEqual({ count: 1, maximum: 8, sum: 8 });
+		expect(store.get().aggregates.resistance).toEqual({ count: 0, sum: 0 });
+	});
+
 	test('replaces an unstarted workout when its saved definition is revised', () => {
 		const workout = WORKOUT_COURSES.find((course) => course.id === 'cedar-circuit');
 		if (!workout) {
@@ -274,7 +301,7 @@ describe('session store', () => {
 
 		store.actions.reset(CONTROL_MODE.GEAR, 5000);
 		expect(store.get().ended).toBe(false);
-		expect(store.get().controlMode).toBe(CONTROL_MODE.RESISTANCE);
+		expect(store.get().controlMode).toBe(CONTROL_MODE.GEAR);
 		expect(store.get().workout?.course.id).toBe(plannedCourse.id);
 		expect(store.get().plannedWorkout).toBeUndefined();
 	});

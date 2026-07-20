@@ -1,10 +1,15 @@
 import { spawn } from 'node:child_process';
 import { readdir, readFile } from 'node:fs/promises';
 import { extname, join, relative, resolve as resolvePath } from 'node:path';
-import { fileURLToPath, pathToFileURL } from 'node:url';
+import { pathToFileURL } from 'node:url';
 
 const DIAGNOSTIC_TIMEOUT_MS = 30_000;
 const CONTENT_LENGTH_PATTERN = /Content-Length: (\d+)/i;
+const DIAGNOSTIC_CANARY = 'export const Canary = () => <div className="p-2 p-4" />;';
+const TAILWIND_CSS_SYNTAX_PATTERN =
+	/@(?:apply|config|custom-variant|import|plugin|source|tailwind|theme|utility|variant)\b/;
+const LEADING_IMPORTANT_MODIFIER_PATTERN = /^!/;
+const TRAILING_IMPORTANT_MODIFIER_PATTERN = /!$/;
 const LANGUAGE_IDS = new Map([
 	['.css', 'css'],
 	['.html', 'html'],
@@ -72,6 +77,28 @@ interface PublishedDiagnostics {
 	uri: string;
 }
 
+interface SourceDocument {
+	file: string;
+	text: string;
+	uri: string;
+}
+
+interface ClassToken {
+	className: string;
+	position: { character: number; line: number };
+	utility: string;
+	variant: string;
+}
+
+interface HoverResponse {
+	contents: { value: string };
+}
+
+interface DiagnosticFailure {
+	diagnostic: Diagnostic;
+	file: string;
+}
+
 interface Deferred<T> {
 	promise: Promise<T>;
 	reject: (reason: Error) => void;
@@ -137,6 +164,120 @@ function diagnosticLevel(severity: number | undefined): string {
 	return 'notice';
 }
 
+function positionAt(text: string, offset: number) {
+	const beforeOffset = text.slice(0, offset);
+	const lastLineBreak = beforeOffset.lastIndexOf('\n');
+	return {
+		character: offset - lastLineBreak - 1,
+		line: beforeOffset.split('\n').length - 1,
+	};
+}
+
+function utilityParts(className: string) {
+	let bracketDepth = 0;
+	let lastVariantSeparator = -1;
+	for (const [index, character] of [...className].entries()) {
+		if (character === '[') {
+			bracketDepth += 1;
+		} else if (character === ']') {
+			bracketDepth -= 1;
+		} else if (character === ':' && bracketDepth === 0) {
+			lastVariantSeparator = index;
+		}
+	}
+	return {
+		utility: className
+			.slice(lastVariantSeparator + 1)
+			.replace(LEADING_IMPORTANT_MODIFIER_PATTERN, '')
+			.replace(TRAILING_IMPORTANT_MODIFIER_PATTERN, ''),
+		variant: className.slice(0, lastVariantSeparator + 1),
+	};
+}
+
+function classLists(text: string): ClassToken[][] {
+	const attributePattern =
+		/\b(?:class|className)\s*=\s*(?:"([^"]*)"|'([^']*)'|\{\s*`([\s\S]*?)`\s*\})/g;
+	const lists: ClassToken[][] = [];
+	for (const attribute of text.matchAll(attributePattern)) {
+		const value = attribute[1] ?? attribute[2] ?? attribute[3];
+		const attributeStart = attribute.index ?? 0;
+		const valueStart = attributeStart + attribute[0].indexOf(value);
+		const tokens = [...value.matchAll(/\S+/g)].map((token) => ({
+			className: token[0],
+			position: positionAt(text, valueStart + (token.index ?? 0)),
+			...utilityParts(token[0]),
+		}));
+		lists.push(tokens);
+	}
+	return lists;
+}
+
+function containsTailwindSyntax(document: SourceDocument): boolean {
+	return (
+		classLists(document.text).some((tokens) => tokens.length > 0) ||
+		(extname(document.file) === '.css' && TAILWIND_CSS_SYNTAX_PATTERN.test(document.text))
+	);
+}
+
+async function scopedBorderColorConflicts(
+	documents: SourceDocument[],
+	request: (method: string, params?: unknown) => Promise<unknown>
+): Promise<DiagnosticFailure[]> {
+	const failures: DiagnosticFailure[] = [];
+	for (const document of documents) {
+		for (const tokens of classLists(document.text)) {
+			const colorTokens = (
+				await Promise.all(
+					tokens
+						.filter(
+							(token) =>
+								token.utility.startsWith('border-') ||
+								token.utility.startsWith('divide-')
+						)
+						.map(async (token) => {
+							const hover = (await request('textDocument/hover', {
+								position: {
+									character: token.position.character + 1,
+									line: token.position.line,
+								},
+								textDocument: { uri: document.uri },
+							})) as HoverResponse | null;
+							if (hover === null) {
+								return null;
+							}
+							return hover.contents.value.includes('border-color:') ? token : null;
+						})
+				)
+			).filter((token): token is ClassToken => token !== null);
+
+			for (const divideToken of colorTokens.filter((token) =>
+				token.utility.startsWith('divide-')
+			)) {
+				const borderTokens = colorTokens.filter(
+					(token) =>
+						token.utility.startsWith('border-') && token.variant === divideToken.variant
+				);
+				if (borderTokens.length === 0) {
+					continue;
+				}
+				const borderNames = borderTokens
+					.map((token) => `'${token.className}'`)
+					.join(' and ');
+				failures.push({
+					diagnostic: {
+						code: 'cssConflict',
+						message: `'${divideToken.className}' applies the same CSS property as ${borderNames}.`,
+						range: { start: divideToken.position },
+						severity: 2,
+					},
+					file: document.file,
+				});
+			}
+		}
+	}
+	return failures;
+}
+
 async function main() {
 	const workspace = process.cwd();
 	const workspaceUri = pathToFileURL(workspace).href;
@@ -149,8 +290,9 @@ async function main() {
 		}
 	);
 	const pendingRequests = new Map<number, Deferred<unknown>>();
-	const diagnostics = new Map<string, Diagnostic[]>();
 	const diagnosticWaiters = new Map<string, Deferred<Diagnostic[]>>();
+	const documentReadyWaiters = new Map<string, Deferred<void>>();
+	const projectReady = deferred<void>();
 	const serverReady = deferred<void>();
 	let nextRequestId = 1;
 	let output = Buffer.alloc(0);
@@ -185,8 +327,18 @@ async function main() {
 
 		if (message.method === 'textDocument/publishDiagnostics') {
 			const published = message.params as PublishedDiagnostics;
-			diagnostics.set(published.uri, published.diagnostics);
 			diagnosticWaiters.get(published.uri)?.resolve(published.diagnostics);
+			return;
+		}
+
+		if (message.method === '@/tailwindCSS/documentReady') {
+			const params = message.params as { uri: string };
+			documentReadyWaiters.get(params.uri)?.resolve();
+			return;
+		}
+
+		if (message.method === '@/tailwindCSS/projectReloaded') {
+			projectReady.resolve();
 			return;
 		}
 
@@ -282,48 +434,124 @@ async function main() {
 		send({ method: 'initialized', params: {} });
 		await withTimeout(serverReady.promise, 'Tailwind language server readiness');
 
+		const canaryUri = pathToFileURL(resolvePath('src/tailwind-diagnostic-canary.tsx')).href;
+		const canaryDocumentReady = deferred<void>();
+		const canaryWaiter = deferred<Diagnostic[]>();
+		documentReadyWaiters.set(canaryUri, canaryDocumentReady);
+		diagnosticWaiters.set(canaryUri, canaryWaiter);
+		send({
+			method: 'textDocument/didOpen',
+			params: {
+				textDocument: {
+					languageId: 'typescriptreact',
+					text: DIAGNOSTIC_CANARY,
+					uri: canaryUri,
+					version: 1,
+				},
+			},
+		});
+		await Promise.all([
+			withTimeout(projectReady.promise, 'Tailwind project initialization'),
+			withTimeout(canaryDocumentReady.promise, 'Tailwind canary document readiness'),
+		]);
+		send({
+			method: 'textDocument/didChange',
+			params: {
+				contentChanges: [{ text: `${DIAGNOSTIC_CANARY}\n` }],
+				textDocument: { uri: canaryUri, version: 2 },
+			},
+		});
+		const canaryDiagnostics = await withTimeout(
+			canaryWaiter.promise,
+			'Tailwind conflict canary diagnostics'
+		);
+		if (!canaryDiagnostics.some((diagnostic) => diagnostic.code === 'cssConflict')) {
+			throw new Error(
+				'Tailwind CSS conflict diagnostics are unavailable; the check cannot be trusted.'
+			);
+		}
+		diagnosticWaiters.delete(canaryUri);
+		documentReadyWaiters.delete(canaryUri);
+		send({
+			method: 'textDocument/didClose',
+			params: { textDocument: { uri: canaryUri } },
+		});
+
 		const files = [
 			...(await sourceFiles(resolvePath('src'))),
 			resolvePath('index.html'),
 		].sort();
-		await Promise.all(
-			files.map(async (file) => {
-				const uri = pathToFileURL(file).href;
-				const waiter = deferred<Diagnostic[]>();
-				diagnosticWaiters.set(uri, waiter);
-				send({
-					method: 'textDocument/didOpen',
-					params: {
-						textDocument: {
-							languageId: LANGUAGE_IDS.get(extname(file)) ?? 'plaintext',
-							text: await readFile(file, 'utf8'),
-							uri,
-							version: 1,
-						},
-					},
-				});
-				await withTimeout(
-					waiter.promise,
-					`Tailwind diagnostics for ${relative(workspace, file)}`
-				);
-			})
+		const documents: SourceDocument[] = await Promise.all(
+			files.map(async (file) => ({
+				file,
+				text: await readFile(file, 'utf8'),
+				uri: pathToFileURL(file).href,
+			}))
 		);
+		const documentsToCheck = documents.filter(containsTailwindSyntax);
+		const documentWaiters = documentsToCheck.map(({ file, text, uri }) => {
+			const diagnosticsReady = deferred<Diagnostic[]>();
+			const documentReady = deferred<void>();
+			diagnosticWaiters.set(uri, diagnosticsReady);
+			documentReadyWaiters.set(uri, documentReady);
+			send({
+				method: 'textDocument/didOpen',
+				params: {
+					textDocument: {
+						languageId: LANGUAGE_IDS.get(extname(file)) ?? 'plaintext',
+						text,
+						uri,
+						version: 1,
+					},
+				},
+			});
+			return { diagnosticsReady, documentReady, file, text, uri };
+		});
+		await Promise.all(
+			documentWaiters.map(({ documentReady, file }) =>
+				withTimeout(
+					documentReady.promise,
+					`Tailwind document readiness for ${relative(workspace, file)}`
+				)
+			)
+		);
+		const reportedDiagnostics: Array<{
+			diagnostics: Diagnostic[];
+			file: string;
+		}> = [];
+		for (const { diagnosticsReady, file, text, uri } of documentWaiters) {
+			send({
+				method: 'textDocument/didChange',
+				params: {
+					contentChanges: [{ text: `${text}\n` }],
+					textDocument: { uri, version: 2 },
+				},
+			});
+			reportedDiagnostics.push({
+				diagnostics: await withTimeout(
+					diagnosticsReady.promise,
+					`Tailwind diagnostics for ${relative(workspace, file)}`
+				),
+				file,
+			});
+		}
 
-		const failures = [...diagnostics.entries()]
-			.flatMap(([uri, fileDiagnostics]) =>
+		const failures = [
+			...reportedDiagnostics.flatMap(({ diagnostics: fileDiagnostics, file }) =>
 				fileDiagnostics
 					.filter(
 						(diagnostic) =>
 							diagnostic.severity === undefined || diagnostic.severity <= 2
 					)
-					.map((diagnostic) => ({ diagnostic, file: fileURLToPath(uri) }))
-			)
-			.sort(
-				(left, right) =>
-					left.file.localeCompare(right.file) ||
-					left.diagnostic.range.start.line - right.diagnostic.range.start.line ||
-					left.diagnostic.range.start.character - right.diagnostic.range.start.character
-			);
+					.map((diagnostic) => ({ diagnostic, file }))
+			),
+			...(await scopedBorderColorConflicts(documentsToCheck, request)),
+		].sort(
+			(left, right) =>
+				left.file.localeCompare(right.file) ||
+				left.diagnostic.range.start.line - right.diagnostic.range.start.line ||
+				left.diagnostic.range.start.character - right.diagnostic.range.start.character
+		);
 
 		if (failures.length > 0) {
 			for (const { diagnostic, file } of failures) {

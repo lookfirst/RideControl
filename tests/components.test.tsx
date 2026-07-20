@@ -257,7 +257,7 @@ describe('view components', () => {
 			/>
 		);
 		expect(connectingButton).toContain('aria-busy="true"');
-		expect(connectingButton).toContain('animate-pulse bg-sky-400');
+		expect(connectingButton).toContain('connection-status-pulse bg-sky-300');
 		expect(connectingButton).not.toContain('bg-sky-400/10');
 		const connectedButton = render(
 			<DevicePairingButton connectedCount={3} onClick={() => undefined} pairedCount={3} />
@@ -328,13 +328,15 @@ describe('view components', () => {
 		expect(panel).toContain('Smart trainer');
 		expect(panel).toContain('Heart rate');
 		expect(panel).toContain('Zwift Click V2');
-		expect(panel).toContain('Reconnecting…');
+		expect(panel).not.toContain('Reconnecting…');
 		expect(panel).not.toContain('Waiting for controllers…');
 		expect(panel).not.toContain('Retry');
-		expect(panel).toContain('Connecting…');
+		expect(panel).toContain('Connecting...');
 		expect(panel).not.toContain('>Reconnect</button>');
-		expect(panel.match(/animate-pulse/g)).toHaveLength(2);
-		expect(panel.match(/animate-pulse bg-sky-400/g)).toHaveLength(1);
+		expect(panel.match(/<span class="sr-only">Connecting\.\.\.<\/span>/g)).toHaveLength(2);
+		expect(panel.match(/connecting-dot/g)).toHaveLength(6);
+		expect(panel.match(/connection-status-pulse/g)).toHaveLength(2);
+		expect(panel).toContain('shadow-[0_0_16px_rgba(56,189,248,.95)]');
 		expect(panel).toContain('Automatic reconnect in Chrome');
 		expect(panel).toContain('Chrome needs persistent Bluetooth permissions');
 		expect(panel).toContain('chrome://flags/#enable-web-bluetooth-new-permissions-backend');
@@ -344,7 +346,7 @@ describe('view components', () => {
 		expect(panel).not.toContain('github.com/lookfirst/RideControl#automatic-reconnect');
 		expect(panel).toContain('+ Controller');
 		expect(panel.indexOf('+ Controller')).toBeLessThan(panel.indexOf('− Controller'));
-		expect(panel).toContain('animate-pulse');
+		expect(panel).toContain('connection-status-pulse');
 		expect(panel).toContain('bg-mint/10');
 		expect(panel).not.toContain('shadow-[inset_0_0_18px');
 		expect(panel).not.toContain('divide-y');
@@ -532,11 +534,13 @@ describe('view components', () => {
 		expect(lockedPanel.match(/disabled=""/g)).toHaveLength(6);
 
 		const terrain = workoutTerrainAtDistance(course, course.distance * 2 + 2);
+		const shiftedWorkoutResistance = 42.4;
 		const progress = render(
 			<WorkoutProgress
 				elevationTotals={{ ascent: 30, descent: 12 }}
 				isRiding
 				speedUnit="mph"
+				targetResistance={shiftedWorkoutResistance}
 				terrain={terrain}
 				workout={{ course }}
 			/>
@@ -559,7 +563,8 @@ describe('view components', () => {
 		expect(progress).toContain('Grade');
 		expect(progress).toContain(formatGrade(terrain.grade));
 		expect(progress).toContain('Resistance');
-		expect(progress).toContain(`${terrain.resistance}%`);
+		expect(progress).toContain(`${Math.round(shiftedWorkoutResistance)}%`);
+		expect(progress).not.toContain(`${terrain.resistance}%`);
 		expect(progress.match(/sm:text-4xl/g)).toHaveLength(3);
 		expect(progress.match(/sm:text-2xl/g)).toHaveLength(3);
 		expect(progress).toContain('sm:text-lg');
@@ -640,7 +645,7 @@ describe('view components', () => {
 			'href="https://github.com/lookfirst/RideControl/pulls?q=is%3Apr+is%3Aclosed"'
 		);
 		expect(html).toContain('<time dateTime=');
-		expect(html).toContain('href="https://github.com/lookfirst"');
+		expect(html).toContain('href="https://github.com/lookfirst/RideControl"');
 		expect(html).toContain('href="https://github.com/sponsors/lookfirst"');
 		expect(html).toContain('Sponsor');
 		expect(html).toContain('WELCOME TO');

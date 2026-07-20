@@ -1,20 +1,18 @@
 import { useEffect, useRef } from 'react';
-import type { WorkoutTerrain } from '../types';
 
 export function useWorkoutResistance({
 	active,
 	connected,
 	onResistanceChange,
 	onRestoreResistance,
-	terrain,
+	resistance,
 }: {
 	active: boolean;
 	connected: boolean;
 	onResistanceChange: (resistance: number) => void;
 	onRestoreResistance: () => void;
-	terrain?: WorkoutTerrain;
+	resistance?: number;
 }) {
-	const resistance = terrain?.resistance;
 	const automatedResistance = useRef(false);
 
 	useEffect(() => {

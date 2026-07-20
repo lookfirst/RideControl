@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { CHROME_BLUETOOTH_FLAGS_URL } from '../constants';
 import { automaticBluetoothReconnectConfigured, bluetoothBrowserNotice } from '../lib/browser';
 import type { DeviceConnectionView } from '../lib/device-connection';
@@ -30,6 +30,58 @@ interface ClickSlot extends DeviceSlot {
 	reconnecting: boolean;
 }
 
+const SLOW_RECONNECT_NOTICE_DELAY_MS = 10_000;
+
+function ConnectingLabel() {
+	return (
+		<span className="whitespace-nowrap">
+			<span className="sr-only">Connecting...</span>
+			<span aria-hidden="true">
+				Connecting
+				<span className="connecting-dot">.</span>
+				<span className="connecting-dot">.</span>
+				<span className="connecting-dot">.</span>
+			</span>
+		</span>
+	);
+}
+
+function SlowReconnectNotice() {
+	const [visible, setVisible] = useState(false);
+
+	useEffect(() => {
+		const timeout = window.setTimeout(() => setVisible(true), SLOW_RECONNECT_NOTICE_DELAY_MS);
+		return () => window.clearTimeout(timeout);
+	}, []);
+
+	if (!visible) {
+		return null;
+	}
+
+	return (
+		<div
+			className="mt-4 rounded-xl border border-sky-400/30 bg-sky-400/10 px-3 py-2.5 text-sky-100 text-xs leading-relaxed"
+			role="status"
+		>
+			Connecting can take up to 60 seconds. Please be patient. If a device seems stuck, reload
+			the page or re-pair it.
+		</div>
+	);
+}
+
+function DeviceConnectionAction({
+	busy,
+	disconnecting,
+}: {
+	busy: boolean;
+	disconnecting: boolean;
+}) {
+	if (busy) {
+		return <ConnectingLabel />;
+	}
+	return disconnecting ? 'Disconnect' : 'Reconnect';
+}
+
 function clickControllerOrder(controller: ClickController) {
 	if (controller.label.startsWith('+')) {
 		return 0;
@@ -52,8 +104,8 @@ function StatusDot({
 	let statusClass = 'bg-slate-600';
 	if (busy) {
 		statusClass = bluePulse
-			? 'animate-pulse bg-sky-400 shadow-[0_0_10px_rgba(56,189,248,.7)]'
-			: 'animate-pulse bg-yellow-300';
+			? 'connection-status-pulse bg-sky-300 ring-2 ring-sky-400/35 shadow-[0_0_16px_rgba(56,189,248,.95)]'
+			: 'connection-status-pulse bg-yellow-300 ring-2 ring-yellow-300/25 shadow-[0_0_14px_rgba(253,224,71,.75)]';
 	} else if (connected) {
 		statusClass = 'bg-mint shadow-[0_0_10px_rgba(173,245,189,.55)]';
 	}
@@ -76,12 +128,6 @@ function DeviceActions({ slot }: { slot: DeviceSlot }) {
 			</button>
 		);
 	}
-	let connectionAction = 'Reconnect';
-	if (actionBusy) {
-		connectionAction = 'Connecting…';
-	} else if (slot.connected) {
-		connectionAction = 'Disconnect';
-	}
 	const disconnecting = slot.connected && !actionBusy;
 	return (
 		<div className="flex flex-wrap justify-end gap-2">
@@ -91,7 +137,7 @@ function DeviceActions({ slot }: { slot: DeviceSlot }) {
 				onClick={disconnecting ? slot.onDisconnect : slot.onReconnect}
 				type="button"
 			>
-				{connectionAction}
+				<DeviceConnectionAction busy={actionBusy} disconnecting={disconnecting} />
 			</button>
 			<button
 				className="h-9 rounded-lg border border-rose-400/25 px-3 font-semibold text-rose-300 text-xs transition hover:border-rose-400/60 hover:bg-rose-400/5"
@@ -182,8 +228,14 @@ function DeviceCard({
 						{slot.name ?? description}
 					</p>
 					<p className="mt-1 text-[11px] text-slate-500">
-						{slot.status}
-						{slot.battery === undefined ? '' : ` · ${slot.battery}% battery`}
+						{slot.busy && slot.paired ? (
+							<ConnectingLabel />
+						) : (
+							<>
+								{slot.status}
+								{slot.battery === undefined ? '' : ` · ${slot.battery}% battery`}
+							</>
+						)}
 					</p>
 				</div>
 			</div>
@@ -215,7 +267,8 @@ export function DevicePairingButton({
 	}
 	let statusClass = 'bg-slate-600';
 	if (connecting) {
-		statusClass = 'animate-pulse bg-sky-400 shadow-[0_0_10px_rgba(56,189,248,.7)]';
+		statusClass =
+			'connection-status-pulse bg-sky-300 ring-2 ring-sky-400/35 shadow-[0_0_16px_rgba(56,189,248,.95)]';
 	} else if (allConnected) {
 		statusClass = 'bg-mint shadow-[0_0_8px_rgba(173,245,189,.45)]';
 	}
@@ -230,7 +283,7 @@ export function DevicePairingButton({
 			<span>{pairedCount ? 'Devices' : 'Pair devices'}</span>
 			{pairedCount ? (
 				<span className="inline-flex items-center gap-1.5 border-line border-l pl-2 text-xs">
-					<span className={`h-2 w-2 rounded-full ${statusClass}`} />
+					<span className={`h-2.5 w-2.5 rounded-full ${statusClass}`} />
 					{connectedCount}/{pairedCount}
 				</span>
 			) : null}
@@ -263,6 +316,10 @@ export function DevicePairingPanel({
 
 	const clickSlot: DeviceSlot = click;
 	const waitingForControllers = click.reconnecting || click.phase === 'connecting';
+	const reconnecting = trainer.reconnecting || heartRate.reconnecting || click.reconnecting;
+	const allPairedDevicesConnected =
+		[trainer, heartRate].every((slot) => !slot.paired || slot.connected) &&
+		click.connectedCount === click.pairedCount;
 	const orderedClickControllers = [...click.controllers].sort(
 		(left, right) => clickControllerOrder(left) - clickControllerOrder(right)
 	);
@@ -304,6 +361,13 @@ export function DevicePairingPanel({
 					×
 				</button>
 			</div>
+			{open &&
+			!browserNotice &&
+			automaticReconnectConfigured &&
+			reconnecting &&
+			!allPairedDevicesConnected ? (
+				<SlowReconnectNotice />
+			) : null}
 
 			{browserNotice ? (
 				<div
@@ -348,7 +412,7 @@ export function DevicePairingPanel({
 										: 'Pair each controller separately'}
 								</p>
 								<p className="mt-1 text-[11px] text-slate-500">
-									{waitingForControllers ? 'Reconnecting…' : click.status}
+									{waitingForControllers ? <ConnectingLabel /> : click.status}
 								</p>
 							</div>
 						</div>

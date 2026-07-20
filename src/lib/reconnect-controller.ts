@@ -1,4 +1,4 @@
-interface ReconnectControllerOptions<T> {
+export interface ReconnectControllerOptions<T> {
 	attempt: (target: T) => Promise<boolean>;
 	canRetry: (target: T) => boolean;
 	clearTimer?: typeof clearTimeout;
@@ -9,6 +9,8 @@ interface ReconnectControllerOptions<T> {
 
 interface RetryEntry<T> {
 	attempt: number;
+	expediteDelay?: number;
+	inFlight: boolean;
 	target: T;
 	timer?: ReturnType<typeof setTimeout>;
 }
@@ -16,6 +18,7 @@ interface RetryEntry<T> {
 export interface ReconnectController<T> {
 	cancel: (key: string, resetAttempts?: boolean) => void;
 	cancelAll: () => void;
+	expedite: (key: string, target: T, delay?: number) => void;
 	isPending: (key: string) => boolean;
 	reset: (key: string) => void;
 	start: (key: string, target: T, initialDelay?: number) => void;
@@ -55,7 +58,9 @@ export function createReconnectController<T>({
 				entries.delete(key);
 				return;
 			}
+			entry.inFlight = true;
 			const connected = await attempt(entry.target).catch(() => false);
+			entry.inFlight = false;
 			if (entries.get(key) !== entry) {
 				return;
 			}
@@ -64,7 +69,9 @@ export function createReconnectController<T>({
 				return;
 			}
 			entry.attempt += 1;
-			schedule(key, entry, delayForAttempt(entry.attempt));
+			const nextDelay = entry.expediteDelay ?? delayForAttempt(entry.attempt);
+			entry.expediteDelay = undefined;
+			schedule(key, entry, nextDelay);
 		}, delay);
 	};
 
@@ -75,14 +82,33 @@ export function createReconnectController<T>({
 				cancel(key, true);
 			}
 		},
-		isPending: (key) => Boolean(entries.get(key)?.timer),
+		expedite: (key, target, delay = 0) => {
+			const current = entries.get(key);
+			if (current?.inFlight) {
+				current.expediteDelay = delay;
+				current.target = target;
+				return;
+			}
+			if (current?.timer) {
+				clearTimer(current.timer);
+			}
+			const entry = current ?? { attempt: 1, inFlight: false, target };
+			entry.target = target;
+			entry.timer = undefined;
+			entries.set(key, entry);
+			schedule(key, entry, delay);
+		},
+		isPending: (key) => {
+			const entry = entries.get(key);
+			return Boolean(entry?.timer || entry?.inFlight);
+		},
 		reset: (key) => cancel(key, true),
 		start: (key, target, initialDelay = 0) => {
 			const current = entries.get(key);
-			if (current?.timer) {
+			if (current?.timer || current?.inFlight) {
 				return;
 			}
-			const entry = current ?? { attempt: 1, target };
+			const entry = current ?? { attempt: 1, inFlight: false, target };
 			entry.target = target;
 			entries.set(key, entry);
 			schedule(key, entry, initialDelay || delayForAttempt(entry.attempt));
