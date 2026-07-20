@@ -1,13 +1,24 @@
 import { useSelector } from '@tanstack/react-store';
 import { Fragment, useCallback, useEffect, useMemo } from 'react';
 import { chartModesForControl, chartPath, roundedChartMaximum } from '../lib/chart';
+import { CHART_MODE } from '../lib/chart-mode';
 import { CONTROL_MODE, isControlMode } from '../lib/control-mode';
 import { eventTargetsEditableControl, keyboardEventHasModifiers } from '../lib/dom';
 import { formatChartSeconds } from '../lib/format';
 import { MAX_GEAR, MIN_GEAR } from '../lib/gears';
-import { METRIC_PRESENTATION, STANDARD_METRIC_KEYS } from '../lib/metric-presentation';
+import {
+	ELEVATION_METRIC_PRESENTATION,
+	METRIC_PRESENTATION,
+	STANDARD_METRIC_KEYS,
+} from '../lib/metric-presentation';
 import { MAX_RESISTANCE, MIN_RESISTANCE } from '../lib/resistance';
-import { convertSpeed, minimumSpeedChartMaximum, speedUnitLabel } from '../lib/units';
+import {
+	convertElevation,
+	convertSpeed,
+	elevationUnitLabel,
+	minimumSpeedChartMaximum,
+	speedUnitLabel,
+} from '../lib/units';
 import { preferencesStore } from '../stores/preferences-store';
 import type { ChartMode, ControlMode, MetricSample, RoutePoint, SpeedUnit } from '../types';
 
@@ -107,11 +118,12 @@ export function SessionChart({
 		? resolvedControlMode
 		: selectedMode;
 	const effectiveMode =
-		modeForAvailableControl === 'elevation' && route.length === 0
-			? 'all'
+		modeForAvailableControl === CHART_MODE.ELEVATION && route.length === 0
+			? CHART_MODE.ALL
 			: modeForAvailableControl;
 	const series = useMemo(() => {
 		const speedValues = history.map((sample) => convertSpeed(sample.speed, speedUnit));
+		const routeElevations = route.map((point) => convertElevation(point.elevation, speedUnit));
 		const standardSeries = STANDARD_METRIC_KEYS.map((key) => {
 			const presentation = METRIC_PRESENTATION[key];
 			const values = history.map((sample) => sample[key]);
@@ -152,6 +164,24 @@ export function SessionChart({
 						unit: '%',
 						values: history.map((sample) => sample.resistance),
 					};
+		const elevationSeries = route.length
+			? [
+					{
+						chartMaximum: Math.max(...routeElevations),
+						color: ELEVATION_METRIC_PRESENTATION.chartColor,
+						decimals: 0,
+						key: CHART_MODE.ELEVATION,
+						label: ELEVATION_METRIC_PRESENTATION.label,
+						minimum: Math.min(...routeElevations),
+						unit: elevationUnitLabel(speedUnit),
+						values: history.map((sample) =>
+							sample.elevation === undefined
+								? undefined
+								: convertElevation(sample.elevation, speedUnit)
+						),
+					},
+				]
+			: [];
 		return [
 			{
 				chartMaximum: roundedChartMaximum(
@@ -161,7 +191,7 @@ export function SessionChart({
 				),
 				color: METRIC_PRESENTATION.speed.chartColor,
 				decimals: 1,
-				key: 'speed' as const,
+				key: CHART_MODE.SPEED,
 				label: METRIC_PRESENTATION.speed.label,
 				minimum: 0,
 				unit: speedUnitLabel(speedUnit),
@@ -169,23 +199,23 @@ export function SessionChart({
 			},
 			...standardSeries,
 			controlSeries,
+			...elevationSeries,
 		];
-	}, [history, resolvedControlMode, speedUnit]);
+	}, [history, resolvedControlMode, route, speedUnit]);
 	const visibleSeries =
-		effectiveMode === 'all' ? series : series.filter((item) => item.key === effectiveMode);
+		effectiveMode === CHART_MODE.ALL
+			? series
+			: series.filter((item) => item.key === effectiveMode);
 	const availableModes = useMemo(
 		() =>
 			route.length
 				? [
 						...chartModesForControl(resolvedControlMode),
-						{ label: 'Elevation', value: 'elevation' as const },
+						{ label: 'Elevation', value: CHART_MODE.ELEVATION },
 					]
 				: chartModesForControl(resolvedControlMode),
 		[resolvedControlMode, route.length]
 	);
-	const elevationValues = route.map((point) => point.elevation);
-	const elevationMinimum = elevationValues.length ? Math.min(...elevationValues) : 0;
-	const elevationMaximum = elevationValues.length ? Math.max(...elevationValues) : 1;
 	const historyPositions = history.map((sample) => sample.elapsedSeconds);
 	const historyStart = history[0]?.elapsedSeconds ?? 0;
 	const historySeconds =
@@ -236,7 +266,7 @@ export function SessionChart({
 							onClick={() => selectMode(mode.value)}
 							type="button"
 						>
-							{mode.value === 'all' ? null : (
+							{mode.value === CHART_MODE.ALL ? null : (
 								<span
 									className="h-2 w-2 rounded-full"
 									style={{
@@ -253,47 +283,34 @@ export function SessionChart({
 			</div>
 			<div className="mt-4">
 				<div className="relative w-full">
-					{(effectiveMode === 'elevation' ? route.length : history.length) === 0 ? (
+					{history.length === 0 ? (
 						<div className="absolute inset-0 z-20 grid place-items-center px-4 text-center text-slate-500 text-sm">
 							Connect and pedal to graph live session data
 						</div>
 					) : null}
-					{effectiveMode === 'elevation' ? (
-						<ChartPlot
-							color="#adf5bd"
-							decimals={0}
-							heightClass="h-52"
-							maximum={elevationMaximum}
-							minimum={elevationMinimum}
-							positions={route.map((point) => point.distance)}
-							title="Route elevation"
-							unit="m"
-							values={elevationValues}
-						/>
-					) : (
-						visibleSeries.map((item, index) => (
-							<Fragment key={item.key}>
-								<ChartPlot
-									color={item.color}
-									decimals={item.decimals}
-									heightClass={effectiveMode === 'all' ? 'h-24' : 'h-52'}
-									maximum={item.chartMaximum}
-									minimum={item.minimum}
-									positions={historyPositions}
-									title={`${item.label} over time`}
-									unit={item.unit}
-									values={item.values}
+					{visibleSeries.map((item, index) => (
+						<Fragment key={item.key}>
+							<ChartPlot
+								color={item.color}
+								decimals={item.decimals}
+								heightClass={effectiveMode === CHART_MODE.ALL ? 'h-24' : 'h-52'}
+								maximum={item.chartMaximum}
+								minimum={item.minimum}
+								positions={historyPositions}
+								title={`${item.label} over time`}
+								unit={item.unit}
+								values={item.values}
+							/>
+							{effectiveMode === CHART_MODE.ALL &&
+							index < visibleSeries.length - 1 ? (
+								<div
+									aria-hidden="true"
+									className="pointer-events-none relative -my-3 ml-15 h-6 bg-white/1.5"
+									data-chart-separator="true"
 								/>
-								{effectiveMode === 'all' && index < visibleSeries.length - 1 ? (
-									<div
-										aria-hidden="true"
-										className="pointer-events-none relative -my-3 ml-15 h-6 bg-white/1.5"
-										data-chart-separator="true"
-									/>
-								) : null}
-							</Fragment>
-						))
-					)}
+							) : null}
+						</Fragment>
+					))}
 				</div>
 				<div className="mt-1 grid grid-cols-[3.75rem_minmax(0,1fr)] text-[10px] text-slate-500">
 					<span aria-hidden="true" />

@@ -7,6 +7,7 @@ import {
 	saveSession,
 } from '../lib/saved-sessions';
 import {
+	finishRideSession,
 	SESSION_WORKFLOW_INTENT,
 	SESSION_WORKFLOW_PHASE,
 	type SessionWorkflowController,
@@ -17,13 +18,18 @@ import type { SavedSession, SessionMetadata } from '../types';
 
 export function useSessionWorkflow(
 	session: SessionWorkflowController,
-	setNotice: (notice: string) => void
+	setNotice: (notice: string) => void,
+	settleTrainerResistance: () => void
 ) {
 	const sessionIsResolved = Boolean(session.savedSessionId) || session.discarded;
 	const storeRef = useRef<ReturnType<typeof createSessionWorkflowStore> | undefined>(undefined);
 	storeRef.current ??= createSessionWorkflowStore(session.ended && !sessionIsResolved);
 	const store = storeRef.current;
 	const state = useSelector(store);
+	const finishSession = useCallback(
+		() => finishRideSession(session.endSession, settleTrainerResistance),
+		[session.endSession, settleTrainerResistance]
+	);
 
 	const startNewSession = useCallback(() => {
 		session.startNew();
@@ -70,9 +76,9 @@ export function useSessionWorkflow(
 	);
 
 	const endSession = useCallback(() => {
-		session.endSession();
+		finishSession();
 		store.actions.open({ kind: SESSION_WORKFLOW_INTENT.END });
-	}, [session.endSession, store]);
+	}, [finishSession, store]);
 
 	const requestNewSession = useCallback(() => {
 		if (session.ended) {
@@ -84,16 +90,16 @@ export function useSessionWorkflow(
 			return;
 		}
 		if (session.elapsedSeconds > 0) {
-			session.endSession();
+			finishSession();
 			store.actions.open({ kind: SESSION_WORKFLOW_INTENT.NEW });
 			return;
 		}
 		startNewSession();
 	}, [
 		session.elapsedSeconds,
-		session.endSession,
 		session.ended,
 		sessionIsResolved,
+		finishSession,
 		startNewSession,
 		store,
 	]);
@@ -108,16 +114,16 @@ export function useSessionWorkflow(
 				return;
 			}
 			if (!session.ended) {
-				session.endSession();
+				finishSession();
 			}
 			store.actions.open({ kind: SESSION_WORKFLOW_INTENT.CONTINUE, session: savedSession });
 		},
 		[
 			continueSession,
 			session.elapsedSeconds,
-			session.endSession,
 			session.ended,
 			sessionIsResolved,
+			finishSession,
 			store,
 		]
 	);

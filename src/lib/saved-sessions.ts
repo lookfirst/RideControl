@@ -5,6 +5,7 @@ import type {
 	SessionMetadata,
 	SessionSnapshot,
 } from '../types';
+import { restoreElevationTotals } from './elevation';
 import {
 	aggregateGear,
 	aggregateResistance,
@@ -12,7 +13,8 @@ import {
 	restoreAggregate,
 } from './session';
 import { IMPORTED_TCX_ID_PREFIX } from './tcx-schema';
-import { isFiniteNumber } from './type-guards';
+import { isFiniteNumber, isString } from './type-guards';
+import { restoreSessionWorkout } from './workouts';
 
 const DATABASE_NAME = 'ridecontrol-sessions';
 const DATABASE_VERSION = 1;
@@ -110,6 +112,7 @@ export function sessionSummary(session: SavedSession): SavedSessionSummary {
 		feeling: session.feeling,
 		id: session.id,
 		...(session.importedAt === undefined ? {} : { importedAt: session.importedAt }),
+		...(session.workout ? { workoutName: session.workout.course.name } : {}),
 		startedAt: session.startedAt,
 	};
 }
@@ -119,7 +122,11 @@ function normalizedImportedAt(importedAt: unknown): number | undefined {
 }
 
 export function normalizeSavedSessionSummary(session: SavedSessionSummary): SavedSessionSummary {
-	return { ...session, importedAt: normalizedImportedAt(session.importedAt) };
+	return {
+		...session,
+		importedAt: normalizedImportedAt(session.importedAt),
+		workoutName: isString(session.workoutName) ? session.workoutName : undefined,
+	};
 }
 
 export function isImportedSession(
@@ -191,7 +198,9 @@ export function normalizeSavedSession(session: SavedSession): SavedSession {
 			),
 		},
 		controlMode: controlModeForHistory(session.history, session.controlMode),
+		elevationTotals: restoreElevationTotals(session.elevationTotals, session.history),
 		importedAt: normalizedImportedAt(session.importedAt),
+		workout: restoreSessionWorkout(session.workout),
 	};
 }
 

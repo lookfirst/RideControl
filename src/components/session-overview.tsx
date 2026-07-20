@@ -1,5 +1,5 @@
 import { EMPTY_ROUTE } from '../constants';
-import type { ControlMode, MetricSample, SpeedUnit } from '../types';
+import type { ControlMode, MetricSample, SessionWorkout, SpeedUnit } from '../types';
 import { SessionChart } from './session-chart';
 import { SessionSummary } from './session-summary';
 
@@ -11,6 +11,7 @@ export function SessionOverview({
 	rideCalories,
 	rideDistance,
 	speedUnit,
+	workout,
 }: {
 	controlMode: ControlMode;
 	elapsedSeconds: number;
@@ -19,6 +20,7 @@ export function SessionOverview({
 	rideCalories: number;
 	rideDistance: number;
 	speedUnit: SpeedUnit;
+	workout?: SessionWorkout;
 }) {
 	return (
 		<div className="rounded-2xl border border-line bg-panel p-5 sm:p-6">
@@ -35,7 +37,7 @@ export function SessionOverview({
 				controlMode={controlMode}
 				history={history}
 				keyboardEnabled={keyboardEnabled}
-				route={EMPTY_ROUTE}
+				route={workout?.course.points ?? EMPTY_ROUTE}
 				speedUnit={speedUnit}
 			/>
 		</div>

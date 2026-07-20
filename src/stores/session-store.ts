@@ -4,7 +4,18 @@ import { CONTROL_MODE, type ControlMode } from '../lib/control-mode';
 import { estimatedCyclingCalories } from '../lib/cycling-energy';
 import { addMetricAggregates, SESSION_STORAGE_KEY, sessionContinuation } from '../lib/session';
 import { kilometersTraveled } from '../lib/units';
-import type { Metrics, SessionSnapshot, StoredSession } from '../types';
+import {
+	workoutElevationTotalsAtDistance,
+	workoutSelectionLocked,
+	workoutTerrainAtDistance,
+} from '../lib/workouts';
+import type {
+	Metrics,
+	SessionSnapshot,
+	SessionWorkout,
+	StoredSession,
+	WorkoutCourse,
+} from '../types';
 
 interface RecordSessionTick {
 	control: {
@@ -33,6 +44,54 @@ function initialSessionState(restored: StoredSession, now: number): SessionStore
 	};
 }
 
+function sameWorkout(workout: SessionWorkout | undefined, course: WorkoutCourse | undefined) {
+	return workout?.course === course;
+}
+
+function selectPlannedWorkout(
+	current: SessionStoreState,
+	course: WorkoutCourse | undefined
+): SessionStoreState {
+	return sameWorkout(current.plannedWorkout, course)
+		? current
+		: { ...current, plannedWorkout: course ? { course } : undefined };
+}
+
+function selectActiveWorkout(
+	current: SessionStoreState,
+	course: WorkoutCourse | undefined
+): SessionStoreState {
+	if (sameWorkout(current.workout, course)) {
+		return current;
+	}
+	return {
+		...current,
+		controlMode: course ? CONTROL_MODE.RESISTANCE : current.controlMode,
+		workout: course ? { course } : undefined,
+	};
+}
+
+function selectWorkoutForState(
+	current: SessionStoreState,
+	course: WorkoutCourse | undefined
+): SessionStoreState {
+	if (current.ended) {
+		return selectPlannedWorkout(current, course);
+	}
+	if (!workoutSelectionLocked(current)) {
+		return selectActiveWorkout(current, course);
+	}
+	return current.workout?.course.id === course?.id
+		? selectActiveWorkout(current, course)
+		: current;
+}
+
+function elevationTotalsAfterTick(current: SessionStoreState, distance: number) {
+	return current.workout
+		? workoutElevationTotalsAtDistance(current.workout.course, distance)
+		: current.elevationTotals;
+}
+
 export function sessionSnapshotFromState(state: SessionStoreState): SessionSnapshot {
 	return {
 		aggregates: state.aggregates,
@@ -40,10 +99,12 @@ export function sessionSnapshotFromState(state: SessionStoreState): SessionSnaps
 		controlMode: state.controlMode,
 		distance: state.distance,
 		elapsedSeconds: state.elapsedSeconds,
+		elevationTotals: state.elevationTotals,
 		endedAt: state.endedAt,
 		history: state.history,
 		maximums: state.maximums,
 		startedAt: state.startedAt,
+		workout: state.workout,
 	};
 }
 
@@ -55,12 +116,15 @@ export function storedSessionFromState(state: SessionStoreState): StoredSession 
 		discarded: state.discarded,
 		distance: state.distance,
 		elapsedSeconds: state.elapsedSeconds,
+		elevationTotals: state.elevationTotals,
 		ended: state.ended,
 		endedAt: state.endedAt,
 		history: state.history.slice(-MAX_SESSION_HISTORY_SAMPLES),
 		maximums: state.maximums,
+		plannedWorkout: state.plannedWorkout,
 		savedSessionId: state.savedSessionId,
 		startedAt: state.startedAt,
+		workout: state.workout,
 	};
 }
 
@@ -136,6 +200,20 @@ export function createSessionStore(restored: StoredSession, now = Date.now()) {
 					control.mode === CONTROL_MODE.GEAR
 						? { gear: control.gear }
 						: { resistance: control.resistance };
+				const distance =
+					current.distance +
+					(distanceDelta ?? kilometersTraveled(metrics.speed, seconds));
+				const terrain = current.workout
+					? workoutTerrainAtDistance(current.workout.course, distance)
+					: undefined;
+				const workoutSample = terrain
+					? {
+							elevation: terrain.elevation,
+							grade: terrain.grade,
+							workoutDistance: terrain.distance,
+							workoutLap: terrain.lap,
+						}
+					: {};
 				const sample = {
 					cadence: metrics.cadence,
 					elapsedSeconds,
@@ -143,7 +221,9 @@ export function createSessionStore(restored: StoredSession, now = Date.now()) {
 					power: metrics.power,
 					speed: metrics.speed,
 					...controlSample,
+					...workoutSample,
 				};
+				const elevationTotals = elevationTotalsAfterTick(current, distance);
 				return {
 					...current,
 					aggregates: addMetricAggregates(current.aggregates, {
@@ -152,24 +232,31 @@ export function createSessionStore(restored: StoredSession, now = Date.now()) {
 					}),
 					calories: current.calories + estimatedCyclingCalories(metrics.power, seconds),
 					controlMode: control.mode,
-					distance:
-						current.distance +
-						(distanceDelta ?? kilometersTraveled(metrics.speed, seconds)),
+					distance,
 					elapsedSeconds,
+					elevationTotals,
 					history: [...current.history, sample],
 				};
 			});
 		},
 		reset: (controlMode: ControlMode, startedAt: number) => {
-			setState(() => ({
-				...emptySession,
-				aggregates: emptySession.aggregates,
-				controlMode,
-				isRiding: false,
-				manuallyPaused: false,
-				maximums: emptyMetrics,
-				startedAt,
-			}));
+			setState((current) => {
+				const workout = current.plannedWorkout;
+				return {
+					...emptySession,
+					aggregates: emptySession.aggregates,
+					controlMode: workout ? CONTROL_MODE.RESISTANCE : controlMode,
+					isRiding: false,
+					manuallyPaused: false,
+					maximums: emptyMetrics,
+					plannedWorkout: undefined,
+					startedAt,
+					workout,
+				};
+			});
+		},
+		selectWorkout: (course?: WorkoutCourse) => {
+			setState((current) => selectWorkoutForState(current, course));
 		},
 		syncRiding: (recentlyPedaling: boolean) => {
 			setState((current) => {

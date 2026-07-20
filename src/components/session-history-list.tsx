@@ -74,6 +74,7 @@ export function SessionHistoryList({
 										{session.feeling
 											? ` · ${feelingLabel(session.feeling)}`
 											: null}
+										{session.workoutName ? ` · ${session.workoutName}` : null}
 									</p>
 									{imported ? (
 										<span

@@ -1,5 +1,9 @@
 import { describe, expect, test } from 'bun:test';
-import { SESSION_WORKFLOW_INTENT, SESSION_WORKFLOW_PHASE } from '../src/lib/session-workflow';
+import {
+	finishRideSession,
+	SESSION_WORKFLOW_INTENT,
+	SESSION_WORKFLOW_PHASE,
+} from '../src/lib/session-workflow';
 import {
 	createSessionWorkflowStore,
 	initialSessionWorkflowState,
@@ -7,6 +11,15 @@ import {
 import type { SavedSession } from '../src/types';
 
 describe('session workflow store', () => {
+	test('settles trainer resistance whenever a ride session finishes', () => {
+		const actions: string[] = [];
+		finishRideSession(
+			() => actions.push('end session'),
+			() => actions.push('settle resistance')
+		);
+		expect(actions).toEqual(['end session', 'settle resistance']);
+	});
+
 	test('opens with the ended-session intent when an unsaved session is restored', () => {
 		expect(initialSessionWorkflowState(true)).toEqual({
 			intent: { kind: SESSION_WORKFLOW_INTENT.END },

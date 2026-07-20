@@ -82,6 +82,7 @@ export function SessionSaveDialog({
 						</h2>
 						<p className="mt-1 text-slate-400 text-sm">
 							Started at {formatSessionTime(session.startedAt)}
+							{session.workout ? ` · ${session.workout.course.name}` : null}
 						</p>
 					</div>
 					<button

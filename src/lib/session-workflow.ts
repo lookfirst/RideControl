@@ -13,6 +13,11 @@ export interface SessionWorkflowController {
 	startNew: () => void;
 }
 
+export function finishRideSession(endSession: () => void, settleTrainerResistance: () => void) {
+	endSession();
+	settleTrainerResistance();
+}
+
 export const SESSION_WORKFLOW_INTENT = {
 	CONTINUE: 'continue',
 	END: 'end',

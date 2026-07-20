@@ -39,6 +39,11 @@ export const METRIC_PRESENTATION = {
 
 export const STANDARD_METRIC_KEYS = ['power', 'cadence', 'heartRate'] as const;
 
+export const ELEVATION_METRIC_PRESENTATION = {
+	chartColor: '#fb923c',
+	label: 'Elevation',
+} as const;
+
 export function metricAccentClass(accent: string): string {
 	if (accent === 'sky') {
 		return 'bg-sky-400';

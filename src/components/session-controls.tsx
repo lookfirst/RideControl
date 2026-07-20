@@ -5,20 +5,41 @@ export function SessionControls({
 	isRiding,
 	manuallyPaused,
 	onEnd,
+	onOpenWorkouts,
 	onRequestNew,
 	onSave,
 	onTogglePause,
 	saveResolved,
+	workoutName,
+	workoutSelectionLocked,
 }: {
 	ended: boolean;
 	isRiding: boolean;
 	manuallyPaused: boolean;
 	onEnd: () => void;
+	onOpenWorkouts: () => void;
 	onRequestNew: () => void;
 	onSave: () => void;
 	onTogglePause: () => void;
 	saveResolved: boolean;
+	workoutName?: string;
+	workoutSelectionLocked: boolean;
 }) {
+	const workoutButton = (
+		<button
+			className={`h-10 rounded-lg border bg-[#12171d] px-3 font-semibold text-xs transition disabled:cursor-not-allowed disabled:opacity-40 ${workoutName ? 'border-mint/30 text-mint' : 'border-line text-slate-300 hover:border-slate-500 hover:text-white'}`}
+			disabled={workoutSelectionLocked}
+			onClick={onOpenWorkouts}
+			title={
+				workoutSelectionLocked
+					? 'End the current session before changing the workout'
+					: undefined
+			}
+			type="button"
+		>
+			{workoutName ?? 'Workouts'}
+		</button>
+	);
 	if (ended) {
 		return (
 			<div className="flex flex-wrap items-center gap-2">
@@ -38,6 +59,7 @@ export function SessionControls({
 				>
 					Start new session
 				</button>
+				{workoutButton}
 			</div>
 		);
 	}
@@ -69,6 +91,7 @@ export function SessionControls({
 			>
 				End session
 			</button>
+			{workoutButton}
 		</div>
 	);
 }

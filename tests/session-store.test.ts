@@ -1,5 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { emptyMetrics, emptySession } from '../src/constants';
+import { CONTROL_MODE } from '../src/lib/control-mode';
+import { WORKOUT_COURSES } from '../src/lib/workouts';
 import {
 	createSessionStore,
 	persistSessionState,
@@ -109,6 +111,92 @@ describe('session store', () => {
 		expect(gearStore.get().aggregates.gear.maximum).toBe(20);
 	});
 
+	test('records selected workout terrain atomically with ride samples', () => {
+		const workout = WORKOUT_COURSES.find((course) => course.id === 'cedar-circuit');
+		if (!workout) {
+			throw new Error('Expected a built-in workout course');
+		}
+		const store = createSessionStore(restoredSession(), 1000);
+		store.actions.selectWorkout(workout);
+		expect(store.get().controlMode).toBe(CONTROL_MODE.RESISTANCE);
+		store.actions.syncRiding(true);
+		store.actions.selectWorkout(WORKOUT_COURSES[0]);
+		expect(store.get().workout?.course.id).toBe(workout.id);
+		store.actions.recordTick({
+			control: { gear: 12, mode: 'resistance', resistance: 20 },
+			distanceDelta: 0.4,
+			metrics: liveMetrics,
+			seconds: 1,
+		});
+		store.actions.recordTick({
+			control: { gear: 12, mode: 'resistance', resistance: 30 },
+			distanceDelta: 2,
+			metrics: liveMetrics,
+			seconds: 1,
+		});
+		store.actions.recordTick({
+			control: { gear: 12, mode: 'resistance', resistance: 20 },
+			distanceDelta: 0.8,
+			metrics: liveMetrics,
+			seconds: 1,
+		});
+
+		expect(store.get().workout?.course.id).toBe(workout.id);
+		expect(store.get().history[0]).toMatchObject({
+			workoutDistance: 0.4,
+			workoutLap: 1,
+		});
+		expect(store.get().history[0]?.elevation).toBeGreaterThan(0);
+		expect(store.get().history[0]?.grade).toBeCloseTo(0);
+		expect(store.get().elevationTotals.ascent).toBeCloseTo(36);
+		expect(store.get().elevationTotals.descent).toBeCloseTo(24);
+
+		store.actions.selectWorkout(WORKOUT_COURSES[0]);
+		expect(store.get().workout?.course.id).toBe(workout.id);
+		const snapshotWorkout = sessionSnapshotFromState(store.get()).workout;
+		const storedWorkout = storedSessionFromState(store.get()).workout;
+		if (!(snapshotWorkout && storedWorkout)) {
+			throw new Error('Expected workout metadata in session persistence');
+		}
+		expect(snapshotWorkout.course.id).toBe(workout.id);
+		expect(storedWorkout.course.id).toBe(workout.id);
+		expect(sessionSnapshotFromState(store.get()).elevationTotals).toEqual(
+			store.get().elevationTotals
+		);
+		expect(storedSessionFromState(store.get()).elevationTotals).toEqual(
+			store.get().elevationTotals
+		);
+	});
+
+	test('replaces an unstarted workout when its saved definition is revised', () => {
+		const workout = WORKOUT_COURSES.find((course) => course.id === 'cedar-circuit');
+		if (!workout) {
+			throw new Error('Expected a built-in workout course');
+		}
+		const staleDefinition = {
+			...workout,
+			points: workout.points.map((point) => ({ ...point, x: point.x / 2 })),
+		};
+		const store = createSessionStore(restoredSession(), 1000);
+		store.actions.selectWorkout(staleDefinition);
+		expect(store.get().workout?.course).toBe(staleDefinition);
+
+		store.actions.selectWorkout(workout);
+		expect(store.get().workout?.course).toBe(workout);
+
+		store.actions.selectWorkout(staleDefinition);
+		store.actions.syncRiding(true);
+		store.actions.recordTick({
+			control: { gear: 12, mode: 'resistance', resistance: 20 },
+			metrics: liveMetrics,
+			seconds: 1,
+		});
+		store.actions.selectWorkout(workout);
+		expect(store.get().workout?.course).toBe(workout);
+		store.actions.selectWorkout(WORKOUT_COURSES[0]);
+		expect(store.get().workout?.course).toBe(workout);
+	});
+
 	test('coordinates pause, end, reset, and continuation transitions', () => {
 		const store = createSessionStore(restoredSession(), 1000);
 		store.actions.syncRiding(true);
@@ -140,6 +228,7 @@ describe('session store', () => {
 			controlMode: 'resistance',
 			distance: 12,
 			elapsedSeconds: 900,
+			elevationTotals: { ascent: 120, descent: 80 },
 			endedAt: 4000,
 			history: [],
 			maximums: emptyMetrics,
@@ -149,11 +238,45 @@ describe('session store', () => {
 			calories: 100,
 			distance: 12,
 			elapsedSeconds: 900,
+			elevationTotals: { ascent: 120, descent: 80 },
 			ended: false,
 			endedAt: 0,
 			startedAt: 2000,
 		});
 		expect(store.get().savedSessionId).toBeUndefined();
+	});
+
+	test('plans a workout for the next session without changing the completed ride', () => {
+		const [completedCourse, plannedCourse] = WORKOUT_COURSES;
+		if (!(completedCourse && plannedCourse)) {
+			throw new Error('Expected built-in workout courses');
+		}
+		const store = createSessionStore(
+			restoredSession({
+				elapsedSeconds: 60,
+				ended: true,
+				workout: { course: completedCourse },
+			}),
+			1000
+		);
+
+		store.actions.selectWorkout(plannedCourse);
+		expect(store.get().workout?.course.id).toBe(completedCourse.id);
+		expect(store.get().plannedWorkout?.course.id).toBe(plannedCourse.id);
+		const snapshot = sessionSnapshotFromState(store.get());
+		const stored = storedSessionFromState(store.get());
+		if (!(snapshot.workout && stored.plannedWorkout)) {
+			throw new Error('Expected current and planned workouts to be retained');
+		}
+		expect(snapshot.workout.course.id).toBe(completedCourse.id);
+		expect(snapshot).not.toHaveProperty('plannedWorkout');
+		expect(stored.plannedWorkout.course.id).toBe(plannedCourse.id);
+
+		store.actions.reset(CONTROL_MODE.GEAR, 5000);
+		expect(store.get().ended).toBe(false);
+		expect(store.get().controlMode).toBe(CONTROL_MODE.RESISTANCE);
+		expect(store.get().workout?.course.id).toBe(plannedCourse.id);
+		expect(store.get().plannedWorkout).toBeUndefined();
 	});
 
 	test('records an intentional discard until the session is reset or saved', () => {

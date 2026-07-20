@@ -8,10 +8,12 @@ import type {
 	StoredSession,
 } from '../types';
 import { CONTROL_MODE, type ControlMode, isControlMode } from './control-mode';
+import { restoreElevationTotals } from './elevation';
 import { clampGear, MAX_GEAR, MIN_GEAR } from './gears';
 import { clamp, nonNegativeNumber } from './numbers';
 import { clampResistance, DEFAULT_RESISTANCE, MAX_RESISTANCE, MIN_RESISTANCE } from './resistance';
 import { isFiniteNumber, isString } from './type-guards';
+import { restoreSessionWorkout } from './workouts';
 
 export const SESSION_STORAGE_KEY = 'trainer-session';
 export const RESISTANCE_STORAGE_KEY = 'trainer-resistance-percent';
@@ -26,11 +28,13 @@ export function sessionContinuation(snapshot: SessionSnapshot): StoredSession {
 		discarded: false,
 		distance: snapshot.distance,
 		elapsedSeconds: snapshot.elapsedSeconds,
+		elevationTotals: snapshot.elevationTotals,
 		ended: false,
 		endedAt: 0,
 		history: snapshot.history,
 		maximums: snapshot.maximums,
 		startedAt: snapshot.startedAt,
+		workout: snapshot.workout,
 	};
 }
 
@@ -129,6 +133,14 @@ function optionalControlValue(value: unknown, minimum: number, maximum: number) 
 	return clamp(value, minimum, maximum);
 }
 
+function optionalNonNegativeNumber(value: unknown): number | undefined {
+	return isFiniteNumber(value) ? nonNegativeNumber(value) : undefined;
+}
+
+function optionalWorkoutLap(value: unknown): number | undefined {
+	return isFiniteNumber(value) ? Math.max(1, Math.floor(value)) : undefined;
+}
+
 export function controlModeForHistory(
 	history: Partial<Pick<MetricSample, 'gear'>>[],
 	savedMode?: ControlMode
@@ -153,7 +165,9 @@ export function loadStoredSession(storage: ReadableStorage = localStorage): Stor
 			? parsed.history.slice(-MAX_SESSION_HISTORY_SAMPLES).map((sample) => ({
 					cadence: nonNegativeNumber(sample.cadence),
 					elapsedSeconds: nonNegativeNumber(sample.elapsedSeconds),
+					elevation: optionalNonNegativeNumber(sample.elevation),
 					gear: optionalControlValue(sample.gear, MIN_GEAR, MAX_GEAR),
+					grade: optionalControlValue(sample.grade, -15, 15),
 					heartRate: nonNegativeNumber(sample.heartRate),
 					power: nonNegativeNumber(sample.power),
 					resistance: optionalControlValue(
@@ -162,6 +176,8 @@ export function loadStoredSession(storage: ReadableStorage = localStorage): Stor
 						MAX_RESISTANCE
 					),
 					speed: nonNegativeNumber(sample.speed),
+					workoutDistance: optionalNonNegativeNumber(sample.workoutDistance),
+					workoutLap: optionalWorkoutLap(sample.workoutLap),
 				}))
 			: [];
 		const historyAggregates = history.reduce(addMetricAggregates, emptySession.aggregates);
@@ -184,6 +200,7 @@ export function loadStoredSession(storage: ReadableStorage = localStorage): Stor
 			discarded: parsed.discarded === true,
 			distance: nonNegativeNumber(parsed.distance),
 			elapsedSeconds: nonNegativeNumber(parsed.elapsedSeconds),
+			elevationTotals: restoreElevationTotals(parsed.elevationTotals, history),
 			ended: parsed.ended === true,
 			endedAt: nonNegativeNumber(parsed.endedAt),
 			history,
@@ -195,8 +212,10 @@ export function loadStoredSession(storage: ReadableStorage = localStorage): Stor
 				power: nonNegativeNumber(maximums.power),
 				speed: nonNegativeNumber(maximums.speed),
 			},
+			plannedWorkout: restoreSessionWorkout(parsed.plannedWorkout),
 			savedSessionId: isString(parsed.savedSessionId) ? parsed.savedSessionId : undefined,
 			startedAt: nonNegativeNumber(parsed.startedAt),
+			workout: restoreSessionWorkout(parsed.workout),
 		};
 	} catch {
 		return emptySession;

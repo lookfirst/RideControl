@@ -10,22 +10,28 @@ import { Metric, SessionMetric, SmallMetric } from '../src/components/metrics';
 import { Notification } from '../src/components/notification';
 import { ResistanceControl } from '../src/components/resistance-control';
 import { SessionChart } from '../src/components/session-chart';
+import { SessionControls } from '../src/components/session-controls';
 import { DeleteSessionDialog, SessionDetail } from '../src/components/session-detail';
 import { SessionHistory } from '../src/components/session-history';
 import { SessionHistoryList } from '../src/components/session-history-list';
 import { SessionSaveDialog } from '../src/components/session-save-dialog';
 import { TrainingControl } from '../src/components/training-control';
 import { WelcomeDialog } from '../src/components/welcome-dialog';
+import { WorkoutPanel } from '../src/components/workout-panel';
+import { WorkoutProgress } from '../src/components/workout-progress';
 import {
 	CHROME_BLUETOOTH_FLAGS_URL,
 	CHROME_BLUETOOTH_PERMISSION_MESSAGE,
 	emptyMetrics,
 	emptySession,
 } from '../src/constants';
+import { formatGrade } from '../src/lib/format';
 import { historyKeyboardShortcuts } from '../src/lib/keyboard';
 import { metricAccentClass, metricIconClass } from '../src/lib/metric-presentation';
 import { formatSessionImportTime, sessionSummary } from '../src/lib/saved-sessions';
 import { SESSION_WORKFLOW_INTENT } from '../src/lib/session-workflow';
+import { WORKOUT_ROUTE_TYPE } from '../src/lib/workout-schema';
+import { WORKOUT_COURSES, workoutTerrainAtDistance } from '../src/lib/workouts';
 import { savedSessionFixture } from './fixtures/saved-session';
 
 const render = (element: React.ReactNode) => renderToStaticMarkup(element);
@@ -34,6 +40,7 @@ const solidChartBoundaries =
 	/d="M0 14H100 M0 90H100"[^>]*stroke="#3a4654"(?![^>]*stroke-dasharray)/;
 const dashedChartGuides =
 	/d="M0 52H100 M25 14V90 M50 14V90 M75 14V90"[^>]*stroke-dasharray="2.5 2.5"/;
+const noCustomWorkoutIds = new Set<string>();
 
 describe('view components', () => {
 	test('renders known and fallback icons', () => {
@@ -442,6 +449,154 @@ describe('view components', () => {
 		expect(resistance).not.toContain('Virtual shifting');
 	});
 
+	test('renders terrain workout selection, progress, and automatic resistance', () => {
+		const [course] = WORKOUT_COURSES;
+		if (!course) {
+			throw new Error('Expected a built-in workout course');
+		}
+		const panel = render(
+			<WorkoutPanel
+				courses={WORKOUT_COURSES}
+				customCourseIds={noCustomWorkoutIds}
+				ended={false}
+				onClose={() => undefined}
+				onImportFile={() => Promise.reject(new Error('Not used in this render test'))}
+				onRemoveCourse={() => undefined}
+				onSelect={() => undefined}
+				open
+				selectionLocked={false}
+				speedUnit="mph"
+			/>
+		);
+		expect(panel).toContain('Terrain workouts');
+		expect(panel).toContain('Harbor Ring');
+		expect(panel).toContain('Prairie Roll');
+		expect(panel).toContain('Cedar Circuit');
+		expect(panel).toContain('Highland Loop');
+		expect(panel).toContain('Granite Switchbacks');
+		expect(panel).toContain('Ridgeline Time Trial');
+		expect(panel).toContain('Harbor Ring course map');
+		expect(panel).toContain('Harbor Ring elevation profile');
+		expect(panel).toContain('Import GPX');
+		expect(panel.match(/Download GPX/g)).toHaveLength(6);
+		expect(panel).toContain('10.0 mi out &amp; back');
+		expect(panel).toContain('15.0 mi loop');
+		expect(panel).toContain('15–25% resistance');
+		expect(panel).toContain('49 ft climbing');
+		expect(panel).not.toContain('15 m climbing');
+		expect(panel).toContain('stroke="#64748b"');
+		expect(panel).toContain('bg-slate-800/70');
+		expect(panel).not.toContain('bg-lime text-ink');
+		expect(panel).toContain('data-side-tray="true"');
+		const importedCourse = {
+			...course,
+			id: 'imported-course',
+			name: 'Imported course',
+			routeType: WORKOUT_ROUTE_TYPE.OUT_AND_BACK,
+		};
+		const customPanel = render(
+			<WorkoutPanel
+				courses={[...WORKOUT_COURSES, importedCourse]}
+				customCourseIds={new Set([importedCourse.id])}
+				ended={false}
+				onClose={() => undefined}
+				onImportFile={() => Promise.reject(new Error('Not used in this render test'))}
+				onRemoveCourse={() => undefined}
+				onSelect={() => undefined}
+				open
+				selectionLocked={false}
+				speedUnit="mph"
+			/>
+		);
+		expect(customPanel).toContain('Imported course');
+		expect(customPanel).toContain('Imported');
+		expect(customPanel).toContain('out &amp; back');
+		expect(customPanel).toContain('Remove');
+		expect(customPanel.match(/Download GPX/g)).toHaveLength(7);
+		const lockedPanel = render(
+			<WorkoutPanel
+				activeCourse={course}
+				courses={WORKOUT_COURSES}
+				customCourseIds={noCustomWorkoutIds}
+				ended={false}
+				onClose={() => undefined}
+				onImportFile={() => Promise.reject(new Error('Not used in this render test'))}
+				onRemoveCourse={() => undefined}
+				onSelect={() => undefined}
+				open
+				selectionLocked
+				speedUnit="mph"
+			/>
+		);
+		expect(lockedPanel).toContain('End the current session before changing the workout.');
+		expect(lockedPanel.match(/disabled=""/g)).toHaveLength(6);
+
+		const terrain = workoutTerrainAtDistance(course, course.distance * 2 + 2);
+		const progress = render(
+			<WorkoutProgress
+				elevationTotals={{ ascent: 30, descent: 12 }}
+				isRiding
+				speedUnit="mph"
+				terrain={terrain}
+				workout={{ course }}
+			/>
+		);
+		expect(progress).not.toContain('Terrain workout');
+		expect(progress).not.toContain('Current lap');
+		expect(progress).toContain('Laps completed');
+		expect(progress).toContain('aria-label="2 laps completed"');
+		expect(progress).toContain('Course map');
+		expect(progress).toContain('1.2 / 4 mi');
+		expect(progress).toContain('Elevation profile');
+		expect(progress).toContain('Course climb');
+		expect(progress).toContain('49 ft');
+		expect(progress).toContain('Climbed');
+		expect(progress).toContain('98 ft');
+		expect(progress).toContain('Downhill');
+		expect(progress).toContain('39 ft');
+		expect(progress).toContain('Progress');
+		expect(progress).toContain(`${Math.round(terrain.progress * 100)}%`);
+		expect(progress).toContain('Grade');
+		expect(progress).toContain(formatGrade(terrain.grade));
+		expect(progress).toContain('Resistance');
+		expect(progress).toContain(`${terrain.resistance}%`);
+		expect(progress.match(/sm:text-4xl/g)).toHaveLength(3);
+		expect(progress.match(/sm:text-2xl/g)).toHaveLength(3);
+		expect(progress).toContain('sm:text-lg');
+		expect(progress).toContain('Ridden this lap');
+		expect(progress.match(/animate-pulse/g)).toHaveLength(2);
+		expect(progress).toContain('data-profile-marker="true"');
+		expect(progress).not.toContain('rgba(173, 245, 189, .2)');
+		expect(progress.match(/data-route-progress="true"/g)).toHaveLength(2);
+		expect(progress).not.toContain('stroke-dasharray');
+		expect(progress).not.toContain('Terrain resistance');
+		const metricProgress = render(
+			<WorkoutProgress
+				elevationTotals={{ ascent: 30, descent: 12 }}
+				isRiding={false}
+				speedUnit="kmh"
+				terrain={terrain}
+				workout={{ course }}
+			/>
+		);
+		expect(metricProgress).toContain('15 m');
+		expect(metricProgress).toContain('30 m');
+		expect(metricProgress).toContain('12 m');
+		expect(metricProgress).not.toContain('animate-pulse');
+		const outAndBackProgress = render(
+			<WorkoutProgress
+				elevationTotals={{ ascent: 30, descent: 12 }}
+				isRiding={false}
+				speedUnit="mph"
+				terrain={terrain}
+				workout={{ course: importedCourse }}
+			/>
+		);
+		expect(outAndBackProgress).toContain('Trips completed');
+		expect(outAndBackProgress).toContain('Ridden this trip');
+		expect(outAndBackProgress).toContain('aria-label="2 trips completed"');
+	});
+
 	test('hides empty notifications and expands setup guidance', () => {
 		expect(
 			render(<Notification connected={false} notice="" onDismiss={() => undefined} />)
@@ -586,6 +741,54 @@ describe('view components', () => {
 		expect(html).not.toContain('absolute top-[11%] bottom-[8%] left-1');
 	});
 
+	test('graphs recorded workout elevation with a distinct color', () => {
+		const [course] = WORKOUT_COURSES;
+		if (!course) {
+			throw new Error('Expected a built-in workout course');
+		}
+		const html = render(
+			<SessionChart
+				history={[
+					{
+						cadence: 85,
+						elapsedSeconds: 1,
+						elevation: 24,
+						heartRate: 140,
+						power: 180,
+						resistance: 42,
+						speed: 30,
+					},
+				]}
+				route={course.points}
+				speedUnit="kmh"
+			/>
+		);
+		expect(html).toContain('Elevation over time');
+		expect(html).toContain('Elevation</button>');
+		expect(html).toContain('28 m');
+		expect(html).toContain('stroke="#fb923c"');
+		expect(html.match(/data-chart-separator="true"/g)).toHaveLength(5);
+		const imperialHtml = render(
+			<SessionChart
+				history={[
+					{
+						cadence: 85,
+						elapsedSeconds: 1,
+						elevation: 24,
+						heartRate: 140,
+						power: 180,
+						resistance: 42,
+						speed: 30,
+					},
+				]}
+				route={course.points}
+				speedUnit="mph"
+			/>
+		);
+		expect(imperialHtml).toContain('92 ft');
+		expect(imperialHtml).not.toContain('28 m');
+	});
+
 	test('graphs gear instead of resistance during virtual shifting', () => {
 		const html = render(
 			<SessionChart
@@ -638,6 +841,7 @@ describe('view components', () => {
 					controlMode: 'resistance',
 					distance: 10,
 					elapsedSeconds: 3600,
+					elevationTotals: emptySession.elevationTotals,
 					endedAt: Date.now(),
 					history: [],
 					maximums: emptyMetrics,
@@ -678,6 +882,24 @@ describe('view components', () => {
 		);
 		expect(newSession).toContain('Start new without saving');
 		expect(newSession).toContain('Save &amp; start new');
+	});
+
+	test('places workout planning after starting a new session', () => {
+		const html = render(
+			<SessionControls
+				ended
+				isRiding={false}
+				manuallyPaused={false}
+				onEnd={() => undefined}
+				onOpenWorkouts={() => undefined}
+				onRequestNew={() => undefined}
+				onSave={() => undefined}
+				onTogglePause={() => undefined}
+				saveResolved
+				workoutSelectionLocked={false}
+			/>
+		);
+		expect(html.indexOf('Start new session')).toBeLessThan(html.indexOf('Workouts'));
 	});
 
 	test('renders an empty session history', () => {
@@ -796,6 +1018,7 @@ describe('view components', () => {
 					controlMode: 'resistance',
 					distance: 0,
 					elapsedSeconds: 7200,
+					elevationTotals: emptySession.elevationTotals,
 					endedAt,
 					history: [],
 					id: 'overnight-session',
@@ -829,6 +1052,7 @@ describe('view components', () => {
 					controlMode: 'resistance',
 					distance: 0,
 					elapsedSeconds: 0,
+					elevationTotals: emptySession.elevationTotals,
 					endedAt: Date.now(),
 					history: [],
 					id: 'empty-session',
@@ -863,6 +1087,7 @@ describe('view components', () => {
 					controlMode: 'gear',
 					distance: 0,
 					elapsedSeconds: 2,
+					elevationTotals: emptySession.elevationTotals,
 					endedAt: Date.now(),
 					history: [],
 					id: 'gear-session',
