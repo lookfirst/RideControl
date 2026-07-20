@@ -643,7 +643,7 @@ describe('view components', () => {
 			'href="https://github.com/lookfirst/RideControl/pulls?q=is%3Apr+is%3Aclosed"'
 		);
 		expect(html).toContain('<time dateTime=');
-		expect(html).toContain('href="https://github.com/lookfirst"');
+		expect(html).toContain('href="https://github.com/lookfirst/RideControl"');
 		expect(html).toContain('href="https://github.com/sponsors/lookfirst"');
 		expect(html).toContain('Sponsor');
 		expect(html).toContain('WELCOME TO');
