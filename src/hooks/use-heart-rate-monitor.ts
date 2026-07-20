@@ -1,16 +1,30 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { BATTERY, HEART_RATE, WEB_BLUETOOTH_UNAVAILABLE_MESSAGE } from '../constants';
 import { isBluetoothChooserCancellation } from '../lib/bluetooth';
+import {
+	createBluetoothReconnectController,
+	reconnectBluetoothDeviceNow,
+	scheduleBluetoothDeviceReconnect,
+} from '../lib/bluetooth-reconnect';
 import { type DeviceConnectionPhase, deviceConnectionView } from '../lib/device-connection';
 import { errorMessage } from '../lib/errors';
 import { connectHeartRateDevice } from '../lib/heart-rate-device';
-import { createReconnectController } from '../lib/reconnect-controller';
+import {
+	type RememberedBluetoothDeviceCatalog,
+	rememberedBluetoothDevice,
+} from '../lib/remembered-bluetooth-devices';
+import { usePageHide } from './use-page-hide';
 
 const STORAGE_KEY = 'heart-rate-device-id';
 
-export function useHeartRateMonitor(setNotice: (notice: string) => void) {
+export function useHeartRateMonitor(
+	rememberedDevices: RememberedBluetoothDeviceCatalog,
+	setNotice: (notice: string) => void
+) {
 	const [device, setDevice] = useState<BluetoothDevice>();
-	const [phase, setPhase] = useState<DeviceConnectionPhase>('unpaired');
+	const [phase, setPhase] = useState<DeviceConnectionPhase>(() =>
+		localStorage.getItem(STORAGE_KEY) ? 'reconnecting' : 'unpaired'
+	);
 	const [heartRate, setHeartRate] = useState(0);
 	const [battery, setBattery] = useState<number>();
 	const autoReconnect = useRef(true);
@@ -21,19 +35,19 @@ export function useHeartRateMonitor(setNotice: (notice: string) => void) {
 		((selected: BluetoothDevice, reconnecting?: boolean) => Promise<boolean>) | undefined
 	>(undefined);
 	const reconnectController = useRef(
-		createReconnectController<BluetoothDevice>({
+		createBluetoothReconnectController<BluetoothDevice>({
 			attempt: (selected) =>
 				connectDeviceRef.current?.(selected, true) ?? Promise.resolve(false),
 			canRetry: () => autoReconnect.current && !forgotten.current,
-			delayForAttempt: (attempt) => Math.min(5000, 900 * attempt),
 			onWaiting: () => setPhase('reconnecting'),
+			watchAdvertisements: false,
 		})
 	);
 	const handleDisconnect = useCallback((selected: BluetoothDevice) => {
 		connectionCleanup.current();
 		setHeartRate(0);
 		if (autoReconnect.current && !forgotten.current) {
-			reconnectController.current.start(selected.id, selected, 900);
+			scheduleBluetoothDeviceReconnect(reconnectController.current, selected);
 		} else {
 			setPhase('offline');
 		}
@@ -48,7 +62,7 @@ export function useHeartRateMonitor(setNotice: (notice: string) => void) {
 			}
 			setNotice(`Heart rate monitor connection failed: ${errorMessage(error)}`);
 			if (autoReconnect.current && !forgotten.current) {
-				reconnectController.current.start(selected.id, selected);
+				scheduleBluetoothDeviceReconnect(reconnectController.current, selected);
 			}
 		},
 		[setNotice]
@@ -62,13 +76,14 @@ export function useHeartRateMonitor(setNotice: (notice: string) => void) {
 			connecting.current = true;
 			setPhase(reconnecting ? 'reconnecting' : 'connecting');
 			connectionCleanup.current();
+			setBattery(undefined);
 			try {
-				const connection = await connectHeartRateDevice(selected, {
+				const connection = await connectHeartRateDevice(selected, reconnecting, {
+					onBattery: setBattery,
 					onDisconnect: () => handleDisconnect(selected),
 					onHeartRate: setHeartRate,
 				});
 				connectionCleanup.current = connection.cleanup;
-				setBattery(connection.battery);
 				setDevice(selected);
 				setPhase('connected');
 				reconnectController.current.reset(selected.id);
@@ -112,17 +127,15 @@ export function useHeartRateMonitor(setNotice: (notice: string) => void) {
 		}
 	}, [connectDevice, device, setNotice]);
 
-	const reconnect = useCallback(async () => {
+	const reconnect = useCallback(() => {
 		if (!device) {
 			return;
 		}
 		forgotten.current = false;
 		autoReconnect.current = true;
 		reconnectController.current.reset(device.id);
-		if (!(await connectDevice(device, true))) {
-			reconnectController.current.start(device.id, device);
-		}
-	}, [connectDevice, device]);
+		reconnectBluetoothDeviceNow(reconnectController.current, device);
+	}, [device]);
 
 	const disconnect = useCallback(() => {
 		autoReconnect.current = false;
@@ -154,36 +167,52 @@ export function useHeartRateMonitor(setNotice: (notice: string) => void) {
 		}
 	}, [device]);
 
+	usePageHide(() => {
+		autoReconnect.current = false;
+		reconnectController.current.cancelAll();
+		connectionCleanup.current();
+		device?.gatt?.disconnect();
+	});
+
 	useEffect(() => {
-		let cancelled = false;
-		async function restore() {
-			if (!navigator.bluetooth?.getDevices) {
-				return;
-			}
-			const savedId = localStorage.getItem(STORAGE_KEY);
-			if (!savedId) {
-				return;
-			}
-			const remembered = (await navigator.bluetooth.getDevices()).find(
-				(candidate) => candidate.id === savedId
-			);
-			if (!(remembered && !cancelled)) {
-				return;
-			}
-			setDevice(remembered);
-			setPhase('reconnecting');
-			forgotten.current = false;
-			autoReconnect.current = true;
-			reconnectController.current.start(remembered.id, remembered, 1);
+		const savedDeviceId = localStorage.getItem(STORAGE_KEY);
+		if (!savedDeviceId) {
+			setPhase('unpaired');
+			return;
 		}
-		restore().catch(() => setPhase('offline'));
-		return () => {
-			cancelled = true;
+		if (!(rememberedDevices.supported && rememberedDevices.devices)) {
+			if (rememberedDevices.error) {
+				setPhase('offline');
+			}
+			return;
+		}
+		const remembered = rememberedBluetoothDevice(rememberedDevices.devices, savedDeviceId);
+		if (!remembered) {
+			setPhase('unpaired');
+			return;
+		}
+		setDevice(remembered);
+		setPhase('reconnecting');
+		forgotten.current = false;
+		autoReconnect.current = true;
+		reconnectBluetoothDeviceNow(reconnectController.current, remembered);
+	}, [rememberedDevices.devices, rememberedDevices.error, rememberedDevices.supported]);
+
+	useEffect(
+		() => () => {
 			autoReconnect.current = false;
 			reconnectController.current.cancelAll();
 			connectionCleanup.current();
-		};
-	}, []);
+		},
+		[]
+	);
+
+	useEffect(
+		() => () => {
+			device?.gatt?.disconnect();
+		},
+		[device]
+	);
 
 	return {
 		battery,

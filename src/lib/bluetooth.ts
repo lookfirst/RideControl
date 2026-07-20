@@ -1,4 +1,7 @@
+import { BLUETOOTH_GATT_CONNECTION_TIMEOUT_MS } from '../constants';
 import type { Metrics, Range } from '../types';
+import { bluetoothGattCoordinator } from './bluetooth-gatt-coordinator';
+import { loadRememberedBluetoothDevices } from './remembered-bluetooth-devices';
 import { MAX_RESISTANCE } from './resistance';
 import { kilometersForMeters, SECONDS_PER_MINUTE } from './units';
 
@@ -8,6 +11,17 @@ export interface CrankReading {
 	revolutions: number;
 	time: number;
 }
+
+interface GattConnectionTiming {
+	directTimeoutMs: number;
+	reconnectProbeTimeoutMs: number;
+}
+
+const ADVERTISEMENT_DISCOVERY_WARMUP_MS = 250;
+const DEFAULT_GATT_CONNECTION_TIMING: GattConnectionTiming = {
+	directTimeoutMs: BLUETOOTH_GATT_CONNECTION_TIMEOUT_MS,
+	reconnectProbeTimeoutMs: BLUETOOTH_GATT_CONNECTION_TIMEOUT_MS,
+};
 
 export function isBluetoothChooserCancellation(error: unknown): boolean {
 	return error instanceof DOMException && error.name === 'NotFoundError';
@@ -122,67 +136,87 @@ export async function findRememberedKickr(
 	bluetooth: Bluetooth = navigator.bluetooth,
 	storage: Pick<Storage, 'getItem'> = localStorage
 ): Promise<BluetoothDevice | undefined> {
-	if (!bluetooth?.getDevices) {
-		return;
-	}
-	const permitted = await bluetooth.getDevices();
+	const permitted = await loadRememberedBluetoothDevices(bluetooth);
+	return selectRememberedKickr(permitted, storage);
+}
+
+export function selectRememberedKickr(
+	permitted: readonly BluetoothDevice[],
+	storage: Pick<Storage, 'getItem'> = localStorage
+): BluetoothDevice | undefined {
 	const savedDeviceId = storage.getItem(TRAINER_DEVICE_STORAGE_KEY);
 	return (
 		permitted.find((candidate) => candidate.id === savedDeviceId) ??
-		permitted.find((candidate) => candidate.name?.toUpperCase().startsWith('KICKR')) ??
-		(permitted.length === 1 ? permitted[0] : undefined)
+		permitted.find((candidate) => candidate.name?.toUpperCase().startsWith('KICKR'))
 	);
 }
 
-export async function waitForFreshAdvertisement(
-	device: BluetoothDevice,
-	onAdvertisement?: (event: BluetoothAdvertisingEvent) => void,
-	timeoutMs = 3000
-): Promise<void> {
-	if (!device.watchAdvertisements) {
-		return;
-	}
-	const controller = new AbortController();
-	await new Promise<void>((resolve) => {
-		let finished = false;
-		let timeout: number | undefined;
-		const finish = () => {
-			if (finished) {
-				return;
-			}
-			finished = true;
-			window.clearTimeout(timeout);
-			device.removeEventListener('advertisementreceived', handleAdvertisement);
-			controller.abort();
-			resolve();
-		};
-		const handleAdvertisement = (event: Event) => {
-			try {
-				onAdvertisement?.(event as BluetoothAdvertisingEvent);
-			} finally {
-				finish();
-			}
-		};
-		device.addEventListener('advertisementreceived', handleAdvertisement, { once: true });
-		timeout = window.setTimeout(finish, timeoutMs);
-		device.watchAdvertisements({ signal: controller.signal }).catch(finish);
-	});
+export interface BluetoothAdvertisementWatch {
+	ready: Promise<void>;
+	stop: () => void;
+	supported: boolean;
 }
 
-export async function connectGatt(
+function boundedAdvertisementWarmup(started: Promise<void>): Promise<void> {
+	let timeout: ReturnType<typeof setTimeout> | undefined;
+	const warmup = new Promise<void>((resolve) => {
+		timeout = setTimeout(resolve, ADVERTISEMENT_DISCOVERY_WARMUP_MS);
+	});
+	return Promise.race([started, warmup]).finally(() => clearTimeout(timeout));
+}
+
+export function watchBluetoothAdvertisements(
 	device: BluetoothDevice,
-	rediscover: boolean
-): Promise<BluetoothRemoteGATTServer> {
-	if (!device.gatt) {
-		throw new Error('This device does not expose a GATT server.');
+	onAdvertisement: (event: BluetoothAdvertisingEvent) => void,
+	onUnavailable?: () => void
+): BluetoothAdvertisementWatch {
+	if (!device.watchAdvertisements) {
+		onUnavailable?.();
+		return { ready: Promise.resolve(), stop: () => undefined, supported: false };
 	}
-	try {
-		return await device.gatt.connect();
-	} catch (directConnectionError) {
-		if (!rediscover) {
-			throw directConnectionError;
+	const abortController = new AbortController();
+	let active = true;
+	const handleAdvertisement = (event: Event) =>
+		onAdvertisement(event as BluetoothAdvertisingEvent);
+	const startedWatch = !device.watchingAdvertisements;
+	const stop = () => {
+		if (!active) {
+			return;
 		}
-		await waitForFreshAdvertisement(device);
-		return await device.gatt.connect();
+		active = false;
+		device.removeEventListener('advertisementreceived', handleAdvertisement);
+		if (startedWatch) {
+			abortController.abort();
+		}
+	};
+	device.addEventListener('advertisementreceived', handleAdvertisement);
+	let ready = Promise.resolve();
+	if (startedWatch) {
+		try {
+			const started = device
+				.watchAdvertisements({ signal: abortController.signal })
+				.catch(() => {
+					stop();
+					onUnavailable?.();
+				});
+			ready = boundedAdvertisementWarmup(started);
+		} catch {
+			stop();
+			onUnavailable?.();
+			return { ready, stop, supported: false };
+		}
 	}
+	return { ready, stop, supported: true };
+}
+
+export function connectGatt(
+	device: BluetoothDevice,
+	rediscover: boolean,
+	timing: GattConnectionTiming = DEFAULT_GATT_CONNECTION_TIMING
+): Promise<BluetoothRemoteGATTServer> {
+	return bluetoothGattCoordinator.connect(
+		device,
+		rediscover ? timing.reconnectProbeTimeoutMs : timing.directTimeoutMs,
+		'Bluetooth device connection timed out.'
+	);
 }

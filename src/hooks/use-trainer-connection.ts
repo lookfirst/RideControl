@@ -6,17 +6,23 @@ import {
 	WEB_BLUETOOTH_UNAVAILABLE_MESSAGE,
 } from '../constants';
 import {
-	findRememberedKickr,
 	isBluetoothChooserCancellation,
 	recordMetricActivity,
 	resistanceCommand,
+	selectRememberedKickr,
 	TRAINER_DEVICE_STORAGE_KEY,
 } from '../lib/bluetooth';
+import {
+	createBluetoothReconnectController,
+	reconnectBluetoothDeviceNow,
+	scheduleBluetoothDeviceReconnect,
+} from '../lib/bluetooth-reconnect';
 import { errorMessage } from '../lib/errors';
-import { createReconnectController } from '../lib/reconnect-controller';
+import type { RememberedBluetoothDeviceCatalog } from '../lib/remembered-bluetooth-devices';
 import { storedResistance } from '../lib/session';
 import { connectTrainerDevice } from '../lib/trainer-device';
 import type { TrainerStore } from '../stores/trainer-store';
+import { usePageHide } from './use-page-hide';
 
 interface NumberRef {
 	current: number;
@@ -29,7 +35,8 @@ function pairingWasCancelled(error: unknown, connectionCancelled: boolean) {
 export function useTrainerConnection(
 	store: TrainerStore,
 	appliedResistance: NumberRef,
-	resistanceTarget: NumberRef
+	resistanceTarget: NumberRef,
+	rememberedDevices: RememberedBluetoothDeviceCatalog
 ) {
 	const { setConnectionPhase, setMetrics, setNotice, setResistance, setResistanceRamp } =
 		store.actions;
@@ -51,12 +58,11 @@ export function useTrainerConnection(
 	const controlPoint = useRef<BluetoothRemoteGATTCharacteristic | undefined>(undefined);
 	const resistanceRange = useRef(store.get().resistanceRange);
 	const reconnectController = useRef(
-		createReconnectController<BluetoothDevice>({
+		createBluetoothReconnectController<BluetoothDevice>({
 			attempt: (selected) =>
 				connectDeviceRef.current?.(selected, true) ?? Promise.resolve(false),
 			canRetry: () =>
 				autoReconnect.current && !unloading.current && !connectionCancelled.current,
-			delayForAttempt: (attempt) => Math.min(5000, 700 * attempt),
 			onWaiting: () => setConnectionPhase('reconnecting'),
 		})
 	);
@@ -109,7 +115,7 @@ export function useTrainerConnection(
 			pendingDevice.current = selected;
 			setConnectionPhase('reconnecting');
 			setNotice('Trainer disconnected. Reconnecting automatically…');
-			reconnectController.current.start(selected.id, selected, 700);
+			scheduleBluetoothDeviceReconnect(reconnectController.current, selected);
 		} else if (connectionCancelled.current) {
 			setConnectionPhase(pairedDevice.current ? 'offline' : 'unpaired');
 			setNotice('Connection attempt stopped.');
@@ -182,6 +188,7 @@ export function useTrainerConnection(
 			device.current = selected;
 			store.actions.setDeviceName(selected.name);
 			setConnectionPhase('connected');
+			nextConnection.startOptionalMetrics();
 			reconnectController.current.reset(selected.id);
 			setNotice(`${selected.name ?? 'Trainer'} is connected and ready.`);
 			return true;
@@ -218,7 +225,7 @@ export function useTrainerConnection(
 			store.actions.setPairedDeviceName(selected.name);
 			autoReconnect.current = true;
 			if (!(await connectDevice(selected))) {
-				reconnectController.current.start(selected.id, selected);
+				scheduleBluetoothDeviceReconnect(reconnectController.current, selected);
 			}
 		} catch (error) {
 			setConnectionPhase(pairedDevice.current ? 'offline' : 'unpaired');
@@ -256,7 +263,7 @@ export function useTrainerConnection(
 		setConnectionPhase(pairedDevice.current ? 'offline' : 'unpaired');
 	}, [setConnectionPhase, setMetrics, store]);
 
-	async function reconnect() {
+	function reconnect() {
 		if (!pairedDevice.current) {
 			return;
 		}
@@ -265,9 +272,7 @@ export function useTrainerConnection(
 		disconnectRequested.current = false;
 		autoReconnect.current = true;
 		reconnectController.current.reset(selected.id);
-		if (!(await connectDevice(selected, true))) {
-			reconnectController.current.start(selected.id, selected);
-		}
+		reconnectBluetoothDeviceNow(reconnectController.current, selected);
 	}
 
 	const forget = useCallback(async () => {
@@ -301,51 +306,54 @@ export function useTrainerConnection(
 		[writeControl]
 	);
 
-	useEffect(() => {
-		const handlePageHide = () => {
-			unloading.current = true;
-			autoReconnect.current = false;
-			disconnectRequested.current = true;
-			reconnectController.current.cancelAll();
-			connectionCleanup.current();
-			device.current?.gatt?.disconnect();
-		};
-		window.addEventListener('pagehide', handlePageHide);
-		return () => window.removeEventListener('pagehide', handlePageHide);
-	}, []);
+	usePageHide(() => {
+		unloading.current = true;
+		autoReconnect.current = false;
+		disconnectRequested.current = true;
+		reconnectController.current.cancelAll();
+		connectionCleanup.current();
+		device.current?.gatt?.disconnect();
+	});
 
 	useEffect(() => {
-		let cancelled = false;
-		async function restore() {
-			autoReconnect.current = true;
-			connectionCancelled.current = false;
-			disconnectRequested.current = false;
-			if (!navigator.bluetooth?.getDevices) {
-				setConnectionPhase('unpaired');
-				setNotice(CHROME_BLUETOOTH_PERMISSION_MESSAGE);
-				return;
-			}
-			const remembered = await findRememberedKickr();
-			if (cancelled) {
-				return;
-			}
-			if (!remembered) {
-				setConnectionPhase('unpaired');
-				return;
-			}
-			pairedDevice.current = remembered;
-			store.actions.setPairedDeviceName(remembered.name);
-			setConnectionPhase('reconnecting');
-			reconnectController.current.start(remembered.id, remembered, 1);
+		if (!rememberedDevices.supported) {
+			setConnectionPhase('unpaired');
+			setNotice(CHROME_BLUETOOTH_PERMISSION_MESSAGE);
+			return;
 		}
-		restore().catch((error: unknown) => setNotice(errorMessage(error)));
+		if (rememberedDevices.error) {
+			setConnectionPhase('offline');
+			setNotice(errorMessage(rememberedDevices.error));
+			return;
+		}
+		if (!rememberedDevices.devices) {
+			return;
+		}
+		const remembered = selectRememberedKickr(rememberedDevices.devices);
+		if (!remembered) {
+			setConnectionPhase('unpaired');
+			return;
+		}
+		autoReconnect.current = true;
+		connectionCancelled.current = false;
+		disconnectRequested.current = false;
+		pairedDevice.current = remembered;
+		store.actions.setPairedDeviceName(remembered.name);
+		setConnectionPhase('reconnecting');
+		reconnectBluetoothDeviceNow(reconnectController.current, remembered);
 		return () => {
-			cancelled = true;
 			autoReconnect.current = false;
 			reconnectController.current.cancelAll();
 			connectionCleanup.current();
 		};
-	}, [setConnectionPhase, setNotice, store.actions.setPairedDeviceName]);
+	}, [
+		rememberedDevices.devices,
+		rememberedDevices.error,
+		rememberedDevices.supported,
+		setConnectionPhase,
+		setNotice,
+		store.actions.setPairedDeviceName,
+	]);
 
 	return {
 		cancelConnection,

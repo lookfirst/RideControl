@@ -17,6 +17,7 @@ import { WorkoutPanel } from './components/workout-panel';
 import { WorkoutProgress } from './components/workout-progress';
 import { useGearControl } from './hooks/use-gear-control';
 import { useHeartRateMonitor } from './hooks/use-heart-rate-monitor';
+import { useRememberedBluetoothDevices } from './hooks/use-remembered-bluetooth-devices';
 import { useSession } from './hooks/use-session';
 import { useSessionWorkflow } from './hooks/use-session-workflow';
 import { useTrainer } from './hooks/use-trainer';
@@ -63,15 +64,21 @@ function controlModeForClick(paired: boolean): ControlMode {
 }
 
 export function App() {
-	const trainer = useTrainer();
+	const rememberedDevices = useRememberedBluetoothDevices();
+	const trainer = useTrainer(rememberedDevices);
 	const [activeOverlay, setActiveOverlay] = useState<AppOverlay | undefined>(() =>
 		shouldShowWelcome() ? APP_OVERLAY.WELCOME : undefined
 	);
 	const devicesOpen = activeOverlay === APP_OVERLAY.DEVICES;
 	const clickShiftRef = useRef<(change: number) => void>(() => undefined);
 	const handleClickShift = useCallback((change: number) => clickShiftRef.current(change), []);
-	const click = useZwiftClick(handleClickShift, trainer.setNotice, devicesOpen);
-	const heartRate = useHeartRateMonitor(trainer.setNotice);
+	const heartRate = useHeartRateMonitor(rememberedDevices, trainer.setNotice);
+	const click = useZwiftClick(
+		handleClickShift,
+		trainer.setNotice,
+		devicesOpen,
+		rememberedDevices
+	);
 	const liveMetrics = metricsWithHeartRate(
 		trainer.metrics,
 		heartRate.connected,

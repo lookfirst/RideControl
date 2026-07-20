@@ -1,6 +1,12 @@
 import { describe, expect, test } from 'bun:test';
 import { startBluetoothNotifications } from '../src/lib/bluetooth-notifications';
 import {
+	bluetoothReconnectDelay,
+	createBluetoothReconnectController,
+	reconnectBluetoothDeviceNow,
+	reconnectBluetoothDevicesNow,
+} from '../src/lib/bluetooth-reconnect';
+import {
 	aggregateConnectionPhase,
 	deviceConnectionView,
 	removeConnectionPhase,
@@ -47,6 +53,64 @@ describe('device connection state', () => {
 });
 
 describe('reconnect controller', () => {
+	test('uses one fast retry policy and starts remembered devices in parallel', async () => {
+		const callbacks: Array<() => void | Promise<void>> = [];
+		const delays: number[] = [];
+		const attempts: string[] = [];
+		const controller = createBluetoothReconnectController<BluetoothDevice>({
+			attempt: (device) => {
+				attempts.push(device.id);
+				return Promise.resolve(true);
+			},
+			canRetry: () => true,
+			clearTimer: () => undefined,
+			setTimer: ((callback: () => void, delay: number) => {
+				callbacks.push(callback);
+				delays.push(delay);
+				return callbacks.length;
+			}) as typeof setTimeout,
+		});
+		const devices = [{ id: 'trainer' }, { id: 'heart-rate' }, { id: 'click-plus' }];
+		reconnectBluetoothDevicesNow(controller, devices as BluetoothDevice[]);
+
+		expect(delays).toEqual([1, 1, 1]);
+		expect(callbacks).toHaveLength(3);
+		await Promise.all(callbacks.map((callback) => callback()));
+		expect(attempts).toEqual(['trainer', 'heart-rate', 'click-plus']);
+		expect([1, 2, 3, 4, 5].map(bluetoothReconnectDelay)).toEqual([250, 500, 1000, 2000, 2000]);
+	});
+
+	test('connects an HRM directly without starting advertisement discovery', async () => {
+		const callbacks: Array<() => void | Promise<void>> = [];
+		let attempts = 0;
+		let advertisementWatches = 0;
+		const device = {
+			id: 'heart-rate',
+			watchAdvertisements: () => {
+				advertisementWatches += 1;
+				return Promise.resolve();
+			},
+		} as unknown as BluetoothDevice;
+		const controller = createBluetoothReconnectController<BluetoothDevice>({
+			attempt: () => {
+				attempts += 1;
+				return Promise.resolve(true);
+			},
+			canRetry: () => true,
+			setTimer: ((callback: () => void) => {
+				callbacks.push(callback);
+				return callbacks.length;
+			}) as typeof setTimeout,
+			watchAdvertisements: false,
+		});
+
+		reconnectBluetoothDeviceNow(controller, device);
+		await callbacks[0]?.();
+
+		expect(attempts).toBe(1);
+		expect(advertisementWatches).toBe(0);
+	});
+
 	test('retries until connected and then clears its pending work', async () => {
 		const callbacks: Array<() => void | Promise<void>> = [];
 		let attempts = 0;
@@ -111,6 +175,115 @@ describe('reconnect controller', () => {
 		expect(controller.isPending('plus')).toBeTrue();
 		expect(controller.isPending('minus')).toBeTrue();
 	});
+
+	test('preempts Bluetooth backoff as soon as the device advertises', async () => {
+		const callbacks: Array<() => void | Promise<void>> = [];
+		const cleared: unknown[] = [];
+		const delays: number[] = [];
+		let advertisementListener: EventListener | undefined;
+		let watchSignal: AbortSignal | undefined;
+		let attempts = 0;
+		const device = {
+			addEventListener: (_type: string, listener: EventListenerOrEventListenerObject) => {
+				advertisementListener = listener as EventListener;
+			},
+			id: 'heart-rate',
+			removeEventListener: () => {
+				advertisementListener = undefined;
+			},
+			watchAdvertisements: ({ signal }: { signal?: AbortSignal }) => {
+				watchSignal = signal;
+				return Promise.resolve();
+			},
+			watchingAdvertisements: false,
+		} as unknown as BluetoothDevice;
+		const controller = createBluetoothReconnectController<BluetoothDevice>({
+			attempt: () => {
+				expect(watchSignal?.aborted).toBeFalse();
+				attempts += 1;
+				return Promise.resolve(true);
+			},
+			canRetry: () => true,
+			clearTimer: (timer) => cleared.push(timer),
+			setTimer: ((callback: () => void, delay: number) => {
+				callbacks.push(callback);
+				delays.push(delay);
+				return callbacks.length;
+			}) as typeof setTimeout,
+		});
+
+		controller.start(device.id, device);
+		expect(delays).toEqual([250]);
+		advertisementListener?.({} as Event);
+		expect(cleared).toEqual([1]);
+		expect(delays).toEqual([250, 1]);
+		expect(watchSignal?.aborted).toBeFalse();
+		await callbacks[1]?.();
+		expect(attempts).toBe(1);
+		expect(controller.isPending(device.id)).toBeFalse();
+		expect(advertisementListener).toBeUndefined();
+		expect(watchSignal?.aborted).toBeTrue();
+	});
+
+	test('keeps discovery active during a connection attempt and stops it after success', async () => {
+		const callbacks: Array<() => void | Promise<void>> = [];
+		let watchSignal: AbortSignal | undefined;
+		const device = {
+			addEventListener: () => undefined,
+			id: 'trainer',
+			removeEventListener: () => undefined,
+			watchAdvertisements: ({ signal }: { signal?: AbortSignal }) => {
+				watchSignal = signal;
+				return Promise.resolve();
+			},
+			watchingAdvertisements: false,
+		} as unknown as BluetoothDevice;
+		const controller = createBluetoothReconnectController<BluetoothDevice>({
+			attempt: () => {
+				expect(watchSignal?.aborted).toBeFalse();
+				return Promise.resolve(true);
+			},
+			canRetry: () => true,
+			setTimer: ((callback: () => void) => {
+				callbacks.push(callback);
+				return callbacks.length;
+			}) as typeof setTimeout,
+		});
+
+		controller.start(device.id, device);
+		expect(watchSignal?.aborted).toBeFalse();
+		await callbacks[0]?.();
+		expect(controller.isPending(device.id)).toBeFalse();
+		expect(watchSignal?.aborted).toBeTrue();
+	});
+
+	test('preserves an advertisement received during an in-flight attempt', async () => {
+		const callbacks: Array<() => void | Promise<void>> = [];
+		const delays: number[] = [];
+		let finishAttempt: ((connected: boolean) => void) | undefined;
+		const controller = createReconnectController<string>({
+			attempt: () =>
+				new Promise<boolean>((resolve) => {
+					finishAttempt = resolve;
+				}),
+			canRetry: () => true,
+			delayForAttempt: () => 500,
+			setTimer: ((callback: () => void, delay: number) => {
+				callbacks.push(callback);
+				delays.push(delay);
+				return callbacks.length;
+			}) as typeof setTimeout,
+		});
+
+		controller.start('heart-rate', 'device');
+		const firstAttempt = callbacks[0]?.();
+		controller.expedite('heart-rate', 'device', 1);
+		finishAttempt?.(false);
+		await firstAttempt;
+
+		expect(delays).toEqual([500, 1]);
+		expect(controller.isPending('heart-rate')).toBeTrue();
+	});
 });
 
 describe('Bluetooth notifications', () => {
@@ -141,6 +314,21 @@ describe('Bluetooth notifications', () => {
 		await expect(startBluetoothNotifications(characteristic, () => undefined)).rejects.toThrow(
 			'unavailable'
 		);
+		expect(listeners.size).toBe(0);
+	});
+
+	test('times out stalled notification setup and removes its listener', async () => {
+		const listeners = new Set<EventListenerOrEventListenerObject>();
+		const characteristic = {
+			addEventListener: (_type: string, listener: EventListenerOrEventListenerObject) =>
+				listeners.add(listener),
+			removeEventListener: (_type: string, listener: EventListenerOrEventListenerObject) =>
+				listeners.delete(listener),
+			startNotifications: () => new Promise(() => undefined),
+		} as unknown as BluetoothRemoteGATTCharacteristic;
+		await expect(
+			startBluetoothNotifications(characteristic, () => undefined, 1)
+		).rejects.toThrow('Bluetooth notification setup timed out.');
 		expect(listeners.size).toBe(0);
 	});
 });

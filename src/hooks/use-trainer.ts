@@ -7,6 +7,7 @@ import { errorMessage } from '../lib/errors';
 import { resistanceAfterGearShift } from '../lib/gears';
 import { scheduleNoticeDismissal } from '../lib/notification';
 import { clamp } from '../lib/numbers';
+import type { RememberedBluetoothDeviceCatalog } from '../lib/remembered-bluetooth-devices';
 import {
 	clampResistance,
 	DEFAULT_RESISTANCE,
@@ -18,7 +19,7 @@ import { RESISTANCE_STORAGE_KEY } from '../lib/session';
 import { createTrainerStore } from '../stores/trainer-store';
 import { useTrainerConnection } from './use-trainer-connection';
 
-export function useTrainer() {
+export function useTrainer(rememberedDevices: RememberedBluetoothDeviceCatalog) {
 	const store = useMemo(() => createTrainerStore(), []);
 	const state = useSelector(store);
 	const { setNotice, setResistance, setResistanceKeyFlash, setResistanceRamp } = store.actions;
@@ -30,7 +31,12 @@ export function useTrainer() {
 	const resistanceTarget = useRef(store.get().resistance);
 	const keyboardControlsEnabled = useRef(true);
 	const gearControlsEnabled = useRef(false);
-	const trainerConnection = useTrainerConnection(store, appliedResistance, resistanceTarget);
+	const trainerConnection = useTrainerConnection(
+		store,
+		appliedResistance,
+		resistanceTarget,
+		rememberedDevices
+	);
 	const connection = deviceConnectionView(state.connectionPhase);
 
 	useEffect(
