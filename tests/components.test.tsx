@@ -474,10 +474,12 @@ describe('view components', () => {
 		expect(panel).toContain('Cedar Circuit');
 		expect(panel).toContain('Highland Loop');
 		expect(panel).toContain('Granite Switchbacks');
+		expect(panel).toContain('Ridgeline Time Trial');
 		expect(panel).toContain('Harbor Ring course map');
 		expect(panel).toContain('Harbor Ring elevation profile');
 		expect(panel).toContain('Import GPX');
-		expect(panel.match(/Download GPX/g)).toHaveLength(5);
+		expect(panel.match(/Download GPX/g)).toHaveLength(6);
+		expect(panel).toContain('10.0 mi out &amp; back');
 		expect(panel).toContain('15.0 mi loop');
 		expect(panel).toContain('15–25% resistance');
 		expect(panel).toContain('49 ft climbing');
@@ -510,7 +512,7 @@ describe('view components', () => {
 		expect(customPanel).toContain('Imported');
 		expect(customPanel).toContain('out &amp; back');
 		expect(customPanel).toContain('Remove');
-		expect(customPanel.match(/Download GPX/g)).toHaveLength(6);
+		expect(customPanel.match(/Download GPX/g)).toHaveLength(7);
 		const lockedPanel = render(
 			<WorkoutPanel
 				activeCourse={course}
@@ -527,7 +529,7 @@ describe('view components', () => {
 			/>
 		);
 		expect(lockedPanel).toContain('End the current session before changing the workout.');
-		expect(lockedPanel.match(/disabled=""/g)).toHaveLength(5);
+		expect(lockedPanel.match(/disabled=""/g)).toHaveLength(6);
 
 		const terrain = workoutTerrainAtDistance(course, course.distance * 2 + 2);
 		const progress = render(

@@ -61,10 +61,9 @@ describe('terrain workouts', () => {
 		});
 	});
 
-	test('defines original closed-loop courses with useful terrain metadata', () => {
-		expect(WORKOUT_COURSES).toHaveLength(5);
+	test('defines built-in courses with useful terrain metadata', () => {
+		expect(WORKOUT_COURSES).toHaveLength(6);
 		for (const workout of WORKOUT_COURSES) {
-			expect(workout.routeType).toBe(WORKOUT_ROUTE_TYPE.LOOP);
 			expect(workout.distance).toBeGreaterThan(0);
 			expect(workout.elevationGain).toBeGreaterThan(0);
 			expect(workout.points[0]).toMatchObject({
@@ -74,6 +73,28 @@ describe('terrain workouts', () => {
 			expect(workout.points.at(-1)?.distance).toBe(workout.distance);
 			expect(workoutMaximumGrade(workout)).toBeGreaterThan(0);
 		}
+	});
+
+	test('offers a ten-mile time trial with a mirrored five-mile hillclimb', () => {
+		const timeTrial = WORKOUT_COURSES.find((workout) => workout.id === 'ridgeline-time-trial');
+		if (!timeTrial) {
+			throw new Error('Expected the Ridgeline Time Trial workout course');
+		}
+		const turnaroundDistance = timeTrial.distance / 2;
+		const start = workoutTerrainAtDistance(timeTrial, 0);
+		const turnaround = workoutTerrainAtDistance(timeTrial, turnaroundDistance);
+		const outbound = workoutTerrainAtDistance(timeTrial, 4.4);
+		const returning = workoutTerrainAtDistance(timeTrial, timeTrial.distance - 4.4);
+		expect(timeTrial.routeType).toBe(WORKOUT_ROUTE_TYPE.OUT_AND_BACK);
+		expect(timeTrial.distance / 1.609_344).toBeCloseTo(10, 5);
+		expect(turnaroundDistance / 1.609_344).toBeCloseTo(5, 5);
+		expect((turnaround.elevation - start.elevation) * 3.280_84).toBeWithin(285, 300);
+		expect(timeTrial.elevationGain * 3.280_84).toBeWithin(300, 335);
+		expect(workoutMaximumGrade(timeTrial)).toBeLessThan(3);
+		expect(outbound.grade).toBeGreaterThan(0);
+		expect(returning.grade).toBeLessThan(0);
+		expect(returning.x).toBeCloseTo(outbound.x, 1);
+		expect(returning.y).toBeCloseTo(outbound.y, 1);
 	});
 
 	test('makes switchback corners briefly steeper during a four-mile climb', () => {
@@ -90,6 +111,21 @@ describe('terrain workouts', () => {
 		expect(cornerGrade).toBeGreaterThan(straightGrade + 2);
 		expect(smoothedGrade).toBeCloseTo(straightGrade, 0);
 		expect(workoutMaximumGrade(switchbacks)).toBeWithin(9.5, 10.5);
+	});
+
+	test('mixes rollers into the Granite Switchbacks descent', () => {
+		const switchbacks = WORKOUT_COURSES.find((workout) => workout.id === 'granite-switchbacks');
+		if (!switchbacks) {
+			throw new Error('Expected the Granite Switchbacks workout course');
+		}
+		const returnPoints = switchbacks.points.filter((point) => point.distance >= 8.6);
+		const elevationChanges = returnPoints.slice(1).map((point, index) => {
+			const previous = returnPoints[index];
+			return previous ? point.elevation - previous.elevation : 0;
+		});
+		expect(elevationChanges.filter((change) => change > 0)).toHaveLength(5);
+		expect(elevationChanges.filter((change) => change < 0).length).toBeGreaterThan(5);
+		expect(returnPoints.at(-1)?.elevation).toBeLessThan(returnPoints[0]?.elevation ?? 0);
 	});
 
 	test('traverses out-and-back courses to the turnaround and back to the start', () => {

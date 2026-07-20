@@ -8,6 +8,12 @@ import type {
 	WorkoutRoutePoint,
 	WorkoutTerrain,
 } from '../types';
+import cedarCircuitDefinition from '../workouts/cedar-circuit.json';
+import graniteSwitchbacksDefinition from '../workouts/granite-switchbacks.json';
+import harborRingDefinition from '../workouts/harbor-ring.json';
+import highlandLoopDefinition from '../workouts/highland-loop.json';
+import prairieRollDefinition from '../workouts/prairie-roll.json';
+import ridgelineTimeTrialDefinition from '../workouts/ridgeline-time-trial.json';
 import { elevationTotalsForSamples } from './elevation';
 import { distanceBetween } from './gpx';
 import { clamp, nonNegativeNumber } from './numbers';
@@ -50,6 +56,17 @@ export const WORKOUT_FLAT_START_DISTANCE = 1.5;
 interface CourseMapPoint extends RoutePoint {
 	x: number;
 	y: number;
+}
+
+interface BuiltInWorkoutDefinition {
+	baseResistance: number;
+	description: string;
+	difficulty: string;
+	distance: number;
+	id: string;
+	name: string;
+	points: CourseMapPoint[];
+	routeType: string;
 }
 
 interface WorkoutDashboardSource {
@@ -269,155 +286,33 @@ function createGeographicCourse(
 	};
 }
 
-function createCourse(
-	id: string,
-	name: string,
-	description: string,
-	difficulty: WorkoutDifficulty,
-	distance: number,
-	points: CourseMapPoint[],
-	baseResistance = DEFAULT_TERRAIN_RESISTANCE
-): WorkoutCourse {
+function createBuiltInCourse(definition: BuiltInWorkoutDefinition): WorkoutCourse {
+	if (!(isWorkoutDifficulty(definition.difficulty) && isWorkoutRouteType(definition.routeType))) {
+		throw new Error(`Invalid built-in workout definition: ${definition.id}`);
+	}
 	return createGeographicCourse(
-		id,
-		name,
-		description,
-		difficulty,
-		distance,
-		geographicPointsForMap(distance, points),
-		baseResistance
+		definition.id,
+		definition.name,
+		definition.description,
+		definition.difficulty,
+		definition.distance,
+		geographicPointsForMap(definition.distance, definition.points),
+		definition.baseResistance,
+		definition.routeType
 	);
 }
 
-export const WORKOUT_COURSES: WorkoutCourse[] = [
-	createCourse(
-		'harbor-ring',
-		'Harbor Ring',
-		'A relaxed waterfront loop with short ramps and long recovery sections.',
-		WORKOUT_DIFFICULTY.GENTLE,
-		6.4,
-		[
-			{ distance: 0, elevation: 18, x: 18, y: 40 },
-			{ distance: 0.8, elevation: 21, x: 33, y: 18 },
-			{ distance: 1.6, elevation: 24, x: 60, y: 12 },
-			{ distance: 2.4, elevation: 28, x: 86, y: 27 },
-			{ distance: 3.2, elevation: 24, x: 68, y: 45 },
-			{ distance: 4, elevation: 20, x: 88, y: 70 },
-			{ distance: 4.8, elevation: 25, x: 58, y: 87 },
-			{ distance: 5.6, elevation: 21, x: 27, y: 78 },
-			{ distance: 6.4, elevation: 18, x: 18, y: 40 },
-		]
-	),
-	createCourse(
-		'prairie-roll',
-		'Prairie Roll',
-		'Fifteen miles of long, gentle rollers moving from 15–25% resistance around a steady 20%.',
-		WORKOUT_DIFFICULTY.GENTLE,
-		24.140_16,
-		[
-			{ distance: 0, elevation: 30, x: 12, y: 52 },
-			{ distance: 1.5, elevation: 30, x: 18, y: 27 },
-			{ distance: 4, elevation: 69, x: 38, y: 13 },
-			{ distance: 6.5, elevation: 30, x: 55, y: 25 },
-			{ distance: 9.25, elevation: 69, x: 76, y: 12 },
-			{ distance: 12, elevation: 30, x: 92, y: 36 },
-			{ distance: 15, elevation: 69, x: 76, y: 55 },
-			{ distance: 18, elevation: 30, x: 90, y: 77 },
-			{ distance: 21, elevation: 69, x: 52, y: 88 },
-			{ distance: 24.140_16, elevation: 30, x: 12, y: 52 },
-		],
-		20
-	),
-	createCourse(
-		'cedar-circuit',
-		'Cedar Circuit',
-		'A flat rollout into constant rollers through a broad forest loop with two climbs.',
-		WORKOUT_DIFFICULTY.MODERATE,
-		9.6,
-		[
-			{ distance: 0, elevation: 46, x: 15, y: 24 },
-			{ distance: 0.8, elevation: 46, x: 34, y: 12 },
-			{ distance: 1.6, elevation: 60, x: 56, y: 18 },
-			{ distance: 2.4, elevation: 82, x: 78, y: 10 },
-			{ distance: 3.2, elevation: 58, x: 92, y: 28 },
-			{ distance: 4, elevation: 91, x: 77, y: 45 },
-			{ distance: 4.8, elevation: 128, x: 91, y: 68 },
-			{ distance: 5.6, elevation: 101, x: 68, y: 86 },
-			{ distance: 6.4, elevation: 68, x: 44, y: 78 },
-			{ distance: 7.2, elevation: 84, x: 22, y: 90 },
-			{ distance: 8, elevation: 63, x: 8, y: 68 },
-			{ distance: 8.8, elevation: 52, x: 24, y: 50 },
-			{ distance: 9.6, elevation: 46, x: 15, y: 24 },
-		]
-	),
-	createCourse(
-		'highland-loop',
-		'Highland Loop',
-		'A flat rollout into one long mountain ascent, a ridge, and a fast descent.',
-		WORKOUT_DIFFICULTY.CHALLENGING,
-		12,
-		[
-			{ distance: 0, elevation: 74, x: 50, y: 50 },
-			{ distance: 0.75, elevation: 74, x: 61, y: 29 },
-			{ distance: 1.5, elevation: 74, x: 78, y: 14 },
-			{ distance: 2.25, elevation: 119, x: 91, y: 23 },
-			{ distance: 3, elevation: 176, x: 92, y: 43 },
-			{ distance: 3.75, elevation: 254, x: 80, y: 61 },
-			{ distance: 4.5, elevation: 325, x: 64, y: 66 },
-			{ distance: 5.25, elevation: 348, x: 54, y: 56 },
-			{ distance: 6, elevation: 338, x: 50, y: 50 },
-			{ distance: 6.75, elevation: 278, x: 43, y: 44 },
-			{ distance: 7.5, elevation: 214, x: 28, y: 34 },
-			{ distance: 8.25, elevation: 157, x: 11, y: 43 },
-			{ distance: 9, elevation: 121, x: 8, y: 63 },
-			{ distance: 9.75, elevation: 147, x: 20, y: 82 },
-			{ distance: 10.5, elevation: 112, x: 39, y: 88 },
-			{ distance: 11.25, elevation: 83, x: 51, y: 68 },
-			{ distance: 12, elevation: 74, x: 50, y: 50 },
-		]
-	),
-	createCourse(
-		'granite-switchbacks',
-		'Granite Switchbacks',
-		'A sustained four-mile switchback climb with steep hairpins, a high ridge, and a sweeping descent.',
-		WORKOUT_DIFFICULTY.CHALLENGING,
-		18,
-		[
-			{ distance: 0, elevation: 80, x: 12, y: 88 },
-			{ distance: 0.75, elevation: 80, x: 10, y: 80 },
-			{ distance: 1.5, elevation: 80, x: 16, y: 72 },
-			{ distance: 2.2, elevation: 108, x: 76, y: 72 },
-			{ distance: 2.32, elevation: 120, x: 86, y: 67 },
-			{ distance: 2.47, elevation: 126, x: 76, y: 62 },
-			{ distance: 3.15, elevation: 153, x: 24, y: 62 },
-			{ distance: 3.27, elevation: 165, x: 14, y: 57 },
-			{ distance: 3.42, elevation: 171, x: 24, y: 52 },
-			{ distance: 4.1, elevation: 198, x: 76, y: 52 },
-			{ distance: 4.22, elevation: 210, x: 86, y: 47 },
-			{ distance: 4.37, elevation: 216, x: 76, y: 42 },
-			{ distance: 5.05, elevation: 243, x: 24, y: 42 },
-			{ distance: 5.17, elevation: 255, x: 14, y: 37 },
-			{ distance: 5.32, elevation: 261, x: 24, y: 32 },
-			{ distance: 6, elevation: 288, x: 76, y: 32 },
-			{ distance: 6.12, elevation: 300, x: 86, y: 27 },
-			{ distance: 6.27, elevation: 306, x: 76, y: 22 },
-			{ distance: 6.95, elevation: 333, x: 24, y: 22 },
-			{ distance: 7.07, elevation: 345, x: 14, y: 17 },
-			{ distance: 7.22, elevation: 351, x: 24, y: 12 },
-			{ distance: 7.94, elevation: 380, x: 68, y: 12 },
-			{ distance: 8.6, elevation: 388, x: 82, y: 15 },
-			{ distance: 9.5, elevation: 340, x: 94, y: 28 },
-			{ distance: 10.6, elevation: 280, x: 96, y: 48 },
-			{ distance: 11.8, elevation: 200, x: 94, y: 70 },
-			{ distance: 13, elevation: 130, x: 82, y: 90 },
-			{ distance: 14.2, elevation: 105, x: 60, y: 94 },
-			{ distance: 15.4, elevation: 90, x: 36, y: 92 },
-			{ distance: 16.5, elevation: 82, x: 20, y: 95 },
-			{ distance: 17.3, elevation: 80, x: 10, y: 90 },
-			{ distance: 18, elevation: 80, x: 12, y: 88 },
-		]
-	),
-];
+const BUILT_IN_WORKOUT_DEFINITIONS = [
+	harborRingDefinition,
+	prairieRollDefinition,
+	cedarCircuitDefinition,
+	highlandLoopDefinition,
+	graniteSwitchbacksDefinition,
+	ridgelineTimeTrialDefinition,
+] satisfies BuiltInWorkoutDefinition[];
+
+export const WORKOUT_COURSES: WorkoutCourse[] =
+	BUILT_IN_WORKOUT_DEFINITIONS.map(createBuiltInCourse);
 
 const BUILT_IN_WORKOUT_COURSES_BY_ID = new Map(
 	WORKOUT_COURSES.map((course) => [course.id, course])
