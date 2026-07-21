@@ -12,11 +12,16 @@ import {
 	groupSessionsByDate,
 	isImportedSession,
 	normalizeSavedSession,
+	normalizeSavedSessionRecord,
 	requestPersistentSessionStorage,
 	saveSessionRecords,
 	sessionListAfterDelete,
 	sessionSummary,
 } from '../src/lib/saved-sessions';
+import {
+	createSessionWorkoutSnapshot,
+	restoreSessionWorkoutSnapshot,
+} from '../src/lib/session-workout-snapshots';
 import { WORKOUT_COURSES } from '../src/lib/workouts';
 import type { SavedSession, SavedSessionSummary, SessionSnapshot } from '../src/types';
 
@@ -125,6 +130,47 @@ describe('saved session utilities', () => {
 				['session-summaries', ['session-1']],
 			])
 		);
+	});
+
+	test('deduplicates immutable workout snapshots outside session records', () => {
+		const [workout] = WORKOUT_COURSES;
+		if (!workout) {
+			throw new Error('Expected a built-in workout course');
+		}
+		const session = {
+			...createSavedSession(snapshot, { comments: '' }, 1234, 'session-with-workout'),
+			workout: { course: workout },
+		};
+		const writes = new Map<string, unknown[]>();
+		const { snapshotId } = saveSessionRecords(
+			(name) =>
+				({
+					put: (value: unknown) => {
+						writes.set(name, [...(writes.get(name) ?? []), value]);
+						return {} as IDBRequest<IDBValidKey>;
+					},
+				}) as Pick<IDBObjectStore, 'put'>,
+			session
+		);
+		const storedSession = writes.get('sessions')?.[0];
+		const storedWorkout = writes.get('session-workouts')?.[0];
+		expect(storedSession).toMatchObject({ workoutSnapshotId: snapshotId });
+		expect('workout' in (storedSession as Record<string, unknown>)).toBeFalse();
+		expect(storedWorkout).toMatchObject({ id: snapshotId, workout: session.workout });
+		expect(
+			normalizeSavedSessionRecord(
+				storedSession as Parameters<typeof normalizeSavedSessionRecord>[0],
+				storedWorkout as Parameters<typeof normalizeSavedSessionRecord>[1]
+			).workout
+		).toEqual(session.workout);
+		expect(createSessionWorkoutSnapshot({ course: { ...workout } })?.id).toBe(snapshotId);
+		const revisedSnapshot = createSessionWorkoutSnapshot({
+			course: { ...workout, name: `${workout.name} revised` },
+		});
+		expect(revisedSnapshot?.id).not.toBe(snapshotId);
+		expect(restoreSessionWorkoutSnapshot(revisedSnapshot)).toMatchObject({
+			workout: { course: { name: `${workout.name} revised` } },
+		});
 	});
 
 	test('restores resistance aggregates for legacy saved sessions', () => {

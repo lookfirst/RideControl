@@ -4,23 +4,33 @@ import type {
 	SessionFeeling,
 	SessionMetadata,
 	SessionSnapshot,
+	SessionWorkout,
 } from '../types';
 import { restoreElevationTotals } from './elevation';
+import { indexedDbRequestResult, indexedDbTransactionComplete } from './indexed-db';
 import {
 	aggregateGear,
 	aggregateResistance,
 	controlModeForHistory,
 	restoreAggregate,
 } from './session';
+import {
+	createSessionWorkoutSnapshot,
+	restoreSessionWorkoutSnapshot,
+	restoreSnapshotWorkout,
+	type SessionWorkoutSnapshot,
+} from './session-workout-snapshots';
 import { IMPORTED_TCX_ID_PREFIX } from './tcx-schema';
-import { isFiniteNumber, isString } from './type-guards';
+import { isFiniteNumber, isRecord, isString } from './type-guards';
 import { restoreSessionWorkout } from './workouts';
 
 const DATABASE_NAME = 'ridecontrol-sessions';
-const DATABASE_VERSION = 1;
+const DATABASE_VERSION = 2;
 const SESSION_STORE = 'sessions';
 const SUMMARY_STORE = 'session-summaries';
+const WORKOUT_STORE = 'session-workouts';
 const ENDED_AT_INDEX = 'endedAt';
+const WORKOUT_SNAPSHOT_INDEX = 'workoutSnapshotId';
 const MERIDIEM_SUFFIX = /\s*(AM|PM)$/i;
 const SESSION_DATE_FORMATTER = new Intl.DateTimeFormat(undefined, { dateStyle: 'full' });
 const SESSION_IMPORT_FORMATTER = new Intl.DateTimeFormat(undefined, {
@@ -38,20 +48,43 @@ export const SESSION_FEELING_OPTIONS: { label: string; value: SessionFeeling }[]
 
 type SessionTiming = Pick<SavedSessionSummary, 'elapsedSeconds' | 'endedAt' | 'startedAt'>;
 
+export type SavedSessionRecord = Omit<SavedSession, 'workout'> & {
+	workout?: SessionWorkout;
+	workoutSnapshotId?: string;
+};
+
 let databasePromise: Promise<IDBDatabase> | undefined;
 
-function requestResult<T>(request: IDBRequest<T>): Promise<T> {
-	return new Promise((resolve, reject) => {
-		request.addEventListener('success', () => resolve(request.result), { once: true });
-		request.addEventListener('error', () => reject(request.error), { once: true });
-	});
+function storedSessionRecords(session: SavedSession): {
+	session: SavedSessionRecord;
+	snapshot?: SessionWorkoutSnapshot;
+} {
+	const snapshot = createSessionWorkoutSnapshot(session.workout);
+	const { workout: _workout, ...record } = session;
+	return {
+		session: snapshot ? { ...record, workoutSnapshotId: snapshot.id } : record,
+		snapshot,
+	};
 }
 
-function transactionComplete(transaction: IDBTransaction): Promise<void> {
-	return new Promise((resolve, reject) => {
-		transaction.addEventListener('complete', () => resolve(), { once: true });
-		transaction.addEventListener('abort', () => reject(transaction.error), { once: true });
-		transaction.addEventListener('error', () => reject(transaction.error), { once: true });
+function migrateLegacySessionWorkouts(sessions: IDBObjectStore, workouts: IDBObjectStore): void {
+	const request = sessions.openCursor();
+	request.addEventListener('success', () => {
+		const cursor = request.result;
+		if (!cursor) {
+			return;
+		}
+		const value: unknown = cursor.value;
+		if (isRecord(value) && !isString(value.workoutSnapshotId)) {
+			const workout = restoreSnapshotWorkout(value.workout);
+			const snapshot = createSessionWorkoutSnapshot(workout);
+			if (snapshot) {
+				const { workout: _workout, ...record } = value;
+				workouts.put(snapshot);
+				cursor.update({ ...record, workoutSnapshotId: snapshot.id });
+			}
+		}
+		cursor.continue();
 	});
 }
 
@@ -63,14 +96,24 @@ function openDatabase(): Promise<IDBDatabase> {
 		const request = indexedDB.open(DATABASE_NAME, DATABASE_VERSION);
 		request.addEventListener(
 			'upgradeneeded',
-			() => {
+			(event) => {
 				const database = request.result;
-				if (!database.objectStoreNames.contains(SESSION_STORE)) {
-					database.createObjectStore(SESSION_STORE, { keyPath: 'id' });
+				const { oldVersion } = event as IDBVersionChangeEvent;
+				const sessions = database.objectStoreNames.contains(SESSION_STORE)
+					? request.transaction?.objectStore(SESSION_STORE)
+					: database.createObjectStore(SESSION_STORE, { keyPath: 'id' });
+				if (sessions && !sessions.indexNames.contains(WORKOUT_SNAPSHOT_INDEX)) {
+					sessions.createIndex(WORKOUT_SNAPSHOT_INDEX, WORKOUT_SNAPSHOT_INDEX);
 				}
 				if (!database.objectStoreNames.contains(SUMMARY_STORE)) {
 					const summaries = database.createObjectStore(SUMMARY_STORE, { keyPath: 'id' });
 					summaries.createIndex(ENDED_AT_INDEX, ENDED_AT_INDEX);
+				}
+				const workouts = database.objectStoreNames.contains(WORKOUT_STORE)
+					? request.transaction?.objectStore(WORKOUT_STORE)
+					: database.createObjectStore(WORKOUT_STORE, { keyPath: 'id' });
+				if (oldVersion < 2 && sessions && workouts) {
+					migrateLegacySessionWorkouts(sessions, workouts);
 				}
 			},
 			{ once: true }
@@ -121,6 +164,30 @@ function normalizedImportedAt(importedAt: unknown): number | undefined {
 	return isFiniteNumber(importedAt) && importedAt >= 0 ? importedAt : undefined;
 }
 
+async function getSessionWorkoutSnapshot(
+	database: IDBDatabase,
+	id: string
+): Promise<SessionWorkoutSnapshot | undefined> {
+	const transaction = database.transaction(WORKOUT_STORE, 'readonly');
+	const completed = indexedDbTransactionComplete(transaction);
+	const value: unknown = await indexedDbRequestResult(
+		transaction.objectStore(WORKOUT_STORE).get(id)
+	);
+	await completed;
+	return restoreSessionWorkoutSnapshot(value);
+}
+
+export function normalizeSavedSessionRecord(
+	record: SavedSessionRecord,
+	snapshot?: SessionWorkoutSnapshot
+): SavedSession {
+	const { workoutSnapshotId: _workoutSnapshotId, ...session } = record;
+	return normalizeSavedSession({
+		...session,
+		workout: snapshot?.workout ?? restoreSessionWorkout(record.workout),
+	});
+}
+
 export function normalizeSavedSessionSummary(session: SavedSessionSummary): SavedSessionSummary {
 	return {
 		...session,
@@ -140,9 +207,14 @@ type StoreGetter<T> = (name: string) => T;
 export function saveSessionRecords(
 	getStore: StoreGetter<Pick<IDBObjectStore, 'put'>>,
 	session: SavedSession
-): void {
-	getStore(SESSION_STORE).put(session);
+): { snapshotId?: string } {
+	const records = storedSessionRecords(session);
+	getStore(SESSION_STORE).put(records.session);
 	getStore(SUMMARY_STORE).put(sessionSummary(session));
+	if (records.snapshot) {
+		getStore(WORKOUT_STORE).put(records.snapshot);
+	}
+	return { snapshotId: records.snapshot?.id };
 }
 
 export function deleteSessionRecords(
@@ -155,32 +227,65 @@ export function deleteSessionRecords(
 
 export async function saveSession(session: SavedSession): Promise<void> {
 	const database = await openDatabase();
-	const transaction = database.transaction([SESSION_STORE, SUMMARY_STORE], 'readwrite');
-	const completed = transactionComplete(transaction);
-	saveSessionRecords((name) => transaction.objectStore(name), session);
+	const transaction = database.transaction(
+		[SESSION_STORE, SUMMARY_STORE, WORKOUT_STORE],
+		'readwrite'
+	);
+	const completed = indexedDbTransactionComplete(transaction);
+	const sessions = transaction.objectStore(SESSION_STORE);
+	const previous = await indexedDbRequestResult(
+		sessions.get(session.id) as IDBRequest<SavedSessionRecord | undefined>
+	);
+	const { snapshotId } = saveSessionRecords((name) => transaction.objectStore(name), session);
+	if (previous?.workoutSnapshotId && previous.workoutSnapshotId !== snapshotId) {
+		const remaining = await indexedDbRequestResult(
+			sessions.index(WORKOUT_SNAPSHOT_INDEX).count(previous.workoutSnapshotId)
+		);
+		if (remaining === 0) {
+			transaction.objectStore(WORKOUT_STORE).delete(previous.workoutSnapshotId);
+		}
+	}
 	await completed;
 }
 
 export async function deleteSavedSession(id: string): Promise<void> {
 	const database = await openDatabase();
-	const transaction = database.transaction([SESSION_STORE, SUMMARY_STORE], 'readwrite');
-	const completed = transactionComplete(transaction);
+	const transaction = database.transaction(
+		[SESSION_STORE, SUMMARY_STORE, WORKOUT_STORE],
+		'readwrite'
+	);
+	const completed = indexedDbTransactionComplete(transaction);
+	const sessions = transaction.objectStore(SESSION_STORE);
+	const record = await indexedDbRequestResult(
+		sessions.get(id) as IDBRequest<SavedSessionRecord | undefined>
+	);
 	deleteSessionRecords((name) => transaction.objectStore(name), id);
+	if (record?.workoutSnapshotId) {
+		const remaining = await indexedDbRequestResult(
+			sessions.index(WORKOUT_SNAPSHOT_INDEX).count(record.workoutSnapshotId)
+		);
+		if (remaining === 0) {
+			transaction.objectStore(WORKOUT_STORE).delete(record.workoutSnapshotId);
+		}
+	}
 	await completed;
 }
 
 export async function getSavedSession(id: string): Promise<SavedSession | undefined> {
 	const database = await openDatabase();
 	const transaction = database.transaction(SESSION_STORE, 'readonly');
-	const completed = transactionComplete(transaction);
-	const session = await requestResult(
-		transaction.objectStore(SESSION_STORE).get(id) as IDBRequest<SavedSession | undefined>
+	const completed = indexedDbTransactionComplete(transaction);
+	const record = await indexedDbRequestResult(
+		transaction.objectStore(SESSION_STORE).get(id) as IDBRequest<SavedSessionRecord | undefined>
 	);
 	await completed;
-	if (!session) {
+	if (!record) {
 		return;
 	}
-	return normalizeSavedSession(session);
+	const snapshot = record.workoutSnapshotId
+		? await getSessionWorkoutSnapshot(database, record.workoutSnapshotId)
+		: undefined;
+	return normalizeSavedSessionRecord(record, snapshot);
 }
 
 export function normalizeSavedSession(session: SavedSession): SavedSession {
@@ -207,8 +312,8 @@ export function normalizeSavedSession(session: SavedSession): SavedSession {
 export async function countSavedSessions(): Promise<number> {
 	const database = await openDatabase();
 	const transaction = database.transaction(SUMMARY_STORE, 'readonly');
-	const completed = transactionComplete(transaction);
-	const count = await requestResult(transaction.objectStore(SUMMARY_STORE).count());
+	const completed = indexedDbTransactionComplete(transaction);
+	const count = await indexedDbRequestResult(transaction.objectStore(SUMMARY_STORE).count());
 	await completed;
 	return count;
 }
@@ -219,7 +324,7 @@ export async function listSavedSessions(
 ): Promise<SavedSessionSummary[]> {
 	const database = await openDatabase();
 	const transaction = database.transaction(SUMMARY_STORE, 'readonly');
-	const completed = transactionComplete(transaction);
+	const completed = indexedDbTransactionComplete(transaction);
 	const index = transaction.objectStore(SUMMARY_STORE).index(ENDED_AT_INDEX);
 	const range =
 		beforeEndedAt === undefined ? undefined : IDBKeyRange.upperBound(beforeEndedAt, true);
@@ -244,12 +349,31 @@ export async function listSavedSessions(
 export async function listAllSavedSessions(): Promise<SavedSession[]> {
 	const database = await openDatabase();
 	const transaction = database.transaction(SESSION_STORE, 'readonly');
-	const completed = transactionComplete(transaction);
-	const sessions = await requestResult(
-		transaction.objectStore(SESSION_STORE).getAll() as IDBRequest<SavedSession[]>
+	const completed = indexedDbTransactionComplete(transaction);
+	const records = await indexedDbRequestResult(
+		transaction.objectStore(SESSION_STORE).getAll() as IDBRequest<SavedSessionRecord[]>
 	);
 	await completed;
-	return sessions.map(normalizeSavedSession).sort((left, right) => right.endedAt - left.endedAt);
+	const workoutTransaction = database.transaction(WORKOUT_STORE, 'readonly');
+	const workoutsCompleted = indexedDbTransactionComplete(workoutTransaction);
+	const snapshotValues: unknown[] = await indexedDbRequestResult(
+		workoutTransaction.objectStore(WORKOUT_STORE).getAll()
+	);
+	await workoutsCompleted;
+	const snapshots = new Map(
+		snapshotValues.flatMap((value) => {
+			const snapshot = restoreSessionWorkoutSnapshot(value);
+			return snapshot ? [[snapshot.id, snapshot] as const] : [];
+		})
+	);
+	return records
+		.map((record) =>
+			normalizeSavedSessionRecord(
+				record,
+				record.workoutSnapshotId ? snapshots.get(record.workoutSnapshotId) : undefined
+			)
+		)
+		.sort((left, right) => right.endedAt - left.endedAt);
 }
 
 export interface SessionGroup {
