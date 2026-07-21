@@ -1,7 +1,24 @@
 import {
-	type DragEvent,
+	type CollisionDetection,
+	closestCenter,
+	DndContext,
+	type DragEndEvent,
+	type DraggableAttributes,
+	type DraggableSyntheticListeners,
+	type DragMoveEvent,
+	PointerSensor,
+	pointerWithin,
+	useSensor,
+	useSensors,
+} from '@dnd-kit/core';
+import { restrictToParentElement, restrictToVerticalAxis } from '@dnd-kit/modifiers';
+import { SortableContext, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';
+import {
+	type CSSProperties,
 	Fragment,
 	type KeyboardEvent,
+	lazy,
+	Suspense,
 	useCallback,
 	useMemo,
 	useRef,
@@ -10,7 +27,6 @@ import {
 import { useFileDrop } from '../hooks/use-file-drop';
 import { usePersistentScrollPosition } from '../hooks/use-persistent-scroll-position';
 import { errorMessage } from '../lib/errors';
-import { openStreetMapRouteUrl } from '../lib/openstreetmap';
 import { formatDistance, formatElevation } from '../lib/units';
 import {
 	OPENSTREETMAP_ATTRIBUTION_URL,
@@ -30,38 +46,53 @@ const REORDER_KEY = {
 	LATER: 'ArrowDown',
 } as const;
 const WORKOUT_SCROLL_POSITION_STORAGE_KEY = 'ride-control-workout-scroll-position';
+const WorkoutMapDialog = lazy(async () => {
+	const module = await import('./workout-map-dialog');
+	return { default: module.WorkoutMapDialog };
+});
+
+const workoutCollisionDetection: CollisionDetection = (args) => {
+	const pointerCollisions = pointerWithin(args);
+	return pointerCollisions.length > 0 ? pointerCollisions : closestCenter(args);
+};
 
 function WorkoutCourseCard({
 	course,
 	custom,
 	disabled,
+	dragHandleAttributes,
+	dragHandleListeners,
 	dragged,
-	onDragEnd,
-	onDragStart,
 	onMove,
 	onRemove,
 	onRename,
 	onSelect,
+	onViewMap,
+	setDragHandleRef,
+	setNodeRef,
 	selected,
 	speedUnit,
+	style,
 }: {
 	course: WorkoutCourse;
 	custom: boolean;
 	disabled: boolean;
+	dragHandleAttributes: DraggableAttributes;
+	dragHandleListeners: DraggableSyntheticListeners;
 	dragged: boolean;
-	onDragEnd: () => void;
-	onDragStart: (event: DragEvent<HTMLButtonElement>) => void;
 	onMove: (direction: -1 | 1) => void;
 	onRemove: () => void;
 	onRename: () => void;
 	onSelect: () => void;
+	onViewMap: () => void;
+	setDragHandleRef: (node: HTMLElement | null) => void;
+	setNodeRef: (node: HTMLElement | null) => void;
 	selected: boolean;
 	speedUnit: SpeedUnit;
+	style?: CSSProperties;
 }) {
-	const openStreetMapUrl =
-		course.descriptionAttribution === WORKOUT_DESCRIPTION_ATTRIBUTION.OPENSTREETMAP
-			? openStreetMapRouteUrl(course.points)
-			: undefined;
+	const usesOpenStreetMapAttribution =
+		course.descriptionAttribution === WORKOUT_DESCRIPTION_ATTRIBUTION.OPENSTREETMAP;
 	const moveWithKeyboard = (event: KeyboardEvent<HTMLButtonElement>) => {
 		if (event.key === REORDER_KEY.EARLIER) {
 			event.preventDefault();
@@ -74,15 +105,17 @@ function WorkoutCourseCard({
 
 	return (
 		<article
-			className={`relative overflow-hidden rounded-2xl border bg-[#12171d] transition ${selected ? 'border-mint/50 shadow-[0_0_20px_rgba(173,245,189,.08)]' : 'border-line'} ${dragged ? 'opacity-40' : ''}`}
+			className={`relative overflow-hidden rounded-2xl border bg-[#12171d] transition-colors ${selected ? 'border-mint/50 shadow-[0_0_20px_rgba(173,245,189,.08)]' : 'border-line'} ${dragged ? 'cursor-grabbing opacity-95 shadow-[0_20px_50px_rgba(0,0,0,.5)]' : ''}`}
+			ref={setNodeRef}
+			style={style}
 		>
 			<button
+				{...dragHandleAttributes}
+				{...dragHandleListeners}
 				aria-label={`Drag ${course.name} to reorder`}
-				className="absolute top-3 right-3 z-10 grid cursor-grab place-items-center rounded-lg border border-slate-600 bg-[#12171d]/95 p-2 text-slate-400 shadow-lg transition hover:border-cyan-400/70 hover:text-cyan-300 active:cursor-grabbing"
-				draggable
-				onDragEnd={onDragEnd}
-				onDragStart={onDragStart}
+				className="absolute top-3 right-3 z-10 grid cursor-grab touch-none place-items-center rounded-lg border border-slate-600 bg-[#12171d]/95 p-2 text-slate-400 shadow-lg transition hover:border-cyan-400/70 hover:text-cyan-300 active:cursor-grabbing"
 				onKeyDown={moveWithKeyboard}
+				ref={setDragHandleRef}
 				title="Drag to reorder. Use the up and down arrow keys while focused."
 				type="button"
 			>
@@ -123,31 +156,19 @@ function WorkoutCourseCard({
 							)}
 						</h3>
 						<p className="mt-1 text-slate-400 text-xs leading-relaxed">
-							{openStreetMapUrl ? (
-								<a
+							{usesOpenStreetMapAttribution ? (
+								<button
 									className="underline decoration-cyan-400/40 underline-offset-2 transition hover:text-cyan-300 hover:decoration-cyan-300"
-									href={openStreetMapUrl}
-									rel="noreferrer"
-									target="_blank"
-									title="View the route area and starting point on OpenStreetMap"
+									onClick={onViewMap}
+									title="View the route map"
+									type="button"
 								>
 									{course.description}
-								</a>
+								</button>
 							) : (
 								course.description
 							)}
 						</p>
-						{course.descriptionAttribution ===
-						WORKOUT_DESCRIPTION_ATTRIBUTION.OPENSTREETMAP ? (
-							<a
-								className="mt-1 inline-block text-[10px] text-slate-500 underline decoration-slate-700 underline-offset-2 hover:text-slate-300"
-								href={OPENSTREETMAP_ATTRIBUTION_URL}
-								rel="noreferrer"
-								target="_blank"
-							>
-								© OpenStreetMap contributors
-							</a>
-						) : null}
 					</div>
 					<div className="flex shrink-0 flex-wrap items-center justify-end gap-1.5">
 						{custom ? (
@@ -167,24 +188,40 @@ function WorkoutCourseCard({
 					</span>
 					<span>{formatElevation(course.elevationGain, speedUnit)} climbing</span>
 					<span>Up to +{workoutMaximumGrade(course).toFixed(1)}%</span>
-					<div className="ml-auto flex items-center gap-3 font-semibold">
-						<button
-							className="text-cyan-400 hover:text-cyan-200"
-							onClick={() => downloadWorkoutFile(course)}
-							type="button"
+					<div
+						className={`${usesOpenStreetMapAttribution ? 'flex basis-full items-center gap-3 pt-1' : 'ml-auto'} font-semibold`}
+					>
+						{usesOpenStreetMapAttribution ? (
+							<a
+								className="font-normal text-[10px] text-slate-500 underline decoration-slate-700 underline-offset-2 hover:text-slate-300"
+								href={OPENSTREETMAP_ATTRIBUTION_URL}
+								rel="noreferrer"
+								target="_blank"
+							>
+								© OpenStreetMap contributors
+							</a>
+						) : null}
+						<div
+							className={`flex items-center gap-3 ${usesOpenStreetMapAttribution ? 'ml-auto' : ''}`}
 						>
-							Download GPX
-						</button>
-						{custom ? (
 							<button
-								className="text-rose-400 hover:text-rose-300 disabled:cursor-not-allowed disabled:opacity-40"
-								disabled={disabled}
-								onClick={onRemove}
+								className="text-cyan-400 hover:text-cyan-200"
+								onClick={() => downloadWorkoutFile(course)}
 								type="button"
 							>
-								Remove
+								Download GPX
 							</button>
-						) : null}
+							{custom ? (
+								<button
+									className="text-rose-400 hover:text-rose-300 disabled:cursor-not-allowed disabled:opacity-40"
+									disabled={disabled}
+									onClick={onRemove}
+									type="button"
+								>
+									Remove
+								</button>
+							) : null}
+						</div>
 					</div>
 				</div>
 				<button
@@ -200,18 +237,54 @@ function WorkoutCourseCard({
 	);
 }
 
+function SortableWorkoutCourseCard(
+	props: Omit<
+		Parameters<typeof WorkoutCourseCard>[0],
+		| 'dragHandleAttributes'
+		| 'dragHandleListeners'
+		| 'dragged'
+		| 'setDragHandleRef'
+		| 'setNodeRef'
+		| 'style'
+	>
+) {
+	const {
+		attributes,
+		isDragging,
+		listeners,
+		setActivatorNodeRef,
+		setNodeRef,
+		transform,
+		transition,
+	} = useSortable({ id: props.course.id });
+	const style: CSSProperties = {
+		position: isDragging ? 'relative' : undefined,
+		transform: transform ? `translate3d(0, ${Math.round(transform.y)}px, 0)` : undefined,
+		transition,
+		zIndex: isDragging ? 20 : undefined,
+	};
+
+	return (
+		<WorkoutCourseCard
+			{...props}
+			dragged={isDragging}
+			dragHandleAttributes={attributes}
+			dragHandleListeners={listeners}
+			setDragHandleRef={setActivatorNodeRef}
+			setNodeRef={setNodeRef}
+			style={style}
+		/>
+	);
+}
+
 function WorkoutDropBoundary({
 	active,
 	enabled,
 	index,
-	onDragOver,
-	onDrop,
 }: {
 	active: boolean;
 	enabled: boolean;
 	index: number;
-	onDragOver: (event: DragEvent<HTMLDivElement>) => void;
-	onDrop: (event: DragEvent<HTMLDivElement>) => void;
 }) {
 	let lineClassName = 'bg-transparent';
 	if (enabled) {
@@ -225,8 +298,6 @@ function WorkoutDropBoundary({
 			className="relative h-4"
 			data-active={active ? 'true' : undefined}
 			data-workout-drop-index={index}
-			onDragOver={onDragOver}
-			onDrop={onDrop}
 		>
 			<span
 				className={`pointer-events-none absolute inset-x-0 top-1/2 h-0.5 -translate-y-1/2 rounded-full transition ${lineClassName}`}
@@ -267,12 +338,22 @@ export function WorkoutPanel({
 	const [libraryStatus, setLibraryStatus] = useState('');
 	const [importError, setImportError] = useState('');
 	const [renamingCourse, setRenamingCourse] = useState<WorkoutCourse>();
+	const [mappedCourse, setMappedCourse] = useState<WorkoutCourse>();
 	const [draggedCourseId, setDraggedCourseId] = useState('');
 	const [dropTargetIndex, setDropTargetIndex] = useState<number>();
 	const [searchQuery, setSearchQuery] = useState('');
+	const sensors = useSensors(
+		useSensor(PointerSensor, {
+			activationConstraint: { distance: 6 },
+		})
+	);
 	const filteredCourses = useMemo(
 		() => courses.filter((course) => workoutMatchesSearch(course, searchQuery)),
 		[courses, searchQuery]
+	);
+	const sortableCourseIds = useMemo(
+		() => filteredCourses.map((course) => course.id),
+		[filteredCourses]
 	);
 	const workoutListScroll = usePersistentScrollPosition(
 		WORKOUT_SCROLL_POSITION_STORAGE_KEY,
@@ -303,6 +384,7 @@ export function WorkoutPanel({
 
 	const closePanel = () => {
 		setRenamingCourse(undefined);
+		setMappedCourse(undefined);
 		setDraggedCourseId('');
 		setDropTargetIndex(undefined);
 		setSearchQuery('');
@@ -334,32 +416,41 @@ export function WorkoutPanel({
 	};
 	const canDropAtBoundary = (boundaryIndex: number): boolean =>
 		canMoveWorkoutCourse(courses, draggedCourseId, destinationForBoundary(boundaryIndex));
-	const dropAtBoundary = (event: DragEvent<HTMLDivElement>, boundaryIndex: number) => {
-		const movedCourseId = draggedCourseId || event.dataTransfer.getData('text/plain');
-		const destinationIndex = destinationForBoundary(boundaryIndex);
-		if (!canMoveWorkoutCourse(courses, movedCourseId, destinationIndex)) {
-			finishDragging();
+	const targetBoundaryForDrag = (event: DragMoveEvent | DragEndEvent): number | undefined => {
+		const activeCourseId = String(event.active.id);
+		const activeCourseIndex = filteredCourses.findIndex(
+			(course) => course.id === activeCourseId
+		);
+		const { over } = event;
+		if (activeCourseIndex < 0 || !over) {
 			return;
 		}
-		event.preventDefault();
-		reorderCourse(movedCourseId, destinationIndex);
-		finishDragging();
+		const overId = String(over.id);
+		const overCourseIndex = filteredCourses.findIndex((course) => course.id === overId);
+		if (overCourseIndex < 0 || overCourseIndex === activeCourseIndex) {
+			return;
+		}
+		const boundaryIndex =
+			activeCourseIndex < overCourseIndex ? overCourseIndex + 1 : overCourseIndex;
+		return canMoveWorkoutCourse(courses, activeCourseId, destinationForBoundary(boundaryIndex))
+			? boundaryIndex
+			: undefined;
 	};
-	const dragOverBoundary = (event: DragEvent<HTMLDivElement>, boundaryIndex: number) => {
-		if (!canDropAtBoundary(boundaryIndex)) {
-			setDropTargetIndex(undefined);
-			return;
+	const moveDraggedCourse = (event: DragEndEvent) => {
+		const activeCourseId = String(event.active.id);
+		const movedCourse = filteredCourses.find((course) => course.id === activeCourseId);
+		const boundaryIndex = targetBoundaryForDrag(event);
+		if (movedCourse && boundaryIndex !== undefined) {
+			reorderCourse(movedCourse.id, destinationForBoundary(boundaryIndex));
 		}
-		event.preventDefault();
-		event.dataTransfer.dropEffect = 'move';
-		setDropTargetIndex(boundaryIndex);
+		finishDragging();
 	};
 
 	return (
 		<>
 			<SideTray
 				closeLabel="Close terrain workouts"
-				closeOnEscape={!renamingCourse}
+				closeOnEscape={!(mappedCourse || renamingCourse)}
 				labelledBy="workout-panel-title"
 				onClose={closePanel}
 				open={open}
@@ -462,79 +553,84 @@ export function WorkoutPanel({
 							) : null}
 						</div>
 					</div>
-					<div
-						className="flex-1 overflow-y-auto px-5 py-3 sm:px-6"
-						data-testid="workout-list"
-						onScroll={workoutListScroll.onScroll}
-						ref={workoutListScroll.ref}
+					<DndContext
+						collisionDetection={workoutCollisionDetection}
+						modifiers={[restrictToVerticalAxis, restrictToParentElement]}
+						onDragCancel={finishDragging}
+						onDragEnd={moveDraggedCourse}
+						onDragMove={(event) => setDropTargetIndex(targetBoundaryForDrag(event))}
+						onDragStart={(event) => {
+							const activeCourseId = String(event.active.id);
+							const movedCourse = filteredCourses.find(
+								(course) => course.id === activeCourseId
+							);
+							setDraggedCourseId(movedCourse?.id ?? '');
+							setDropTargetIndex(undefined);
+						}}
+						sensors={sensors}
 					>
-						{filteredCourses.map((course, index) => (
-							<Fragment key={course.id}>
-								<WorkoutDropBoundary
-									active={dropTargetIndex === index}
-									enabled={canDropAtBoundary(index)}
-									index={index}
-									onDragOver={(event) => dragOverBoundary(event, index)}
-									onDrop={(event) => dropAtBoundary(event, index)}
-								/>
-								<WorkoutCourseCard
-									course={course}
-									custom={customCourseIds.has(course.id)}
-									disabled={selectionLocked}
-									dragged={draggedCourseId === course.id}
-									onDragEnd={finishDragging}
-									onDragStart={(event) => {
-										event.dataTransfer.effectAllowed = 'move';
-										event.dataTransfer.setData('text/plain', course.id);
-										const card = event.currentTarget.closest('article');
-										if (card) {
-											const bounds = card.getBoundingClientRect();
-											event.dataTransfer.setDragImage(
-												card,
-												Math.max(0, event.clientX - bounds.left),
-												Math.max(0, event.clientY - bounds.top)
-											);
-										}
-										setDraggedCourseId(course.id);
-										setDropTargetIndex(undefined);
-									}}
-									onMove={(direction) => {
-										const target = filteredCourses[index + direction];
-										if (target) {
-											const targetIndex = courses.findIndex(
-												(candidate) => candidate.id === target.id
-											);
-											reorderCourse(
-												course.id,
-												direction < 0 ? targetIndex : targetIndex + 1
-											);
-										}
-									}}
-									onRemove={() => onRemoveCourse(course.id)}
-									onRename={() => setRenamingCourse(course)}
-									onSelect={() => onSelect(course)}
-									selected={activeCourse?.id === course.id}
-									speedUnit={speedUnit}
-								/>
-							</Fragment>
-						))}
-						{filteredCourses.length > 0 ? (
-							<WorkoutDropBoundary
-								active={dropTargetIndex === filteredCourses.length}
-								enabled={canDropAtBoundary(filteredCourses.length)}
-								index={filteredCourses.length}
-								onDragOver={(event) =>
-									dragOverBoundary(event, filteredCourses.length)
-								}
-								onDrop={(event) => dropAtBoundary(event, filteredCourses.length)}
-							/>
-						) : null}
-						{filteredCourses.length === 0 ? (
-							<p className="py-10 text-center text-slate-500 text-sm" role="status">
-								No workouts match “{searchQuery.trim()}”.
-							</p>
-						) : null}
-					</div>
+						<div
+							className="flex-1 overflow-y-auto px-5 py-3 sm:px-6"
+							data-testid="workout-list"
+							onScroll={workoutListScroll.onScroll}
+							ref={workoutListScroll.ref}
+						>
+							<SortableContext
+								items={sortableCourseIds}
+								strategy={verticalListSortingStrategy}
+							>
+								{filteredCourses.map((course, index) => (
+									<Fragment key={course.id}>
+										<WorkoutDropBoundary
+											active={dropTargetIndex === index}
+											enabled={canDropAtBoundary(index)}
+											index={index}
+										/>
+										<SortableWorkoutCourseCard
+											course={course}
+											custom={customCourseIds.has(course.id)}
+											disabled={selectionLocked}
+											onMove={(direction) => {
+												const target = filteredCourses[index + direction];
+												if (target) {
+													const targetIndex = courses.findIndex(
+														(candidate) => candidate.id === target.id
+													);
+													reorderCourse(
+														course.id,
+														direction < 0
+															? targetIndex
+															: targetIndex + 1
+													);
+												}
+											}}
+											onRemove={() => onRemoveCourse(course.id)}
+											onRename={() => setRenamingCourse(course)}
+											onSelect={() => onSelect(course)}
+											onViewMap={() => setMappedCourse(course)}
+											selected={activeCourse?.id === course.id}
+											speedUnit={speedUnit}
+										/>
+									</Fragment>
+								))}
+								{filteredCourses.length > 0 ? (
+									<WorkoutDropBoundary
+										active={dropTargetIndex === filteredCourses.length}
+										enabled={canDropAtBoundary(filteredCourses.length)}
+										index={filteredCourses.length}
+									/>
+								) : null}
+							</SortableContext>
+							{filteredCourses.length === 0 ? (
+								<p
+									className="py-10 text-center text-slate-500 text-sm"
+									role="status"
+								>
+									No workouts match “{searchQuery.trim()}”.
+								</p>
+							) : null}
+						</div>
+					</DndContext>
 					<footer className="flex items-center gap-3 border-line border-t p-4 sm:px-6">
 						<div
 							aria-live={importError ? 'assertive' : 'polite'}
@@ -556,6 +652,23 @@ export function WorkoutPanel({
 					</footer>
 				</div>
 			</SideTray>
+			{mappedCourse ? (
+				<Suspense
+					fallback={
+						<div
+							className="fixed inset-4 z-50 grid place-items-center rounded-2xl border border-slate-600 bg-panel text-slate-400 text-sm shadow-2xl shadow-black/70 xl:top-6 xl:right-152 xl:bottom-6 xl:left-6"
+							role="status"
+						>
+							Loading map…
+						</div>
+					}
+				>
+					<WorkoutMapDialog
+						course={mappedCourse}
+						onClose={() => setMappedCourse(undefined)}
+					/>
+				</Suspense>
+			) : null}
 			{renamingCourse ? (
 				<RenameWorkoutDialog
 					course={renamingCourse}

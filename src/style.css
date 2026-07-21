@@ -35,6 +35,25 @@
 	button:disabled {
 		cursor: not-allowed;
 	}
+	.ride-control-map-tiles {
+		filter: brightness(0.72) saturate(0.72) contrast(1.08);
+	}
+	.ride-control-bike-marker {
+		background: transparent;
+		border: 0;
+	}
+	.ride-control-bike-marker__body {
+		display: grid;
+		place-items: center;
+		width: 34px;
+		height: 34px;
+		font-size: 21px;
+		line-height: 1;
+		background: rgb(16 21 26 / 92%);
+		border: 2px solid var(--color-mint);
+		border-radius: 9999px;
+		box-shadow: 0 3px 14px rgb(0 0 0 / 55%);
+	}
 }
 
 @property --ramp-progress {

@@ -508,10 +508,12 @@ describe('view components', () => {
 		expect(panel).toContain('aria-label="Drag Harbor Ring to reorder"');
 		expect(panel).toContain('<title>Move workout up or down</title>');
 		expect(panel).toContain('absolute top-3 right-3');
-		expect(panel.match(/draggable="true"/g)).toHaveLength(6);
+		expect(panel).not.toContain('draggable="true"');
+		expect(panel.match(/aria-label="Drag [^"]+ to reorder"/g)).toHaveLength(6);
 		expect(panel.match(/data-workout-drop-index=/g)).toHaveLength(7);
 		expect(panel).not.toContain('Move dragged workout to');
 		expect(panel).not.toContain('ring-2 ring-cyan-400/70');
+		expect(panel).not.toContain('View map');
 		expect(panel).toContain('data-side-tray="true"');
 		const importedCourse = {
 			...course,
@@ -539,14 +541,18 @@ describe('view components', () => {
 		);
 		expect(customPanel).toContain('Imported course');
 		expect(customPanel).toContain('Starts in Ålands Countryside.');
-		expect(customPanel).toContain('View the route area and starting point on OpenStreetMap');
-		expect(customPanel).toContain('https://www.openstreetmap.org/?minlon=');
+		expect(customPanel).toContain('title="View the route map"');
 		expect(customPanel).toContain('target="_blank"');
 		expect(customPanel).toContain('© OpenStreetMap contributors');
+		expect(customPanel.indexOf('© OpenStreetMap contributors')).toBeGreaterThan(
+			customPanel.indexOf('point to point')
+		);
 		expect(customPanel).toContain('aria-label="Rename Imported course"');
 		expect(customPanel).toContain('title="Rename imported workout"');
 		expect(customPanel).toContain('Imported');
 		expect(customPanel).toContain('point to point');
+		expect(customPanel).not.toContain('?workout-map=');
+		expect(customPanel).not.toContain('View map');
 		expect(customPanel).toContain('Remove');
 		expect(customPanel.match(/Download GPX/g)).toHaveLength(7);
 		const renameDialog = render(
@@ -986,6 +992,8 @@ describe('view components', () => {
 			/>
 		);
 		expect(html).toContain('Sessions');
+		expect(html).toContain('0 sessions');
+		expect(html).not.toContain('Saved on this device');
 		expect(html).toContain('data-side-tray="true"');
 		expect(html).toContain('No saved sessions yet');
 		expect(html).toContain('Import TCX');
