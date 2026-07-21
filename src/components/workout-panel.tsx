@@ -23,6 +23,7 @@ import {
 	useRef,
 	useState,
 } from 'react';
+import { useBikeGpxCatalog } from '../hooks/use-bikegpx-catalog';
 import { useFileDrop } from '../hooks/use-file-drop';
 import { usePersistentScrollPosition } from '../hooks/use-persistent-scroll-position';
 import { errorMessage } from '../lib/errors';
@@ -32,8 +33,9 @@ import {
 	WORKOUT_DESCRIPTION_ATTRIBUTION,
 } from '../lib/workout-description';
 import { canMoveWorkoutCourse, downloadWorkoutFile } from '../lib/workout-file';
+import { workoutMaximumGrade } from '../lib/workout-metrics';
 import { WORKOUT_VIEW, workoutRouteLabel } from '../lib/workout-schema';
-import { workoutDifficultyLabel, workoutMatchesSearch, workoutMaximumGrade } from '../lib/workouts';
+import { workoutDifficultyLabel, workoutMatchesSearch } from '../lib/workouts';
 import type { SpeedUnit, WorkoutCourse } from '../types';
 import { Icon } from './icon';
 import { RenameWorkoutDialog } from './rename-workout-dialog';
@@ -48,6 +50,10 @@ const WORKOUT_SCROLL_POSITION_STORAGE_KEY = 'ride-control-workout-scroll-positio
 const WorkoutMapDialog = lazy(async () => {
 	const module = await import('./workout-map-dialog');
 	return { default: module.WorkoutMapDialog };
+});
+const BikeGpxBrowserDialog = lazy(async () => {
+	const module = await import('./bikegpx-browser-dialog');
+	return { default: module.BikeGpxBrowserDialog };
 });
 
 const workoutCollisionDetection: CollisionDetection = (args) => {
@@ -285,6 +291,7 @@ export function WorkoutPanel({
 	courses,
 	customCourseIds,
 	onClose,
+	onImportCourse,
 	onImportFile,
 	onRemoveCourse,
 	onRenameCourse,
@@ -298,6 +305,7 @@ export function WorkoutPanel({
 	courses: WorkoutCourse[];
 	customCourseIds: ReadonlySet<string>;
 	onClose: () => void;
+	onImportCourse: (course: WorkoutCourse) => Promise<WorkoutCourse>;
 	onImportFile: (file: File) => Promise<WorkoutCourse>;
 	onRemoveCourse: (courseId: string) => void;
 	onRenameCourse: (courseId: string, name: string) => WorkoutCourse;
@@ -308,12 +316,14 @@ export function WorkoutPanel({
 	speedUnit: SpeedUnit;
 }) {
 	const importInput = useRef<HTMLInputElement>(null);
+	const [bikeGpxBrowserOpen, setBikeGpxBrowserOpen] = useState(false);
 	const [importing, setImporting] = useState(false);
 	const [libraryStatus, setLibraryStatus] = useState('');
 	const [importError, setImportError] = useState('');
 	const [renamingCourse, setRenamingCourse] = useState<WorkoutCourse>();
 	const [mappedCourse, setMappedCourse] = useState<WorkoutCourse>();
 	const [searchQuery, setSearchQuery] = useState('');
+	const bikeGpxCatalog = useBikeGpxCatalog(open);
 	const sensors = useSensors(
 		useSensor(PointerSensor, {
 			activationConstraint: { distance: 6 },
@@ -358,6 +368,7 @@ export function WorkoutPanel({
 	const closePanel = () => {
 		setRenamingCourse(undefined);
 		setMappedCourse(undefined);
+		setBikeGpxBrowserOpen(false);
 		setSearchQuery('');
 		onClose();
 	};
@@ -414,7 +425,7 @@ export function WorkoutPanel({
 		<>
 			<SideTray
 				closeLabel="Close terrain workouts"
-				closeOnEscape={!(mappedCourse || renamingCourse)}
+				closeOnEscape={!(bikeGpxBrowserOpen || mappedCourse || renamingCourse)}
 				labelledBy="workout-panel-title"
 				onClose={closePanel}
 				open={open}
@@ -440,57 +451,59 @@ export function WorkoutPanel({
 							</div>
 						</div>
 					) : null}
-					<header className="flex items-start justify-between gap-4 border-line border-b px-5 py-5 sm:px-6">
-						<div>
+					<header className="flex items-start justify-between gap-4 border-line border-b px-5 py-4 sm:px-6">
+						<div className="min-w-0">
 							<h2 className="font-bold text-xl" id="workout-panel-title">
 								Terrain workouts
 							</h2>
-							<p className="mt-1 max-w-md text-slate-400 text-sm leading-relaxed">
+							<p className="mt-1 max-w-60 text-slate-400 text-sm leading-snug">
 								Resistance follows the climbs and descents while your position moves
 								along the route.
 							</p>
-							<p className="mt-2 max-w-md text-slate-500 text-xs leading-relaxed">
-								<a
-									className="font-semibold text-cyan-400 hover:text-cyan-200"
-									href="https://bikegpx.com/bike_routes/"
-									rel="noreferrer"
-									target="_blank"
-								>
-									BikeGPX has thousands of GPX files
-								</a>{' '}
-								you can upload here.
-							</p>
 						</div>
-						<div className="flex shrink-0 items-center gap-1.5">
-							<input
-								accept=".gpx,application/gpx+xml,application/xml,text/xml"
-								className="hidden"
-								onChange={(event) => {
-									const file = event.currentTarget.files?.[0];
-									event.currentTarget.value = '';
-									if (file) {
-										importWorkout(file);
-									}
-								}}
-								ref={importInput}
-								type="file"
-							/>
-							<button
-								className="h-9 rounded-lg border border-line px-3 font-semibold text-slate-300 text-xs hover:border-cyan-400/60 hover:text-white disabled:cursor-wait disabled:opacity-60"
-								disabled={importing}
-								onClick={() => importInput.current?.click()}
-								type="button"
-							>
-								{importing ? 'Importing…' : 'Import GPX'}
-							</button>
-							<button
-								aria-label="Close terrain workouts"
-								className="grid h-9 w-9 place-items-center rounded-lg text-slate-500 hover:bg-slate-800 hover:text-white"
-								onClick={closePanel}
-								type="button"
-							>
-								×
-							</button>
+						<div className="flex shrink-0 flex-col items-end gap-1.5">
+							<div className="flex items-center gap-1.5">
+								<input
+									accept=".gpx,application/gpx+xml,application/xml,text/xml"
+									className="hidden"
+									onChange={(event) => {
+										const file = event.currentTarget.files?.[0];
+										event.currentTarget.value = '';
+										if (file) {
+											importWorkout(file);
+										}
+									}}
+									ref={importInput}
+									type="file"
+								/>
+								<button
+									className="h-9 rounded-lg border border-line px-3 font-semibold text-slate-300 text-xs hover:border-cyan-400/60 hover:text-white"
+									onClick={() => setBikeGpxBrowserOpen(true)}
+									type="button"
+								>
+									Browse BikeGPX
+								</button>
+								<button
+									className="h-9 rounded-lg border border-line px-3 font-semibold text-slate-300 text-xs hover:border-cyan-400/60 hover:text-white disabled:cursor-wait disabled:opacity-60"
+									disabled={importing}
+									onClick={() => importInput.current?.click()}
+									type="button"
+								>
+									{importing ? 'Importing…' : 'Import GPX'}
+								</button>
+								<button
+									aria-label="Close terrain workouts"
+									className="grid h-9 w-9 place-items-center rounded-lg text-slate-500 hover:bg-slate-800 hover:text-white"
+									onClick={closePanel}
+									type="button"
+								>
+									×
+								</button>
+							</div>
+							<p className="max-w-64 text-right text-[11px] text-slate-500 leading-snug">
+								Browse thousands of public BikeGPX routes or drop a GPX anywhere in
+								this tray.
+							</p>
 						</div>
 					</header>
 					<div className="border-line border-b bg-[#10151a] px-5 py-3 text-xs leading-relaxed sm:px-6">
@@ -598,6 +611,36 @@ export function WorkoutPanel({
 					</footer>
 				</div>
 			</SideTray>
+			{bikeGpxBrowserOpen ? (
+				<Suspense
+					fallback={
+						<div
+							className="fixed inset-4 z-50 grid place-items-center rounded-2xl border border-slate-600 bg-panel text-slate-400 text-sm shadow-2xl shadow-black/70 xl:top-6 xl:right-152 xl:bottom-6 xl:left-6"
+							role="status"
+						>
+							Loading BikeGPX browser…
+						</div>
+					}
+				>
+					<BikeGpxBrowserDialog
+						catalog={bikeGpxCatalog.catalog}
+						catalogError={bikeGpxCatalog.error}
+						catalogLoading={bikeGpxCatalog.loading}
+						customCourseIds={customCourseIds}
+						onAnalyzeRoute={bikeGpxCatalog.updateRouteAnalysis}
+						onClose={() => setBikeGpxBrowserOpen(false)}
+						onImportCourse={async (course) => {
+							const imported = await onImportCourse(course);
+							setSearchQuery('');
+							workoutListScroll.scrollToTop();
+							setLibraryStatus(`${imported.name} imported and saved on this device.`);
+							return imported;
+						}}
+						onRefreshCatalog={bikeGpxCatalog.refresh}
+						speedUnit={speedUnit}
+					/>
+				</Suspense>
+			) : null}
 			{mappedCourse ? (
 				<Suspense
 					fallback={

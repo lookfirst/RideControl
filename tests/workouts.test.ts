@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test';
+import { workoutMaximumGrade } from '../src/lib/workout-metrics';
 import { WORKOUT_ROUTE_TYPE } from '../src/lib/workout-schema';
 import {
 	outAndBackRoutePoints,
@@ -16,7 +17,6 @@ import {
 	workoutMapPath,
 	workoutMapProgressPath,
 	workoutMatchesSearch,
-	workoutMaximumGrade,
 	workoutProfilePath,
 	workoutProfilePosition,
 	workoutProgress,

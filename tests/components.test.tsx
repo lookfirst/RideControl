@@ -508,6 +508,7 @@ describe('view components', () => {
 				courses={WORKOUT_COURSES}
 				customCourseIds={noCustomWorkoutIds}
 				onClose={() => undefined}
+				onImportCourse={() => Promise.reject(new Error('Not used in this render test'))}
 				onImportFile={() => Promise.reject(new Error('Not used in this render test'))}
 				onRemoveCourse={() => undefined}
 				onRenameCourse={() => course}
@@ -528,8 +529,8 @@ describe('view components', () => {
 		expect(panel).toContain('Harbor Ring course map');
 		expect(panel).toContain('Harbor Ring elevation profile');
 		expect(panel).toContain('Import GPX');
-		expect(panel).toContain('href="https://bikegpx.com/bike_routes/"');
-		expect(panel).toContain('BikeGPX has thousands of GPX files');
+		expect(panel).toContain('Browse BikeGPX');
+		expect(panel).toContain('Browse thousands of public BikeGPX routes');
 		expect(panel).toContain('data-gpx-drop-target="true"');
 		expect(panel).toContain('data-testid="workout-list"');
 		expect(panel).toContain('placeholder="Search by name or difficulty"');
@@ -575,6 +576,7 @@ describe('view components', () => {
 				courses={[...WORKOUT_COURSES, importedCourse]}
 				customCourseIds={new Set([importedCourse.id])}
 				onClose={() => undefined}
+				onImportCourse={() => Promise.reject(new Error('Not used in this render test'))}
 				onImportFile={() => Promise.reject(new Error('Not used in this render test'))}
 				onRemoveCourse={() => undefined}
 				onRenameCourse={() => importedCourse}
@@ -621,6 +623,7 @@ describe('view components', () => {
 				courses={WORKOUT_COURSES}
 				customCourseIds={noCustomWorkoutIds}
 				onClose={() => undefined}
+				onImportCourse={() => Promise.reject(new Error('Not used in this render test'))}
 				onImportFile={() => Promise.reject(new Error('Not used in this render test'))}
 				onRemoveCourse={() => undefined}
 				onRenameCourse={() => course}
@@ -640,6 +643,7 @@ describe('view components', () => {
 				courses={WORKOUT_COURSES}
 				customCourseIds={noCustomWorkoutIds}
 				onClose={() => undefined}
+				onImportCourse={() => Promise.reject(new Error('Not used in this render test'))}
 				onImportFile={() => Promise.reject(new Error('Not used in this render test'))}
 				onRemoveCourse={() => undefined}
 				onRenameCourse={() => course}

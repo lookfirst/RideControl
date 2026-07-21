@@ -39,10 +39,8 @@ export function useWorkoutLibrary() {
 		saveWorkoutOrder(next);
 		setCourseOrder(next);
 	}, []);
-
-	const importFile = useCallback(
-		async (file: File) => {
-			const course = await readWorkoutFile(file);
+	const importCourse = useCallback(
+		(course: WorkoutCourse) => {
 			const result = addCustomWorkout(customCoursesRef.current, course);
 			const nextCourses = prioritizeWorkoutCourse(
 				[...WORKOUT_COURSES, ...result.courses],
@@ -54,6 +52,14 @@ export function useWorkoutLibrary() {
 			return result.course;
 		},
 		[replaceCourseOrder, replaceCustomCourses]
+	);
+
+	const importFile = useCallback(
+		async (file: File) => {
+			const course = await readWorkoutFile(file);
+			return importCourse(course);
+		},
+		[importCourse]
 	);
 
 	const removeCourse = useCallback(
@@ -88,6 +94,7 @@ export function useWorkoutLibrary() {
 	return {
 		courses,
 		customCourseIds,
+		importCourse,
 		importFile,
 		removeCourse,
 		renameCourse,

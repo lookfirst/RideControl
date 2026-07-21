@@ -416,6 +416,7 @@ export function App() {
 				courses={workoutLibrary.courses}
 				customCourseIds={workoutLibrary.customCourseIds}
 				onClose={() => setActiveOverlay(undefined)}
+				onImportCourse={async (course) => workoutLibrary.importCourse(course)}
 				onImportFile={workoutLibrary.importFile}
 				onRemoveCourse={removeWorkout}
 				onRenameCourse={workoutLibrary.renameCourse}
