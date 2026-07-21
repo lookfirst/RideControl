@@ -193,16 +193,16 @@ export function SessionHistory({
 				panelClassName="flex max-w-6xl flex-col overflow-hidden sm:w-[min(72rem,calc(100vw-2rem))]"
 			>
 				<header className="flex flex-wrap items-center gap-x-4 gap-y-2 border-line border-b px-5 py-3">
-					<div className="mr-auto min-w-0">
+					<div className="mr-auto flex min-w-0 items-center gap-2">
 						<h2 className="font-bold text-xl" id="session-history-title">
 							Sessions
 						</h2>
 						<p
 							aria-live="polite"
-							className="mt-0.5 max-w-xl truncate text-slate-500 text-xs"
+							className="max-w-xl truncate text-slate-500 text-xs"
 							title={historyStatus || undefined}
 						>
-							Saved on this device · {total} {total === 1 ? 'session' : 'sessions'}
+							{total} {total === 1 ? 'session' : 'sessions'}
 							{historyStatus ? (
 								<span className="text-cyan-300"> · {historyStatus}</span>
 							) : null}
