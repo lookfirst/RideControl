@@ -1,6 +1,12 @@
 export const SESSION_HISTORY_SCROLL_POSITION_STORAGE_KEY =
 	'ride-control-session-history-scroll-position';
 export const SESSION_HISTORY_SELECTION_STORAGE_KEY = 'ride-control-selected-session';
+const SESSION_DETAIL_SCROLL_POSITION_STORAGE_KEY_PREFIX =
+	'ride-control-session-detail-scroll-position';
+
+export function sessionDetailScrollPositionStorageKey(sessionId: string): string {
+	return `${SESSION_DETAIL_SCROLL_POSITION_STORAGE_KEY_PREFIX}:${sessionId}`;
+}
 
 export function loadSelectedSessionId(
 	storage: Pick<Storage, 'getItem'> = localStorage

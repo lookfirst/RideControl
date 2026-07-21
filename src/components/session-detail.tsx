@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { EMPTY_ROUTE } from '../constants';
+import { usePersistentScrollPosition } from '../hooks/use-persistent-scroll-position';
 import { CONTROL_MODE } from '../lib/control-mode';
 import { aggregateMaximum, formatAggregateAverage, formatWholeNumber } from '../lib/format';
 import { resistanceForVirtualGear } from '../lib/gears';
@@ -11,6 +12,7 @@ import {
 	formatSessionTimeRange,
 	isImportedSession,
 } from '../lib/saved-sessions';
+import { sessionDetailScrollPositionStorageKey } from '../lib/session-history-preferences';
 import { downloadSessionTcx } from '../lib/tcx';
 import { workoutTerrainAtDistance } from '../lib/workouts';
 import type { SavedSession, SpeedUnit } from '../types';
@@ -100,6 +102,10 @@ export function SessionDetail({
 	session: SavedSession;
 	speedUnit: SpeedUnit;
 }) {
+	const detailScroll = usePersistentScrollPosition(
+		sessionDetailScrollPositionStorageKey(session.id),
+		true
+	);
 	const usesGear = session.controlMode === CONTROL_MODE.GEAR;
 	const imported = isImportedSession(session);
 	const workoutTerrain = session.workout
@@ -140,7 +146,12 @@ export function SessionDetail({
 	});
 
 	return (
-		<div className="min-w-0 flex-1 overflow-y-auto p-5 sm:p-6">
+		<div
+			className="min-w-0 flex-1 overflow-y-auto p-5 sm:p-6"
+			data-testid="session-detail"
+			onScroll={detailScroll.onScroll}
+			ref={detailScroll.ref}
+		>
 			<div className="relative flex items-start justify-between gap-4">
 				<div>
 					<div className="flex items-center gap-2">

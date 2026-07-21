@@ -1123,6 +1123,7 @@ describe('view components', () => {
 		expect(list).not.toContain('>Imported<');
 		expect(list).not.toContain('ring-cyan-400/70');
 		const detail = render(<SessionDetail session={importedSession} speedUnit="kmh" />);
+		expect(detail).toContain('data-testid="session-detail"');
 		expect(detail).toContain('>Imported<');
 		expect(detail).not.toContain('Imported TCX');
 		expect(detail).toContain('MAX</strong>45');
