@@ -1,9 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import {
-	type BikeGpxCatalog,
-	type BikeGpxRouteAnalysis,
-	fetchBikeGpxCatalog,
-} from '../lib/bikegpx';
+import { type BikeGpxCatalog, fetchBikeGpxCatalog } from '../lib/bikegpx';
 import { errorMessage } from '../lib/errors';
 
 let catalogRequest: Promise<BikeGpxCatalog> | undefined;
@@ -62,16 +58,5 @@ export function useBikeGpxCatalog(active: boolean) {
 		}
 	}, []);
 
-	const updateRouteAnalysis = useCallback((routeId: string, analysis: BikeGpxRouteAnalysis) => {
-		setCatalog((currentCatalog) =>
-			currentCatalog
-				? {
-						...currentCatalog,
-						analyses: { ...currentCatalog.analyses, [routeId]: analysis },
-					}
-				: currentCatalog
-		);
-	}, []);
-
-	return { catalog, error, loading, refresh, updateRouteAnalysis };
+	return { catalog, error, loading, refresh };
 }

@@ -4,6 +4,7 @@ import {
 	convertDistance,
 	convertElevation,
 	convertSpeed,
+	descriptionWithoutDistance,
 	formatDescriptionDistance,
 	formatDistance,
 	formatDistanceProgress,
@@ -40,6 +41,12 @@ describe('unit conversions', () => {
 			'Near Saltvik → Near Finström — 11 km'
 		);
 		expect(formatDescriptionDistance('Original terrain workout', 11, 'mph')).toBe(
+			'Original terrain workout'
+		);
+		expect(descriptionWithoutDistance('Near Saltvik → Near Finström — 11 km')).toBe(
+			'Near Saltvik → Near Finström'
+		);
+		expect(descriptionWithoutDistance('Original terrain workout')).toBe(
 			'Original terrain workout'
 		);
 	});

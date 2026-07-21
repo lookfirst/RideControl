@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { type RefObject, useEffect, useRef, useState } from 'react';
 
 const TRAY_TRANSITION_MS = 200;
 
@@ -46,6 +46,27 @@ export function useCloseOnEscape(enabled: boolean, onClose: () => void): void {
 		window.addEventListener('keydown', closeOnEscape);
 		return () => window.removeEventListener('keydown', closeOnEscape);
 	}, [enabled, onClose]);
+}
+
+export function useDialogInitialFocus<T extends HTMLElement>(enabled = true): RefObject<T | null> {
+	const target = useRef<T>(null);
+
+	useEffect(() => {
+		if (!enabled) {
+			return;
+		}
+		const previousFocus =
+			document.activeElement instanceof HTMLElement ? document.activeElement : null;
+		const frame = window.requestAnimationFrame(() => target.current?.focus());
+		return () => {
+			window.cancelAnimationFrame(frame);
+			if (previousFocus?.isConnected) {
+				previousFocus.focus();
+			}
+		};
+	}, [enabled]);
+
+	return target;
 }
 
 export function useBodyScrollLock(locked: boolean): void {

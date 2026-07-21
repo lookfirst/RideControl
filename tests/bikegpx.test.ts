@@ -1,10 +1,13 @@
 import { afterEach, describe, expect, mock, test } from 'bun:test';
 import {
 	type BikeGpxCatalog,
+	bikeGpxPreviewRoute,
+	bikeGpxRouteLocation,
 	bikeGpxRouteMatchesQuery,
 	bikeGpxRouteUrl,
 	fetchBikeGpxCatalog,
 	fetchBikeGpxRoute,
+	formatBikeGpxRouteStats,
 	restoreBikeGpxCatalog,
 } from '../src/lib/bikegpx';
 import type { WorkoutCourse } from '../src/types';
@@ -19,7 +22,7 @@ const route = {
 
 const catalog: BikeGpxCatalog = {
 	analyses: {
-		'2635': { difficulty: 'moderate', elevationGain: 100, maximumGrade: 5 },
+		'2635': { difficulty: 'moderate', distance: 12.4, elevationGain: 185, maximumGrade: 27.4 },
 	},
 	fetchedAt: 1000,
 	routes: [route],
@@ -64,6 +67,12 @@ afterEach(() => {
 describe('BikeGPX backend client', () => {
 	test('restores a validated backend catalog', () => {
 		expect(restoreBikeGpxCatalog(catalog)).toEqual(catalog);
+		expect(restoreBikeGpxCatalog({ ...catalog, analyses: {} })).toBe(undefined);
+		expect(restoreBikeGpxCatalog({ analyses: {}, fetchedAt: 1000, routes: [] })).toEqual({
+			analyses: {},
+			fetchedAt: 1000,
+			routes: [],
+		});
 		expect(
 			restoreBikeGpxCatalog({ ...catalog, routes: [{ ...route, id: 'not-numeric' }] })
 		).toBe(undefined);
@@ -76,6 +85,20 @@ describe('BikeGPX backend client', () => {
 		expect(bikeGpxRouteMatchesQuery(route, 'moderate', catalog.analyses[route.id])).toBeTrue();
 		expect(bikeGpxRouteMatchesQuery(route, '50 km')).toBeFalse();
 		expect(bikeGpxRouteUrl(route.id)).toBe('https://bikegpx.com/bike_routes/2635');
+	});
+
+	test('previews a remembered prepared route or the first prepared route', () => {
+		const otherRoute = { ...route, id: '4513', name: 'Other prepared route' };
+		expect(bikeGpxPreviewRoute([otherRoute, route], '')).toEqual(otherRoute);
+		expect(bikeGpxPreviewRoute([otherRoute, route], route.id)).toEqual(route);
+	});
+
+	test('formats route location and finalized stats without repeating distance', () => {
+		expect(bikeGpxRouteLocation(route)).toBe('Near Finström → Near Sund');
+		expect(formatBikeGpxRouteStats(route, catalog.analyses[route.id], 'mph')).toBe(
+			'7.7 mi · 607 ft climbing · Up to +27.4%'
+		);
+		expect(formatBikeGpxRouteStats(route, undefined, 'mph')).toBe('7.5 mi');
 	});
 
 	test('loads the catalog from the Ride Control backend API', async () => {
@@ -96,22 +119,13 @@ describe('BikeGPX backend client', () => {
 		expect(fetchMock).toHaveBeenCalledWith('/api/bikegpx/routes/2635', { signal: undefined });
 	});
 
-	test('waits for an explicitly queued route to finish processing', async () => {
-		const result = {
-			analysis: catalog.analyses[route.id],
-			course,
-		};
+	test('rejects an unprepared route response instead of polling it', async () => {
 		const fetchMock = mock(async () =>
-			fetchMock.mock.calls.length === 1
-				? Response.json(
-						{ position: 1, retryAfterSeconds: 0, status: 'queued' },
-						{ status: 202 }
-					)
-				: Response.json(result)
+			Response.json({ error: 'BikeGPX route not found.' }, { status: 404 })
 		);
 		globalThis.fetch = fetchMock as unknown as typeof fetch;
-		expect(await fetchBikeGpxRoute(route)).toEqual(result);
-		expect(fetchMock).toHaveBeenCalledTimes(2);
+		await expect(fetchBikeGpxRoute(route)).rejects.toThrow('BikeGPX route not found.');
+		expect(fetchMock).toHaveBeenCalledTimes(1);
 	});
 
 	test('surfaces backend errors', async () => {

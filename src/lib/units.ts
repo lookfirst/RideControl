@@ -66,6 +66,10 @@ export function formatDescriptionDistance(
 	);
 }
 
+export function descriptionWithoutDistance(description: string): string {
+	return description.replace(DESCRIPTION_DISTANCE_SUFFIX, '').trim();
+}
+
 export function formatDistanceProgress(
 	currentKilometers: number,
 	totalKilometers: number,

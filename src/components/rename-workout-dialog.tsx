@@ -1,5 +1,5 @@
 import { type FormEvent, useState } from 'react';
-import { useCloseOnEscape } from '../hooks/use-dialog-behavior';
+import { useCloseOnEscape, useDialogInitialFocus } from '../hooks/use-dialog-behavior';
 import { errorMessage } from '../lib/errors';
 import { MAX_WORKOUT_NAME_LENGTH } from '../lib/workout-file';
 import type { WorkoutCourse } from '../types';
@@ -15,6 +15,7 @@ export function RenameWorkoutDialog({
 }) {
 	const [name, setName] = useState(course.name);
 	const [renameError, setRenameError] = useState('');
+	const nameInputRef = useDialogInitialFocus<HTMLInputElement>();
 	useCloseOnEscape(true, onClose);
 
 	const submitRename = (event: FormEvent<HTMLFormElement>) => {
@@ -54,12 +55,12 @@ export function RenameWorkoutDialog({
 						Workout name
 					</label>
 					<input
-						autoFocus
 						className="mt-2 h-11 w-full rounded-xl border border-line bg-[#10151a] px-3 text-sm outline-none placeholder:text-slate-600 focus:border-mint"
 						id="workout-name"
 						maxLength={MAX_WORKOUT_NAME_LENGTH}
 						onChange={(event) => setName(event.target.value)}
 						placeholder="Name this workout"
+						ref={nameInputRef}
 						value={name}
 					/>
 					{renameError ? (

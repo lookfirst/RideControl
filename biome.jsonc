@@ -34,6 +34,9 @@
 	},
 	"linter": {
 		"rules": {
+			"a11y": {
+				"noAutofocus": "error"
+			},
 			"performance": {
 				// Reconnect attempts must be sequential, and these leaf event handlers are not memoized consumers.
 				"noAwaitInLoops": "off",

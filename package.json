@@ -6,11 +6,11 @@
   "scripts": {
     "dev": "vite --host localhost --port 4200",
     "build": "tsc && vite build",
-    "check": "biome check .",
+    "check": "biome check . --error-on-warnings",
     "fix": "biome check --write .",
     "test": "bun test",
     "tailwind:check": "bun scripts/check-tailwind.ts",
-    "ci": "biome check . && bun run tailwind:check && bun test && tsc --noEmit && vite build",
+    "ci": "biome check . --error-on-warnings && bun run tailwind:check && bun test && tsc --noEmit && vite build",
     "deploy": "bun run build && wrangler deploy",
     "preview": "vite preview --host localhost --port 4200"
   },
@@ -25,13 +25,13 @@
     "@vitejs/plugin-react": "^6.0.3",
     "fflate": "^0.8.3",
     "leaflet": "^1.9.4",
-    "react": "^19.2.7",
-    "react-dom": "^19.2.7",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8",
     "tailwindcss": "^4.3.3"
   },
   "devDependencies": {
-    "@biomejs/biome": "^2.5.4",
-    "@cloudflare/vite-plugin": "^1.45.1",
+    "@biomejs/biome": "^2.5.5",
+    "@cloudflare/vite-plugin": "^1.46.0",
     "@tailwindcss/language-server": "^0.16.0",
     "@types/bun": "^1.3.14",
     "@types/leaflet": "^1.9.21",
@@ -42,6 +42,6 @@
     "typescript": "^7.0.2",
     "ultracite": "^7.9.4",
     "vite": "^8.1.5",
-    "wrangler": "^4.112.0"
+    "wrangler": "^4.113.0"
   }
 }

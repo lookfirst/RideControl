@@ -26,6 +26,10 @@ import {
 import { useBikeGpxCatalog } from '../hooks/use-bikegpx-catalog';
 import { useFileDrop } from '../hooks/use-file-drop';
 import { usePersistentScrollPosition } from '../hooks/use-persistent-scroll-position';
+import {
+	loadBikeGpxBrowserOpen,
+	persistBikeGpxBrowserOpen,
+} from '../lib/bikegpx-browser-preferences';
 import { errorMessage } from '../lib/errors';
 import { formatDescriptionDistance, formatDistance, formatElevation } from '../lib/units';
 import {
@@ -324,7 +328,9 @@ export function WorkoutPanel({
 	speedUnit: SpeedUnit;
 }) {
 	const importInput = useRef<HTMLInputElement>(null);
-	const [bikeGpxBrowserOpen, setBikeGpxBrowserOpen] = useState(false);
+	const [bikeGpxBrowserOpen, setBikeGpxBrowserOpenState] = useState(
+		() => open && loadBikeGpxBrowserOpen()
+	);
 	const [importing, setImporting] = useState(false);
 	const [libraryStatus, setLibraryStatus] = useState('');
 	const [importError, setImportError] = useState('');
@@ -349,6 +355,10 @@ export function WorkoutPanel({
 		WORKOUT_SCROLL_POSITION_STORAGE_KEY,
 		open
 	);
+	const setBikeGpxBrowserOpen = useCallback((nextOpen: boolean) => {
+		persistBikeGpxBrowserOpen(nextOpen);
+		setBikeGpxBrowserOpenState(nextOpen);
+	}, []);
 
 	const importWorkout = useCallback(
 		async (file: File) => {
@@ -635,7 +645,6 @@ export function WorkoutPanel({
 						catalogError={bikeGpxCatalog.error}
 						catalogLoading={bikeGpxCatalog.loading}
 						customCourseIds={customCourseIds}
-						onAnalyzeRoute={bikeGpxCatalog.updateRouteAnalysis}
 						onClose={() => setBikeGpxBrowserOpen(false)}
 						onImportCourse={async (course) => {
 							const imported = await onImportCourse(course);

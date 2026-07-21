@@ -1,6 +1,7 @@
 # Project instructions
 
 - After making any changes, always run `bun run ci` before handing work back.
+- Keep Biome completely clean: warnings and unused suppression comments are CI failures.
 - Run `bun run ci` again immediately before every push, and do not push unless it passes for the exact commit being pushed. While GitHub Actions is unavailable, local CI is the required merge gate; do not wait for a GitHub Actions status check to merge.
 - `bun run ci` must run the Ultracite-configured Biome checks and Tailwind CSS language-server diagnostics automatically, followed by the unit tests, TypeScript check, and production build.
 - Fix all reported issues rather than bypassing or disabling checks unless the project requirements explicitly demand an exception.
@@ -13,7 +14,7 @@
 - Never include AI assistant, product, vendor, or model names (such as `codex` or `openai`) in branch names, commit messages, pull request titles or descriptions, issue titles or descriptions, tags, release notes, or any other repository-visible metadata or content.
 - Name branches only after the work being performed, such as `refactor/tanstack-store`; do not apply a tool's default branch prefix when that prefix would violate the naming rule above.
 - When the user says "add, commit", group all existing changes into logical sets, stage and commit each group, and repeat until every change is committed and the working tree is clean.
-- At the start of every new work request, check the current Git branch before changing files. If the current branch is `main`, create and switch to a descriptively named task branch first.
+- Always make changes on a descriptively named task branch, never on `main`. At the start of every new work request, check the current Git branch before changing any file; if the current branch is `main`, create and switch to the task branch first.
 - Never push work directly to `main`. If `main` already contains uncommitted changes or commits that have not been pushed, create the task branch from its current state so all of that work moves forward on the new branch, then continue the normal workflow there.
 - When the user says "add, commit, push, pr, merge" or otherwise confirms that the work is ready, complete the delivery workflow in order: group and commit all changes until the tree is clean, run `bun run ci` for the exact commit being delivered, push the task branch, open a pull request targeting `main`, and merge the pull request without depending on GitHub Actions while it is unavailable. If local CI fails or the pull request cannot merge, fix the problem on the same task branch and repeat the relevant steps.
 - Keep React component modules compatible with Vite Fast Refresh: export only React components from component files, and move non-component runtime exports such as constants, helpers, and metadata into separate modules to avoid incompatible-export invalidations.

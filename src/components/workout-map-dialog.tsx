@@ -1,5 +1,5 @@
 import 'leaflet/dist/leaflet.css';
-import { useCloseOnEscape } from '../hooks/use-dialog-behavior';
+import { useCloseOnEscape, useDialogInitialFocus } from '../hooks/use-dialog-behavior';
 import { formatDescriptionDistance } from '../lib/units';
 import type { SpeedUnit, WorkoutCourse } from '../types';
 import { WorkoutRouteMap } from './workout-route-map';
@@ -14,6 +14,7 @@ export function WorkoutMapDialog({
 	speedUnit: SpeedUnit;
 }) {
 	useCloseOnEscape(true, onClose);
+	const closeButtonRef = useDialogInitialFocus<HTMLButtonElement>();
 
 	return (
 		<div className="fixed inset-0 z-50 bg-black/45 backdrop-blur-[2px]">
@@ -44,9 +45,9 @@ export function WorkoutMapDialog({
 					</div>
 					<button
 						aria-label="Close workout map"
-						autoFocus
 						className="grid h-9 w-9 shrink-0 place-items-center rounded-lg text-slate-400 hover:bg-slate-700 hover:text-white"
 						onClick={onClose}
+						ref={closeButtonRef}
 						type="button"
 					>
 						×

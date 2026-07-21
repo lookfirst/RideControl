@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { CHROME_BLUETOOTH_FLAGS_URL } from '../constants';
+import { useDialogInitialFocus } from '../hooks/use-dialog-behavior';
 import { automaticBluetoothReconnectConfigured, bluetoothBrowserNotice } from '../lib/browser';
 import type { DeviceConnectionView } from '../lib/device-connection';
 import { MAX_CLICK_CONTROLLERS } from '../lib/zwift-click';
@@ -333,6 +334,7 @@ export function DevicePairingPanel({
 	open: boolean;
 	trainer: DeviceSlot;
 }) {
+	const closeButtonRef = useDialogInitialFocus<HTMLButtonElement>(open);
 	const [flagsUrlCopied, setFlagsUrlCopied] = useState(false);
 	const copyChromeFlagsUrl = async () => {
 		await navigator.clipboard.writeText(CHROME_BLUETOOTH_FLAGS_URL);
@@ -371,9 +373,9 @@ export function DevicePairingPanel({
 				</div>
 				<button
 					aria-label="Close paired devices"
-					autoFocus
 					className="grid h-9 w-9 shrink-0 place-items-center rounded-lg text-slate-400 hover:bg-slate-700 hover:text-white"
 					onClick={onClose}
+					ref={closeButtonRef}
 					type="button"
 				>
 					×
