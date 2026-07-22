@@ -5,9 +5,11 @@ import {
 	CYCLING_POWER_MEASUREMENT,
 	CYCLING_SPEED_AND_CADENCE,
 	FITNESS_MACHINE,
+	FTMS_CONTROL_OPCODE,
 	INDOOR_BIKE_DATA,
 	OPTIONAL_BLUETOOTH_OPERATION_TIMEOUT_MS,
 	SUPPORTED_RESISTANCE_LEVEL_RANGE,
+	TRAINER_OPTIONAL_SERVICES,
 } from '../constants';
 import type { Metrics, Range } from '../types';
 import {
@@ -25,16 +27,120 @@ import { withBluetoothOperationTimeout } from './bluetooth-operation';
 import { withPromiseTimeout } from './promise-timeout';
 
 interface TrainerDeviceCallbacks {
-	onControlRejected: () => void;
 	onDisconnect: () => void;
 	onMetrics: (metrics: Partial<Metrics>, reportsDistance: boolean) => void;
 }
 
 export interface TrainerDeviceConnection {
 	cleanup: () => void;
-	controlPoint: BluetoothRemoteGATTCharacteristic;
 	resistanceRange: Range;
+	sendControlCommand: (bytes: readonly number[]) => Promise<void>;
 	startOptionalMetrics: () => void;
+}
+
+interface PendingControlProcedure {
+	opcode: number;
+	reject: (error: Error) => void;
+	resolve: () => void;
+}
+
+const FTMS_RESULT = {
+	CONTROL_NOT_PERMITTED: 0x05,
+	INVALID_PARAMETER: 0x03,
+	OP_CODE_NOT_SUPPORTED: 0x02,
+	OPERATION_FAILED: 0x04,
+	SUCCESS: 0x01,
+} as const;
+
+const FTMS_RESULT_MESSAGE: Readonly<Record<number, string>> = {
+	[FTMS_RESULT.CONTROL_NOT_PERMITTED]: 'control not permitted',
+	[FTMS_RESULT.INVALID_PARAMETER]: 'invalid parameter',
+	[FTMS_RESULT.OP_CODE_NOT_SUPPORTED]: 'operation not supported',
+	[FTMS_RESULT.OPERATION_FAILED]: 'operation failed',
+};
+
+const FTMS_COMMAND_NAME: Readonly<Record<number, string>> = {
+	[FTMS_CONTROL_OPCODE.REQUEST_CONTROL]: 'Request Control',
+	[FTMS_CONTROL_OPCODE.SET_TARGET_RESISTANCE]: 'Set Target Resistance',
+	[FTMS_CONTROL_OPCODE.START_OR_RESUME]: 'Start or Resume',
+};
+
+export function trainerRequestOptions(): RequestDeviceOptions {
+	return {
+		filters: [{ services: [FITNESS_MACHINE] }],
+		optionalServices: TRAINER_OPTIONAL_SERVICES,
+	};
+}
+
+function ftmsControlError(opcode: number, result: number): Error {
+	const command = FTMS_COMMAND_NAME[opcode] ?? `command 0x${opcode.toString(16)}`;
+	const resultMessage = FTMS_RESULT_MESSAGE[result] ?? `result 0x${result.toString(16)}`;
+	return new Error(`Trainer rejected ${command}: ${resultMessage}.`);
+}
+
+function createControlPointProcedure(controlPoint: BluetoothRemoteGATTCharacteristic): {
+	cancel: () => void;
+	handleIndication: (event: Event) => void;
+	send: (bytes: readonly number[]) => Promise<void>;
+} {
+	let pending: PendingControlProcedure | undefined;
+	const handleIndication = (event: Event) => {
+		const value = characteristicValue(event);
+		if (
+			!(pending && value) ||
+			value.byteLength < 3 ||
+			value.getUint8(0) !== FTMS_CONTROL_OPCODE.RESPONSE_CODE ||
+			value.getUint8(1) !== pending.opcode
+		) {
+			return;
+		}
+		const procedure = pending;
+		pending = undefined;
+		const result = value.getUint8(2);
+		if (result === FTMS_RESULT.SUCCESS) {
+			procedure.resolve();
+		} else {
+			procedure.reject(ftmsControlError(procedure.opcode, result));
+		}
+	};
+	const cancel = () => {
+		const procedure = pending;
+		pending = undefined;
+		procedure?.reject(new Error('Trainer connection closed during a control command.'));
+	};
+	const send = async (bytes: readonly number[]) => {
+		const [opcode] = bytes;
+		if (opcode === undefined) {
+			throw new Error('Trainer control command cannot be empty.');
+		}
+		if (pending) {
+			throw new Error('Another trainer control command is still in progress.');
+		}
+		let procedure: PendingControlProcedure | undefined;
+		const response = new Promise<void>((resolve, reject) => {
+			procedure = { opcode, reject, resolve };
+			pending = procedure;
+		});
+		const acknowledged = withBluetoothOperationTimeout(
+			response,
+			'Fitness machine control response'
+		);
+		try {
+			await Promise.all([
+				withBluetoothOperationTimeout(
+					controlPoint.writeValueWithResponse(Uint8Array.from(bytes)),
+					'Fitness machine control write'
+				),
+				acknowledged,
+			]);
+		} catch (error) {
+			if (pending === procedure) {
+				pending = undefined;
+			}
+			throw error;
+		}
+	};
+	return { cancel, handleIndication, send };
 }
 
 async function readResistanceRange(service: BluetoothRemoteGATTService) {
@@ -111,7 +217,7 @@ export async function connectTrainerDevice(
 	device: BluetoothDevice,
 	rediscover: boolean,
 	fallbackRange: Range,
-	{ onControlRejected, onDisconnect, onMetrics }: TrainerDeviceCallbacks
+	{ onDisconnect, onMetrics }: TrainerDeviceCallbacks
 ): Promise<TrainerDeviceConnection> {
 	const server = await connectGatt(device, rediscover);
 	const service = await withBluetoothOperationTimeout(
@@ -136,14 +242,10 @@ export async function connectTrainerDevice(
 		const parsed = parseIndoorBikeData(value);
 		onMetrics(parsed.metrics, parsed.reportsDistance);
 	});
+	const controlProcedure = createControlPointProcedure(controlPoint);
 	const controlPointNotifications = createBluetoothNotificationSubscription(
 		controlPoint,
-		(event) => {
-			const value = characteristicValue(event);
-			if (value?.getUint8(0) === 0x80 && value.getUint8(2) !== 0x01) {
-				onControlRejected();
-			}
-		}
+		controlProcedure.handleIndication
 	);
 	try {
 		await withBluetoothOperationTimeout(
@@ -175,6 +277,7 @@ export async function connectTrainerDevice(
 		const cleanupRequiredServices = combineBluetoothCleanups(
 			bikeDataNotifications.cleanup,
 			controlPointNotifications.cleanup,
+			controlProcedure.cancel,
 			() => device.removeEventListener('gattserverdisconnected', onDisconnect)
 		);
 		const cleanup = () => {
@@ -209,14 +312,15 @@ export async function connectTrainerDevice(
 		};
 		return {
 			cleanup,
-			controlPoint,
 			resistanceRange,
+			sendControlCommand: controlProcedure.send,
 			startOptionalMetrics,
 		};
 	} catch (error) {
 		combineBluetoothCleanups(
 			bikeDataNotifications.cleanup,
 			controlPointNotifications.cleanup,
+			controlProcedure.cancel,
 			() => device.removeEventListener('gattserverdisconnected', onDisconnect)
 		)();
 		throw error;

@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import {
 	characteristicValue,
 	connectGatt,
-	findRememberedKickr,
+	findRememberedTrainer,
 	parseCrankCadence,
 	parseIndoorBikeData,
 	recordMetricActivity,
@@ -82,7 +82,7 @@ describe('Bluetooth data utilities', () => {
 		expect(resistanceCommand(50, { max: 30, min: -10 })).toEqual([4, 100, 0]);
 	});
 
-	test('prefers a saved device and otherwise reconnects only a named KICKR', async () => {
+	test('prefers a saved trainer and preserves the legacy KICKR fallback', async () => {
 		const devices = [
 			{ id: 'one', name: 'Other' },
 			{ id: 'two', name: 'KICKR CORE' },
@@ -90,14 +90,16 @@ describe('Bluetooth data utilities', () => {
 		const bluetooth = {
 			getDevices: async () => devices,
 		} as Bluetooth;
-		expect(await findRememberedKickr(bluetooth, { getItem: () => 'one' })).toBe(devices[0]);
-		expect(await findRememberedKickr(bluetooth, { getItem: () => null })).toBe(devices[1]);
+		expect(await findRememberedTrainer(bluetooth, { getItem: () => 'one' })).toBe(devices[0]);
+		expect(await findRememberedTrainer(bluetooth, { getItem: () => null })).toBe(devices[1]);
 		expect(
-			await findRememberedKickr({ getDevices: async () => [devices[0]] } as Bluetooth, {
+			await findRememberedTrainer({ getDevices: async () => [devices[0]] } as Bluetooth, {
 				getItem: () => null,
 			})
 		).toBeUndefined();
-		expect(await findRememberedKickr({} as Bluetooth, { getItem: () => null })).toBeUndefined();
+		expect(
+			await findRememberedTrainer({} as Bluetooth, { getItem: () => null })
+		).toBeUndefined();
 	});
 
 	test('loads and selects all saved device types from one permitted-device catalog', async () => {

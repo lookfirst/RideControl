@@ -132,21 +132,22 @@ export function resistanceCommand(percent: number, range: Range): number[] {
 	return [0x04, scaled & 255, (scaled >> 8) & 255];
 }
 
-export async function findRememberedKickr(
+export async function findRememberedTrainer(
 	bluetooth: Bluetooth = navigator.bluetooth,
 	storage: Pick<Storage, 'getItem'> = localStorage
 ): Promise<BluetoothDevice | undefined> {
 	const permitted = await loadRememberedBluetoothDevices(bluetooth);
-	return selectRememberedKickr(permitted, storage);
+	return selectRememberedTrainer(permitted, storage);
 }
 
-export function selectRememberedKickr(
+export function selectRememberedTrainer(
 	permitted: readonly BluetoothDevice[],
 	storage: Pick<Storage, 'getItem'> = localStorage
 ): BluetoothDevice | undefined {
 	const savedDeviceId = storage.getItem(TRAINER_DEVICE_STORAGE_KEY);
 	return (
 		permitted.find((candidate) => candidate.id === savedDeviceId) ??
+		// Preserve automatic reconnect for people paired before trainer ids were stored.
 		permitted.find((candidate) => candidate.name?.toUpperCase().startsWith('KICKR'))
 	);
 }

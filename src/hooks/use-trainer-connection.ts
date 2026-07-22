@@ -2,14 +2,14 @@ import { useCallback, useEffect, useRef } from 'react';
 import {
 	CHROME_BLUETOOTH_PERMISSION_MESSAGE,
 	emptyMetrics,
-	optionalServices,
+	FTMS_CONTROL_OPCODE,
 	WEB_BLUETOOTH_UNAVAILABLE_MESSAGE,
 } from '../constants';
 import {
 	isBluetoothChooserCancellation,
 	recordMetricActivity,
 	resistanceCommand,
-	selectRememberedKickr,
+	selectRememberedTrainer,
 	TRAINER_DEVICE_STORAGE_KEY,
 } from '../lib/bluetooth';
 import {
@@ -20,7 +20,7 @@ import {
 import { errorMessage } from '../lib/errors';
 import type { RememberedBluetoothDeviceCatalog } from '../lib/remembered-bluetooth-devices';
 import { storedResistance } from '../lib/session';
-import { connectTrainerDevice } from '../lib/trainer-device';
+import { connectTrainerDevice, trainerRequestOptions } from '../lib/trainer-device';
 import type { TrainerStore } from '../stores/trainer-store';
 import { usePageHide } from './use-page-hide';
 
@@ -55,7 +55,9 @@ export function useTrainerConnection(
 	const unloading = useRef(false);
 	const lastPedalingAt = useRef(0);
 	const trainerReportsDistance = useRef(false);
-	const controlPoint = useRef<BluetoothRemoteGATTCharacteristic | undefined>(undefined);
+	const sendControlCommand = useRef<((bytes: readonly number[]) => Promise<void>) | undefined>(
+		undefined
+	);
 	const resistanceRange = useRef(store.get().resistanceRange);
 	const reconnectController = useRef(
 		createBluetoothReconnectController<BluetoothDevice>({
@@ -67,23 +69,30 @@ export function useTrainerConnection(
 		})
 	);
 
-	const writeControl = useCallback(
-		async (characteristic: BluetoothRemoteGATTCharacteristic | undefined, bytes: number[]) => {
-			if (!characteristic) {
-				setNotice('Connect the trainer before changing its settings.');
-				return;
+	const queueControlCommand = useCallback(
+		async (
+			send: ((bytes: readonly number[]) => Promise<void>) | undefined,
+			bytes: readonly number[]
+		) => {
+			if (!send) {
+				throw new Error('Connect the trainer before changing its settings.');
 			}
-			const action = async () => {
-				try {
-					await characteristic.writeValueWithResponse(new Uint8Array(bytes));
-				} catch (error) {
-					setNotice(`Trainer command failed: ${errorMessage(error)}`);
-				}
-			};
+			const action = () => send(bytes);
 			commandQueue.current = commandQueue.current.then(action, action);
 			await commandQueue.current;
 		},
-		[setNotice]
+		[]
+	);
+
+	const writeControl = useCallback(
+		async (send: typeof sendControlCommand.current, bytes: readonly number[]) => {
+			try {
+				await queueControlCommand(send, bytes);
+			} catch (error) {
+				setNotice(`Trainer command failed: ${errorMessage(error)}`);
+			}
+		},
+		[queueControlCommand, setNotice]
 	);
 
 	function connectionStopped(rediscover: boolean) {
@@ -107,7 +116,7 @@ export function useTrainerConnection(
 		disconnectRequested.current = false;
 		device.current = undefined;
 		store.actions.setDeviceName(undefined);
-		controlPoint.current = undefined;
+		sendControlCommand.current = undefined;
 		setMetrics(emptyMetrics);
 		lastPedalingAt.current = 0;
 		trainerReportsDistance.current = false;
@@ -140,7 +149,6 @@ export function useTrainerConnection(
 				rediscover,
 				resistanceRange.current,
 				{
-					onControlRejected: () => setNotice('Trainer did not accept that command.'),
 					onDisconnect: () => {
 						connectionCleanup.current();
 						handleTrainerDisconnected(selected);
@@ -160,7 +168,7 @@ export function useTrainerConnection(
 				return false;
 			}
 			connectionCleanup.current = nextConnection.cleanup;
-			controlPoint.current = nextConnection.controlPoint;
+			sendControlCommand.current = nextConnection.sendControlCommand;
 			resistanceRange.current = nextConnection.resistanceRange;
 			store.actions.setResistanceRange(nextConnection.resistanceRange);
 			const restored = storedResistance();
@@ -174,10 +182,14 @@ export function useTrainerConnection(
 				progress: 0,
 				to: restored,
 			});
-			await writeControl(controlPoint.current, [0]);
-			await new Promise((resolve) => window.setTimeout(resolve, 150));
-			await writeControl(
-				controlPoint.current,
+			await queueControlCommand(sendControlCommand.current, [
+				FTMS_CONTROL_OPCODE.REQUEST_CONTROL,
+			]);
+			await queueControlCommand(sendControlCommand.current, [
+				FTMS_CONTROL_OPCODE.START_OR_RESUME,
+			]);
+			await queueControlCommand(
+				sendControlCommand.current,
 				resistanceCommand(restored, resistanceRange.current)
 			);
 			if (connectionStopped(rediscover)) {
@@ -193,6 +205,9 @@ export function useTrainerConnection(
 			setNotice(`${selected.name ?? 'Trainer'} is connected and ready.`);
 			return true;
 		} catch (error) {
+			connectionCleanup.current();
+			connectionCleanup.current = () => undefined;
+			sendControlCommand.current = undefined;
 			if (selected.gatt?.connected) {
 				selected.gatt.disconnect();
 			}
@@ -216,13 +231,11 @@ export function useTrainerConnection(
 		disconnectRequested.current = false;
 		setConnectionPhase('pairing');
 		try {
-			const selected = await navigator.bluetooth.requestDevice({
-				filters: [{ namePrefix: 'KICKR' }],
-				optionalServices,
-			});
+			const selected = await navigator.bluetooth.requestDevice(trainerRequestOptions());
 			pendingDevice.current = selected;
 			pairedDevice.current = selected;
 			store.actions.setPairedDeviceName(selected.name);
+			localStorage.setItem(TRAINER_DEVICE_STORAGE_KEY, selected.id);
 			autoReconnect.current = true;
 			if (!(await connectDevice(selected))) {
 				scheduleBluetoothDeviceReconnect(reconnectController.current, selected);
@@ -258,7 +271,7 @@ export function useTrainerConnection(
 		device.current?.gatt?.disconnect();
 		device.current = undefined;
 		store.actions.setDeviceName(undefined);
-		controlPoint.current = undefined;
+		sendControlCommand.current = undefined;
 		setMetrics(emptyMetrics);
 		setConnectionPhase(pairedDevice.current ? 'offline' : 'unpaired');
 	}, [setConnectionPhase, setMetrics, store]);
@@ -289,7 +302,7 @@ export function useTrainerConnection(
 			pairedDevice.current = undefined;
 			store.actions.setDeviceName(undefined);
 			store.actions.setPairedDeviceName(undefined);
-			controlPoint.current = undefined;
+			sendControlCommand.current = undefined;
 			setMetrics(emptyMetrics);
 			setConnectionPhase('unpaired');
 			setNotice('Trainer removed from paired devices.');
@@ -299,7 +312,7 @@ export function useTrainerConnection(
 	const sendResistance = useCallback(
 		async (percent: number) => {
 			await writeControl(
-				controlPoint.current,
+				sendControlCommand.current,
 				resistanceCommand(percent, resistanceRange.current)
 			);
 		},
@@ -329,7 +342,7 @@ export function useTrainerConnection(
 		if (!rememberedDevices.devices) {
 			return;
 		}
-		const remembered = selectRememberedKickr(rememberedDevices.devices);
+		const remembered = selectRememberedTrainer(rememberedDevices.devices);
 		if (!remembered) {
 			setConnectionPhase('unpaired');
 			return;

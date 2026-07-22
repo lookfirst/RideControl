@@ -25,14 +25,19 @@ export const RECORDING_PAUSE_DELAY_MS = 10_000;
 export const CONTROL_FLASH_MS = 180;
 export const EMPTY_ROUTE = [] as const;
 
-export const optionalServices: BluetoothServiceUUID[] = [
-	FITNESS_MACHINE,
+export const TRAINER_OPTIONAL_SERVICES: BluetoothServiceUUID[] = [
 	CYCLING_POWER,
 	CYCLING_SPEED_AND_CADENCE,
-	HEART_RATE,
 	BATTERY,
 	DEVICE_INFORMATION,
 ];
+
+export const FTMS_CONTROL_OPCODE = {
+	REQUEST_CONTROL: 0x00,
+	RESPONSE_CODE: 0x80,
+	SET_TARGET_RESISTANCE: 0x04,
+	START_OR_RESUME: 0x07,
+} as const;
 
 export const emptyMetrics: Metrics = {
 	cadence: 0,

@@ -6,13 +6,30 @@ import {
 	CYCLING_SPEED_AND_CADENCE,
 	FITNESS_MACHINE,
 	FITNESS_MACHINE_STATUS,
+	FTMS_CONTROL_OPCODE,
 	INDOOR_BIKE_DATA,
 	SUPPORTED_RESISTANCE_LEVEL_RANGE,
 } from '../src/constants';
-import { connectTrainerDevice } from '../src/lib/trainer-device';
+import { connectTrainerDevice, trainerRequestOptions } from '../src/lib/trainer-device';
 
 function notificationCharacteristic() {
 	const listeners = new Set<EventListenerOrEventListenerObject>();
+	const writes: number[][] = [];
+	const emit = (bytes: readonly number[]) => {
+		const buffer = Uint8Array.from(bytes);
+		const event = {
+			target: {
+				value: new DataView(buffer.buffer),
+			},
+		} as unknown as Event;
+		for (const listener of listeners) {
+			if (typeof listener === 'function') {
+				listener(event);
+			} else {
+				listener.handleEvent(event);
+			}
+		}
+	};
 	return {
 		characteristic: {
 			addEventListener: (_type: string, listener: EventListenerOrEventListenerObject) =>
@@ -20,12 +37,31 @@ function notificationCharacteristic() {
 			removeEventListener: (_type: string, listener: EventListenerOrEventListenerObject) =>
 				listeners.delete(listener),
 			startNotifications: async () => undefined,
+			writeValueWithResponse: (value: BufferSource) => {
+				const bytes = ArrayBuffer.isView(value)
+					? new Uint8Array(value.buffer, value.byteOffset, value.byteLength)
+					: new Uint8Array(value);
+				writes.push([...bytes]);
+				return Promise.resolve();
+			},
 		} as unknown as BluetoothRemoteGATTCharacteristic,
+		emit,
 		listeners,
+		writes,
 	};
 }
 
 describe('trainer device connection', () => {
+	test('discovers trainers by FTMS service instead of vendor name', () => {
+		const options = trainerRequestOptions();
+		if (!('filters' in options)) {
+			throw new Error('Expected an FTMS service filter.');
+		}
+		expect(options.filters).toEqual([{ services: [FITNESS_MACHINE] }]);
+		expect(options.optionalServices).toContain(CYCLING_POWER);
+		expect(options.optionalServices).toContain(CYCLING_SPEED_AND_CADENCE);
+	});
+
 	test('does not block a ready trainer on optional service discovery', async () => {
 		const bikeData = notificationCharacteristic();
 		const controlPoint = notificationCharacteristic();
@@ -86,13 +122,30 @@ describe('trainer device connection', () => {
 			true,
 			{ max: 100, min: 0 },
 			{
-				onControlRejected: () => undefined,
 				onDisconnect: () => undefined,
 				onMetrics: () => undefined,
 			}
 		);
-		expect(connection.controlPoint).toBe(controlPoint.characteristic);
 		expect(connection.resistanceRange).toEqual({ max: 100, min: 0 });
+
+		const requestControl = connection.sendControlCommand([FTMS_CONTROL_OPCODE.REQUEST_CONTROL]);
+		controlPoint.emit([
+			FTMS_CONTROL_OPCODE.RESPONSE_CODE,
+			FTMS_CONTROL_OPCODE.REQUEST_CONTROL,
+			0x01,
+		]);
+		await requestControl;
+		expect(controlPoint.writes).toEqual([[FTMS_CONTROL_OPCODE.REQUEST_CONTROL]]);
+
+		const rejectedStart = connection.sendControlCommand([FTMS_CONTROL_OPCODE.START_OR_RESUME]);
+		controlPoint.emit([
+			FTMS_CONTROL_OPCODE.RESPONSE_CODE,
+			FTMS_CONTROL_OPCODE.START_OR_RESUME,
+			0x05,
+		]);
+		await expect(rejectedStart).rejects.toThrow(
+			'Trainer rejected Start or Resume: control not permitted.'
+		);
 
 		connection.cleanup();
 		releasePowerService?.(power);
