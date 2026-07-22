@@ -305,6 +305,29 @@ describe('session store', () => {
 		expect(store.get().plannedWorkout).toBeUndefined();
 	});
 
+	test('keeps an ended workout selected for the next session', () => {
+		const [completedCourse] = WORKOUT_COURSES;
+		if (!completedCourse) {
+			throw new Error('Expected a built-in workout course');
+		}
+		const store = createSessionStore(restoredSession(), 1000);
+		store.actions.selectWorkout(completedCourse);
+
+		store.actions.endSession(5000);
+		expect(store.get()).toMatchObject({
+			ended: true,
+			plannedWorkout: { course: completedCourse },
+			workout: { course: completedCourse },
+		});
+
+		store.actions.reset(CONTROL_MODE.GEAR, 6000);
+		expect(store.get()).toMatchObject({
+			ended: false,
+			plannedWorkout: undefined,
+			workout: { course: completedCourse },
+		});
+	});
+
 	test('records an intentional discard until the session is reset or saved', () => {
 		const store = createSessionStore(restoredSession(), 1000);
 		store.actions.endSession(5000);

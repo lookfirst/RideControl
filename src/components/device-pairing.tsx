@@ -3,7 +3,12 @@ import { CHROME_BLUETOOTH_FLAGS_URL } from '../constants';
 import { useDialogInitialFocus } from '../hooks/use-dialog-behavior';
 import { automaticBluetoothReconnectConfigured, bluetoothBrowserNotice } from '../lib/browser';
 import type { DeviceConnectionView } from '../lib/device-connection';
-import { MAX_CLICK_CONTROLLERS } from '../lib/zwift-click';
+import {
+	CLICK_LATEST_FIRMWARE_VERSION,
+	CLICK_SHIFT,
+	type ClickShift,
+	clickFirmwareNeedsUpdate,
+} from '../lib/zwift-click';
 import { Icon } from './icon';
 import { SideTray } from './side-tray';
 
@@ -18,21 +23,110 @@ interface DeviceSlot extends DeviceConnectionView {
 
 interface ClickController extends DeviceConnectionView {
 	active: boolean;
-	id: string;
+	activeShift?: ClickShift;
+	battery?: number;
+	firmwareVersion?: string;
+	id?: string;
 	label: string;
+	role: ClickShift;
 }
 
-interface ClickSlot extends DeviceSlot {
+interface ClickSlot extends Omit<DeviceSlot, 'onPair'> {
 	connectedCount: number;
 	connectionActive: boolean;
 	controllers: ClickController[];
-	onForgetController: (deviceId: string) => void | Promise<void>;
+	onForgetController: (role: ClickShift) => void | Promise<void>;
+	onPairController: (role: ClickShift) => void | Promise<void>;
 	pairedCount: number;
-	pairing: boolean;
+	pairingRole?: ClickShift;
 	reconnecting: boolean;
 }
 
 const SLOW_RECONNECT_NOTICE_DELAY_MS = 10_000;
+const ZWIFT_CLICK_FIRMWARE_HELP_URL =
+	'https://support.zwift.com/updating-your-zwift-click-firmware-B1IdjkGW6';
+
+function clickControllerDetailText(controller: ClickController): string | undefined {
+	const details: string[] = [];
+	if (controller.firmwareVersion) {
+		details.push(
+			clickFirmwareNeedsUpdate(controller.firmwareVersion)
+				? `Firmware ${controller.firmwareVersion} · update to ${CLICK_LATEST_FIRMWARE_VERSION}`
+				: `Firmware ${controller.firmwareVersion}`
+		);
+	}
+	if (controller.battery !== undefined) {
+		details.push(`${controller.battery}% battery`);
+	}
+	return details.length ? details.join(' · ') : undefined;
+}
+
+function ClickControllerRow({
+	controller,
+	onForget,
+	onPair,
+	pairingRole,
+}: {
+	controller: ClickController;
+	onForget: (role: ClickShift) => void | Promise<void>;
+	onPair: (role: ClickShift) => void | Promise<void>;
+	pairingRole?: ClickShift;
+}) {
+	const detailText = clickControllerDetailText(controller);
+	const activeShiftSymbol = controller.activeShift === CLICK_SHIFT.UP ? '+' : '−';
+	return (
+		<div
+			className={`flex items-center gap-3 border-line border-b px-3 py-2.5 transition duration-150 last:border-b-0 ${controller.active ? 'bg-mint/10' : ''}`}
+		>
+			<StatusDot bluePulse busy={controller.busy} connected={controller.connected} />
+			<div className="min-w-0 flex-1">
+				<div className="flex items-center gap-2">
+					<p
+						className={`font-semibold text-xs transition ${controller.active ? 'text-mint' : 'text-slate-200'}`}
+					>
+						{controller.label}
+					</p>
+					<output
+						aria-hidden={controller.activeShift ? undefined : true}
+						aria-label={
+							controller.activeShift
+								? `${activeShiftSymbol} shift pressed`
+								: undefined
+						}
+						className={`grid h-5 w-5 shrink-0 place-items-center rounded-md bg-mint font-bold text-[11px] text-ink ${controller.activeShift ? '' : 'invisible'}`}
+					>
+						{controller.activeShift ? activeShiftSymbol : null}
+					</output>
+				</div>
+				{detailText ? (
+					<p
+						className={`mt-0.5 text-[10px] ${clickFirmwareNeedsUpdate(controller.firmwareVersion) ? 'text-amber-300' : 'text-slate-500'}`}
+					>
+						{detailText}
+					</p>
+				) : null}
+			</div>
+			{controller.paired ? (
+				<button
+					className="font-semibold text-[11px] text-rose-300 hover:text-rose-200"
+					onClick={() => onForget(controller.role)}
+					type="button"
+				>
+					Forget
+				</button>
+			) : (
+				<button
+					className="h-8 rounded-lg bg-lime px-3 font-bold text-[11px] text-ink transition hover:bg-[#e4ff9c] disabled:opacity-50"
+					disabled={pairingRole !== undefined}
+					onClick={() => onPair(controller.role)}
+					type="button"
+				>
+					{pairingRole === controller.role ? 'Selecting…' : 'Pair'}
+				</button>
+			)}
+		</div>
+	);
+}
 
 function ConnectingLabel() {
 	return (
@@ -84,19 +178,9 @@ function DeviceConnectionAction({
 	return disconnecting ? 'Disconnect' : 'Reconnect';
 }
 
-function clickControllerOrder(controller: ClickController) {
-	if (controller.label.startsWith('+')) {
-		return 0;
-	}
-	if (controller.label.startsWith('−')) {
-		return 1;
-	}
-	return 2;
-}
-
 function ClickConnectionStatus({ click, waiting }: { click: ClickSlot; waiting: boolean }) {
 	if (!click.connectionActive && click.pairedCount) {
-		return <>Connects during an active session</>;
+		return <>Reconnects when the session resumes</>;
 	}
 	if (waiting) {
 		return <ConnectingLabel />;
@@ -104,14 +188,11 @@ function ClickConnectionStatus({ click, waiting }: { click: ClickSlot; waiting: 
 	return <>{click.status}</>;
 }
 
-function pairControllerActionLabel(click: ClickSlot) {
-	if (click.pairing) {
-		return 'Selecting…';
+function clickControllerSummary(click: ClickSlot): string {
+	if (click.connectedCount) {
+		return 'Controller connected';
 	}
-	if (click.pairedCount) {
-		return 'Pair other controller';
-	}
-	return 'Pair controller';
+	return click.pairedCount ? 'Controller paired' : 'Pair the + controller';
 }
 
 function chromeFlagsLabel(copied: boolean) {
@@ -154,16 +235,20 @@ function DeviceActions({ slot }: { slot: DeviceSlot }) {
 			</button>
 		);
 	}
-	const disconnecting = slot.connected && !actionBusy;
+	return <ConnectedDeviceActions slot={slot} />;
+}
+
+function ConnectedDeviceActions({ slot }: { slot: Omit<DeviceSlot, 'onPair'> }) {
+	const disconnecting = slot.connected && !slot.busy;
 	return (
 		<div className="flex flex-wrap justify-end gap-2">
 			<button
 				className="h-9 rounded-lg border border-line px-3 font-semibold text-slate-300 text-xs transition hover:border-slate-500 hover:text-white disabled:opacity-50"
-				disabled={actionBusy}
+				disabled={slot.busy}
 				onClick={disconnecting ? slot.onDisconnect : slot.onReconnect}
 				type="button"
 			>
-				<DeviceConnectionAction busy={actionBusy} disconnecting={disconnecting} />
+				<DeviceConnectionAction busy={slot.busy} disconnecting={disconnecting} />
 			</button>
 			<button
 				className="h-9 rounded-lg border border-rose-400/25 px-3 font-semibold text-rose-300 text-xs transition hover:border-rose-400/60 hover:bg-rose-400/5"
@@ -341,16 +426,14 @@ export function DevicePairingPanel({
 		setFlagsUrlCopied(true);
 	};
 
-	const clickSlot: DeviceSlot = click;
 	const waitingForControllers = click.reconnecting || click.phase === 'connecting';
+	const clickFirmwareUpdateNeeded = click.controllers.some((controller) =>
+		clickFirmwareNeedsUpdate(controller.firmwareVersion)
+	);
 	const reconnecting = trainer.reconnecting || heartRate.reconnecting || click.reconnecting;
 	const allPairedDevicesConnected =
 		[trainer, heartRate].every((slot) => !slot.paired || slot.connected) &&
 		click.connectedCount === click.pairedCount;
-	const orderedClickControllers = [...click.controllers].sort(
-		(left, right) => clickControllerOrder(left) - clickControllerOrder(right)
-	);
-	const pairControllerLabel = pairControllerActionLabel(click);
 	const chromeFlagsCopyLabel = chromeFlagsLabel(flagsUrlCopied);
 
 	return (
@@ -367,8 +450,8 @@ export function DevicePairingPanel({
 						Paired devices
 					</h2>
 					<p className="mt-1 max-w-sm text-slate-400 text-sm">
-						Pair each sensor once. Ride Control reconnects remembered sensors
-						automatically; Click controllers connect only for an active ride.
+						Pair each physical device once. Ride Control keeps the trainer, heart-rate
+						monitor, and Click controller separate, then reconnects them automatically.
 					</p>
 				</div>
 				<button
@@ -427,9 +510,7 @@ export function DevicePairingPanel({
 									<h3 className="font-bold text-sm text-white">Zwift Click V2</h3>
 								</div>
 								<p className="mt-1 text-slate-300 text-xs">
-									{click.pairedCount
-										? `${click.connectedCount} of ${click.pairedCount} controllers connected`
-										: 'Pair each controller separately'}
+									{clickControllerSummary(click)}
 								</p>
 								<p className="mt-1 text-[11px] text-slate-500">
 									<ClickConnectionStatus
@@ -440,57 +521,44 @@ export function DevicePairingPanel({
 							</div>
 						</div>
 
-						{orderedClickControllers.length ? (
-							<div className="mt-4 overflow-hidden rounded-xl border border-line">
-								{orderedClickControllers.map((controller) => (
-									<div
-										className={`flex items-center gap-3 border-line border-b px-3 py-2.5 transition duration-150 last:border-b-0 ${controller.active ? 'bg-mint/10' : ''}`}
-										key={controller.id}
-									>
-										<StatusDot
-											bluePulse
-											busy={controller.busy}
-											connected={controller.connected}
-										/>
-										<div className="min-w-0 flex-1">
-											<p
-												className={`font-semibold text-xs transition ${controller.active ? 'text-mint' : 'text-slate-200'}`}
-											>
-												{controller.label}
-											</p>
-										</div>
-										<button
-											className="font-semibold text-[11px] text-rose-300 hover:text-rose-200"
-											onClick={() => click.onForgetController(controller.id)}
-											type="button"
-										>
-											Forget
-										</button>
-									</div>
-								))}
-							</div>
-						) : null}
+						<div className="mt-4 overflow-hidden rounded-xl border border-line">
+							{click.controllers.map((controller) => (
+								<ClickControllerRow
+									controller={controller}
+									key={controller.role}
+									onForget={click.onForgetController}
+									onPair={click.onPairController}
+									pairingRole={click.pairingRole}
+								/>
+							))}
+						</div>
 
 						<div className="mt-4 flex flex-wrap justify-end gap-2">
 							{click.pairedCount > 0 && click.connectionActive ? (
-								<DeviceActions slot={clickSlot} />
-							) : null}
-							{click.pairedCount < MAX_CLICK_CONTROLLERS ? (
-								<button
-									className="h-9 rounded-lg bg-lime px-3 font-bold text-ink text-xs transition hover:bg-[#e4ff9c] disabled:opacity-50"
-									disabled={click.pairing}
-									onClick={click.onPair}
-									type="button"
-								>
-									{pairControllerLabel}
-								</button>
+								<ConnectedDeviceActions slot={click} />
 							) : null}
 						</div>
-						<p className="mt-3 text-[10px] text-slate-500 leading-relaxed">
-							Wake each controller before pairing. The + and − sides are identified
-							automatically. Saved controllers connect for an active ride session and
-							disconnect when it ends.
+						<p className="mt-3 text-slate-500 text-xs leading-relaxed">
+							Wake the physical + controller, then choose Pair. Its + button shifts
+							up, and its blue Y button shifts down. It reconnects during open
+							sessions, including auto-pause, and may disconnect during a manual pause
+							or after the session ends.
 						</p>
+						{clickFirmwareUpdateNeeded ? (
+							<p className="mt-2 text-[10px] text-slate-500 leading-relaxed">
+								Use firmware {CLICK_LATEST_FIRMWARE_VERSION}. Update it in the Zwift
+								Companion app under Equipment → Zwift Click →{' '}
+								<a
+									className="font-semibold text-sky-300 underline underline-offset-2 hover:text-sky-200"
+									href={ZWIFT_CLICK_FIRMWARE_HELP_URL}
+									rel="noreferrer"
+									target="_blank"
+								>
+									Update Firmware
+								</a>
+								.
+							</p>
+						) : null}
 					</article>
 					<AutomaticReconnectStatus
 						configured={automaticReconnectConfigured}

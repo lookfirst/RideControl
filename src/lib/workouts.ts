@@ -89,18 +89,18 @@ interface WorkoutDashboardSource {
 }
 
 export function workoutDashboardPreview(source: WorkoutDashboardSource) {
-	const plannedWorkout = source.ended ? source.selectedWorkout : undefined;
-	return plannedWorkout
-		? {
-				distance: 0,
-				elevationTotals: emptyElevationTotals,
-				workout: plannedWorkout,
-			}
-		: {
-				distance: source.distance,
-				elevationTotals: source.elevationTotals,
-				workout: source.workout,
-			};
+	if (source.ended) {
+		return {
+			distance: 0,
+			elevationTotals: emptyElevationTotals,
+			workout: source.selectedWorkout,
+		};
+	}
+	return {
+		distance: source.distance,
+		elevationTotals: source.elevationTotals,
+		workout: source.workout,
+	};
 }
 
 function approximatelyEqual(left: number, right: number): boolean {

@@ -1,6 +1,9 @@
+import { BATTERY, DEVICE_INFORMATION, OPTIONAL_BLUETOOTH_OPERATION_TIMEOUT_MS } from '../constants';
 import { createBluetoothNotificationSubscription } from './bluetooth-notifications';
+import { withPromiseTimeout } from './promise-timeout';
 import {
-	clickV2ResetCommand,
+	type ClickControllerDetails,
+	clickBatteryLevel,
 	clickV2StartCommand,
 	connectClickGatt,
 	withClickConnectionTimeout,
@@ -12,6 +15,8 @@ import {
 } from './zwift-click';
 
 const CLICK_SETUP_STEP_TIMEOUT_MS = 3000;
+const BATTERY_LEVEL = 0x2a_19;
+const FIRMWARE_REVISION = 0x2a_26;
 
 export class SupersededClickConnectionError extends Error {}
 
@@ -32,19 +37,74 @@ async function clickService(server: BluetoothRemoteGATTServer) {
 interface ClickDeviceCallbacks {
 	isCurrent: () => boolean;
 	isOperational: () => boolean;
+	onDetails: (details: ClickControllerDetails) => void;
 	onDisconnect: () => void;
 	onMessage: (event: Event) => void;
 }
 
 export interface ClickDeviceConnection {
 	cleanup: () => void;
-	restart: () => Promise<void>;
+}
+
+function optionalClickDetail<T>(operation: Promise<T>): Promise<T | undefined> {
+	return withPromiseTimeout(
+		operation,
+		OPTIONAL_BLUETOOTH_OPERATION_TIMEOUT_MS,
+		() => new Error('Optional controller detail unavailable.')
+	).catch(() => undefined);
+}
+
+async function readFirmwareVersion(server: BluetoothRemoteGATTServer): Promise<string | undefined> {
+	const value = await (
+		await (
+			await server.getPrimaryService(DEVICE_INFORMATION)
+		).getCharacteristic(FIRMWARE_REVISION)
+	).readValue();
+	const firmwareVersion = new TextDecoder()
+		.decode(value)
+		.replaceAll('\0', '')
+		.trim()
+		.slice(0, 32);
+	return firmwareVersion || undefined;
+}
+
+async function readBatteryLevel(server: BluetoothRemoteGATTServer): Promise<number | undefined> {
+	const value = await (
+		await (await server.getPrimaryService(BATTERY)).getCharacteristic(BATTERY_LEVEL)
+	).readValue();
+	if (!value.byteLength) {
+		return;
+	}
+	const battery = value.getUint8(0);
+	return battery <= 100 ? battery : undefined;
+}
+
+export async function readClickDeviceDetails(
+	server: BluetoothRemoteGATTServer
+): Promise<ClickControllerDetails> {
+	const firmwareVersion = await optionalClickDetail(readFirmwareVersion(server));
+	const battery = await optionalClickDetail(readBatteryLevel(server));
+	return {
+		...(battery === undefined ? {} : { battery }),
+		...(firmwareVersion === undefined ? {} : { firmwareVersion }),
+	};
+}
+
+export async function inspectClickDeviceDetails(
+	device: BluetoothDevice
+): Promise<ClickControllerDetails> {
+	const server = await connectClickGatt(device, false);
+	try {
+		return await readClickDeviceDetails(server);
+	} finally {
+		device.gatt?.disconnect();
+	}
 }
 
 export async function connectClickDevice(
 	device: BluetoothDevice,
 	rediscover: boolean,
-	{ isCurrent, isOperational, onDisconnect, onMessage }: ClickDeviceCallbacks
+	{ isCurrent, isOperational, onDetails, onDisconnect, onMessage }: ClickDeviceCallbacks
 ): Promise<ClickDeviceConnection> {
 	const server = await connectClickGatt(device, rediscover);
 	ensureCurrentConnection(isCurrent);
@@ -66,15 +126,32 @@ export async function connectClickDevice(
 		CLICK_SETUP_STEP_TIMEOUT_MS
 	);
 	ensureCurrentConnection(isCurrent);
+	let firstMessageReceived = false;
+	let active = true;
+	let resolveFirstMessage: () => void = () => undefined;
+	const firstMessage = new Promise<void>((resolve) => {
+		resolveFirstMessage = resolve;
+	});
+	const handleMessage = (event: Event) => {
+		firstMessageReceived = true;
+		resolveFirstMessage();
+		const { value } = event.target as BluetoothRemoteGATTCharacteristic;
+		const battery = value ? clickBatteryLevel(value) : undefined;
+		if (battery !== undefined) {
+			onDetails({ battery });
+		}
+		onMessage(event);
+	};
 	const asyncNotifications = createBluetoothNotificationSubscription(
 		asyncCharacteristic,
-		onMessage
+		handleMessage
 	);
 	const syncNotifications = createBluetoothNotificationSubscription(
 		syncTxCharacteristic,
-		onMessage
+		handleMessage
 	);
 	const cleanup = () => {
+		active = false;
 		asyncNotifications.cleanup();
 		syncNotifications.cleanup();
 		device.removeEventListener('gattserverdisconnected', onDisconnect);
@@ -109,14 +186,18 @@ export async function connectClickDevice(
 			}
 		}
 		ensureCurrentConnection(isCurrent);
-		return {
-			cleanup,
-			restart: () =>
-				withClickConnectionTimeout(
-					syncRxCharacteristic.writeValueWithoutResponse(clickV2ResetCommand()),
-					CLICK_SETUP_STEP_TIMEOUT_MS
-				),
-		};
+		if (!(firstMessageReceived || isOperational())) {
+			await withClickConnectionTimeout(firstMessage, CLICK_SETUP_STEP_TIMEOUT_MS);
+		}
+		ensureCurrentConnection(isCurrent);
+		if (isOperational()) {
+			readClickDeviceDetails(server).then((details) => {
+				if (active && Object.keys(details).length) {
+					onDetails(details);
+				}
+			});
+		}
+		return { cleanup };
 	} catch (error) {
 		cleanup();
 		throw error;

@@ -1,13 +1,10 @@
 import { useCallback, useEffect, useRef } from 'react';
 import {
-	CLICK_CONTROLLER_ROLES_STORAGE_KEY,
 	CLICK_SHIFT,
-	type ClickControllerRoles,
 	type ClickShift,
 	filterAcceptedClickShifts,
 	filterClickShiftsForController,
 	parseClickV2Shift,
-	registerClickControllerRole,
 } from '../lib/zwift-click';
 import type { ZwiftClickStore } from '../stores/zwift-click-store';
 
@@ -21,10 +18,6 @@ const CLICK_HOLD_REPEAT_MS = 220;
 const CLICK_CONTROLLER_FLASH_MS = 350;
 const CLICK_SHIFTS: ClickShift[] = [CLICK_SHIFT.DOWN, CLICK_SHIFT.UP];
 
-function saveControllerRoles(roles: ClickControllerRoles) {
-	localStorage.setItem(CLICK_CONTROLLER_ROLES_STORAGE_KEY, JSON.stringify(roles));
-}
-
 export function useZwiftClickInput({
 	identifyControllers,
 	onOperational,
@@ -32,12 +25,11 @@ export function useZwiftClickInput({
 	store,
 }: {
 	identifyControllers: boolean;
-	onOperational: (deviceId: string) => void;
+	onOperational: (role: ClickShift) => void;
 	onShift: (change: number) => void;
 	store: ZwiftClickStore;
 }) {
 	const controllerFlashTimers = useRef(new Map<string, number>());
-	const controllerRoles = useRef<ClickControllerRoles>({});
 	const heldShiftsByDevice = useRef(new Map<string, ClickShift[]>());
 	const identifyControllersRef = useRef(identifyControllers);
 	const previousButtonMaps = useRef(new Map<string, number>());
@@ -59,33 +51,6 @@ export function useZwiftClickInput({
 			store.actions.clearActiveControllers();
 		}
 	}, [identifyControllers, store]);
-
-	const registerControllerRole = useCallback(
-		(deviceId: string, shifts: ClickShift[]) => {
-			const next = registerClickControllerRole(controllerRoles.current, deviceId, shifts);
-			if (next === controllerRoles.current) {
-				return;
-			}
-			controllerRoles.current = next;
-			store.actions.setControllerRoles(next);
-			saveControllerRoles(next);
-		},
-		[store]
-	);
-
-	const forgetControllerRole = useCallback(
-		(deviceId: string) => {
-			if (!controllerRoles.current[deviceId]) {
-				return;
-			}
-			const next = { ...controllerRoles.current };
-			delete next[deviceId];
-			controllerRoles.current = next;
-			store.actions.setControllerRoles(next);
-			saveControllerRoles(next);
-		},
-		[store]
-	);
 
 	const stopRepeat = useCallback((shift: ClickShift) => {
 		const timer = repeatTimers.current.get(shift);
@@ -146,23 +111,23 @@ export function useZwiftClickInput({
 	);
 
 	const flashController = useCallback(
-		(deviceId: string) => {
+		(role: ClickShift, shift: ClickShift) => {
 			if (!identifyControllersRef.current) {
 				return;
 			}
-			window.clearTimeout(controllerFlashTimers.current.get(deviceId));
-			store.actions.activateController(deviceId);
+			window.clearTimeout(controllerFlashTimers.current.get(role));
+			store.actions.activateController(role, shift);
 			const timer = window.setTimeout(() => {
-				controllerFlashTimers.current.delete(deviceId);
-				store.actions.deactivateController(deviceId);
+				controllerFlashTimers.current.delete(role);
+				store.actions.deactivateController(role);
 			}, CLICK_CONTROLLER_FLASH_MS);
-			controllerFlashTimers.current.set(deviceId, timer);
+			controllerFlashTimers.current.set(role, timer);
 		},
 		[store]
 	);
 
 	const handleControllerMessage = useCallback(
-		(deviceId: string, event: Event) => {
+		(role: ClickShift, deviceId: string, event: Event) => {
 			const { value } = event.target as BluetoothRemoteGATTCharacteristic;
 			if (!value) {
 				return;
@@ -171,28 +136,25 @@ export function useZwiftClickInput({
 			if (!parsed) {
 				return;
 			}
-			onOperational(deviceId);
+			onOperational(role);
 			previousButtonMaps.current.set(deviceId, parsed.buttonMap);
-			const controllerRole = controllerRoles.current[deviceId];
-			const heldShifts = filterClickShiftsForController(parsed.heldShifts, controllerRole);
-			const controllerShifts = filterClickShiftsForController(parsed.shifts, controllerRole);
+			const heldShifts = filterClickShiftsForController(parsed.heldShifts, role);
+			const controllerShifts = filterClickShiftsForController(parsed.shifts, role);
 			setDeviceHeldShifts(deviceId, heldShifts);
 			const acceptedShifts = filterAcceptedClickShifts(
 				controllerShifts,
 				performance.now(),
 				lastShiftTimes.current
 			);
-			if (acceptedShifts.length) {
-				flashController(deviceId);
-			}
-			if (identifyControllersRef.current) {
-				registerControllerRole(deviceId, acceptedShifts);
+			const activeShift = acceptedShifts.at(-1);
+			if (activeShift) {
+				flashController(role, activeShift);
 			}
 			for (const shift of acceptedShifts) {
 				onShiftRef.current(shift === CLICK_SHIFT.DOWN ? -1 : 1);
 			}
 		},
-		[flashController, onOperational, registerControllerRole, setDeviceHeldShifts]
+		[flashController, onOperational, setDeviceHeldShifts]
 	);
 
 	const resetControllerInput = useCallback(
@@ -201,14 +163,6 @@ export function useZwiftClickInput({
 			clearDeviceHeldShifts(deviceId);
 		},
 		[clearDeviceHeldShifts]
-	);
-
-	const restoreControllerRoles = useCallback(
-		(roles: ClickControllerRoles) => {
-			controllerRoles.current = roles;
-			store.actions.setControllerRoles(roles);
-		},
-		[store]
 	);
 
 	useEffect(
@@ -225,10 +179,7 @@ export function useZwiftClickInput({
 
 	return {
 		clearDeviceHeldShifts,
-		forgetControllerRole,
 		handleControllerMessage,
-		registerControllerRole,
 		resetControllerInput,
-		restoreControllerRoles,
 	};
 }

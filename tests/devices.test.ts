@@ -1,30 +1,44 @@
 import { describe, expect, test } from 'bun:test';
-import { HEART_RATE } from '../src/constants';
+import { BATTERY, DEVICE_INFORMATION, HEART_RATE } from '../src/constants';
 import { parseHeartRateMeasurement } from '../src/lib/heart-rate';
 import { connectHeartRateDevice } from '../src/lib/heart-rate-device';
 import {
-	clickControllerNeedsPeriodicRefresh,
+	abortPendingClickConnectionOnAdvertisement,
+	CLICK_CONTROLLER_DETAILS_STORAGE_KEY,
+	CLICK_CONTROLLER_DEVICES_STORAGE_KEY,
+	CLICK_CONTROLLER_ORDER,
+	CLICK_CONTROLLER_ROLES_STORAGE_KEY,
+	CLICK_DEVICE_IDS_STORAGE_KEY,
+	clickBatteryLevel,
+	clickConnectionActiveForSession,
+	clickControllerRequestOptions,
 	clickControllerRoleFromManufacturerData,
-	clickV2ResetCommand,
-	clickV2SessionStopped,
+	clickFirmwareNeedsUpdate,
 	clickV2StartCommand,
 	connectClickGatt,
 	filterAcceptedClickShifts,
 	filterClickShiftsForController,
 	parseClickV2Shift,
-	registerClickControllerRole,
 	shouldAcceptClickShift,
 	shouldMaintainClickConnection,
-	shouldScheduleClickReconnect,
+	storedClickControllerDetails,
+	storedClickControllerDeviceIds,
 	storedClickControllerRoles,
 	storedClickDeviceIds,
 	waitForUsableClickNotification,
 	withClickConnectionTimeout,
 } from '../src/lib/zwift-click';
-import { connectClickDevice } from '../src/lib/zwift-click-device';
+import { connectClickDevice, readClickDeviceDetails } from '../src/lib/zwift-click-device';
+import { createZwiftClickStore } from '../src/stores/zwift-click-store';
 
 function view(bytes: number[]) {
 	return new DataView(new Uint8Array(bytes).buffer);
+}
+
+function bufferSourceBytes(value: BufferSource): number[] {
+	return ArrayBuffer.isView(value)
+		? [...new Uint8Array(value.buffer, value.byteOffset, value.byteLength)]
+		: [...new Uint8Array(value)];
 }
 
 function uint32Varint(value: number) {
@@ -147,17 +161,58 @@ describe('paired device protocols', () => {
 		]);
 	});
 
-	test('refreshes the minus controller session before its event stream expires', () => {
-		expect([...new Uint8Array(clickV2ResetCommand())]).toEqual([0x18]);
-		expect(clickControllerNeedsPeriodicRefresh('down')).toBeTrue();
-		expect(clickControllerNeedsPeriodicRefresh('up')).toBeFalse();
-		expect(clickControllerNeedsPeriodicRefresh(undefined)).toBeFalse();
+	test('exposes only the + slot while retaining role-specific protocol filters', () => {
+		expect(CLICK_CONTROLLER_ORDER).toEqual(['up']);
+		for (const [role, side] of [
+			['up', 0x0a],
+			['down', 0x0b],
+		] as const) {
+			const options = clickControllerRequestOptions(role);
+			if (!('filters' in options)) {
+				throw new Error('Expected role-specific Click filters.');
+			}
+			const manufacturer = options.filters?.[0]?.manufacturerData?.[0];
+			expect(manufacturer?.companyIdentifier).toBe(2378);
+			const prefix = manufacturer?.dataPrefix;
+			expect(prefix && bufferSourceBytes(prefix)).toEqual([side]);
+			expect(options.optionalServices).toContain(BATTERY);
+			expect(options.optionalServices).toContain(DEVICE_INFORMATION);
+		}
 	});
 
-	test('recognizes both Click V2 session-expired frames', () => {
-		expect(clickV2SessionStopped(view([0xff, 0x05, 0x00, 0xea, 0x05]))).toBeTrue();
-		expect(clickV2SessionStopped(view([0xff, 0x05, 0x00, 0xfa, 0x05, 0x01]))).toBeTrue();
-		expect(clickV2SessionStopped(view([0x23, 0x08, 0xff, 0xff]))).toBeFalse();
+	test('parses Click battery notifications and detects stale firmware', () => {
+		expect(clickBatteryLevel(view([0x19, 0x10, 87]))).toBe(87);
+		expect(clickBatteryLevel(view([0x19, 0, 62]))).toBe(62);
+		expect(clickBatteryLevel(view([0x19, 0x10, 101]))).toBeUndefined();
+		expect(clickBatteryLevel(view([0x23, 0x10, 87]))).toBeUndefined();
+		expect(clickFirmwareNeedsUpdate('1.1.0')).toBeTrue();
+		expect(clickFirmwareNeedsUpdate('1.2.0')).toBeFalse();
+		expect(clickFirmwareNeedsUpdate(undefined)).toBeFalse();
+	});
+
+	test('reads optional Click firmware and battery characteristics', async () => {
+		const firmwareCharacteristic = {
+			readValue: () => Promise.resolve(view([0x31, 0x2e, 0x32, 0x2e, 0x30, 0])),
+		} as unknown as BluetoothRemoteGATTCharacteristic;
+		const batteryCharacteristic = {
+			readValue: () => Promise.resolve(view([84])),
+		} as unknown as BluetoothRemoteGATTCharacteristic;
+		const server = {
+			getPrimaryService: (service: BluetoothServiceUUID) =>
+				Promise.resolve({
+					getCharacteristic: () =>
+						Promise.resolve(
+							service === DEVICE_INFORMATION
+								? firmwareCharacteristic
+								: batteryCharacteristic
+						),
+				} as unknown as BluetoothRemoteGATTService),
+		} as unknown as BluetoothRemoteGATTServer;
+
+		expect(await readClickDeviceDetails(server)).toEqual({
+			battery: 84,
+			firmwareVersion: '1.2.0',
+		});
 	});
 
 	test('keeps Click connections only while a ride session is active', () => {
@@ -167,17 +222,75 @@ describe('paired device protocols', () => {
 		expect(shouldMaintainClickConnection(true, true, true)).toBeFalse();
 	});
 
-	test('lets an intentional Click refresh own its disconnect and replacement connection', () => {
-		expect(shouldScheduleClickReconnect(true, true, false, false)).toBeTrue();
-		expect(shouldScheduleClickReconnect(true, true, false, true)).toBeFalse();
+	test('restarts an in-flight Click connection when the sleeping controller advertises', () => {
+		let disconnects = 0;
+		const sleepingDevice = {
+			gatt: {
+				connected: false,
+				disconnect: () => {
+					disconnects += 1;
+				},
+			},
+		} as unknown as BluetoothDevice;
+		expect(abortPendingClickConnectionOnAdvertisement(sleepingDevice, true)).toBeTrue();
+		expect(disconnects).toBe(1);
+
+		const connectedDevice = {
+			gatt: {
+				connected: true,
+				disconnect: () => {
+					disconnects += 1;
+				},
+			},
+		} as unknown as BluetoothDevice;
+		expect(abortPendingClickConnectionOnAdvertisement(connectedDevice, true)).toBeFalse();
+		expect(abortPendingClickConnectionOnAdvertisement(sleepingDevice, false)).toBeFalse();
+		expect(disconnects).toBe(1);
 	});
 
-	test('sends the Click reset opcode through an established controller session', async () => {
+	test('keeps Click active through auto-pause but not manual pause', () => {
+		expect(
+			clickConnectionActiveForSession({
+				ended: false,
+				manuallyPaused: false,
+			})
+		).toBeTrue();
+		expect(
+			clickConnectionActiveForSession({
+				ended: false,
+				manuallyPaused: true,
+			})
+		).toBeFalse();
+		expect(
+			clickConnectionActiveForSession({
+				ended: true,
+				manuallyPaused: false,
+			})
+		).toBeFalse();
+	});
+
+	test('starts and observes an established + controller session', async () => {
+		const details: Array<{ battery?: number; firmwareVersion?: string }> = [];
 		const writes: number[][] = [];
+		const messageListeners = new Set<EventListenerOrEventListenerObject>();
 		const notificationCharacteristic = {
-			addEventListener: () => undefined,
-			removeEventListener: () => undefined,
-			startNotifications: () => Promise.resolve(),
+			addEventListener: (_type: string, listener: EventListenerOrEventListenerObject) =>
+				messageListeners.add(listener),
+			removeEventListener: (_type: string, listener: EventListenerOrEventListenerObject) =>
+				messageListeners.delete(listener),
+			startNotifications: () => {
+				for (const listener of messageListeners) {
+					const event = {
+						target: { value: view([0x19, 0x10, 73]) },
+					} as unknown as Event;
+					if (typeof listener === 'function') {
+						listener(event);
+					} else {
+						listener.handleEvent(event);
+					}
+				}
+				return Promise.resolve();
+			},
 		} as unknown as BluetoothRemoteGATTCharacteristic;
 		const syncRxCharacteristic = {
 			writeValueWithoutResponse: (value: BufferSource) => {
@@ -216,13 +329,13 @@ describe('paired device protocols', () => {
 		const connection = await connectClickDevice(device, false, {
 			isCurrent: () => true,
 			isOperational: () => false,
+			onDetails: (controllerDetails) => details.push(controllerDetails),
 			onDisconnect: () => undefined,
 			onMessage: () => undefined,
 		});
 
 		expect(writes[0]).toEqual([0x52, 0x69, 0x64, 0x65, 0x4f, 0x6e, 0x02, 0x03]);
-		await connection.restart();
-		expect(writes[1]).toEqual([0x18]);
+		expect(details).toContainEqual({ battery: 73 });
 		connection.cleanup();
 	});
 
@@ -237,8 +350,8 @@ describe('paired device protocols', () => {
 		expect(clickControllerRoleFromManufacturerData(new Map())).toBeUndefined();
 	});
 
-	test('routes mirrored Click events only through the matching controller side', () => {
-		expect(filterClickShiftsForController(['down', 'up'], 'up')).toEqual(['up']);
+	test('accepts + and Y shifts from the + controller while retaining the future − filter', () => {
+		expect(filterClickShiftsForController(['down', 'up'], 'up')).toEqual(['down', 'up']);
 		expect(filterClickShiftsForController(['down', 'up'], 'down')).toEqual(['down']);
 		expect(filterClickShiftsForController(['down', 'up'], undefined)).toEqual(['down', 'up']);
 	});
@@ -297,17 +410,18 @@ describe('paired device protocols', () => {
 		expect(attempts).toBe(2);
 	});
 
-	test('emits only new Click V2 minus and plus press edges', () => {
-		const minus = parseClickV2Shift(clickMessage(0xff_ff_fe_ff));
-		expect(minus?.shifts).toEqual(['down']);
-		expect(minus?.heldShifts).toEqual(['down']);
-		const heldMinus = parseClickV2Shift(clickMessage(0xff_ff_fe_ff), minus?.buttonMap);
-		expect(heldMinus?.shifts).toEqual([]);
-		expect(heldMinus?.heldShifts).toEqual(['down']);
+	test('maps the + controller Y button to down and emits only new press edges', () => {
+		const yButton = parseClickV2Shift(clickMessage(0xff_ff_ff_bf));
+		expect(yButton?.shifts).toEqual(['down']);
+		expect(yButton?.heldShifts).toEqual(['down']);
+		const heldY = parseClickV2Shift(clickMessage(0xff_ff_ff_bf), yButton?.buttonMap);
+		expect(heldY?.shifts).toEqual([]);
+		expect(heldY?.heldShifts).toEqual(['down']);
 		expect(
-			parseClickV2Shift(clickMessage(0xff_ff_ff_ff), heldMinus?.buttonMap)?.heldShifts
+			parseClickV2Shift(clickMessage(0xff_ff_ff_ff), heldY?.buttonMap)?.heldShifts
 		).toEqual([]);
 		expect(parseClickV2Shift(clickMessage(0xff_ff_ef_ff))?.shifts).toEqual(['up']);
+		expect(parseClickV2Shift(clickMessage(0xff_ff_fe_ff))?.shifts).toEqual(['down']);
 		expect(parseClickV2Shift(view([0x15]))).toBeUndefined();
 	});
 
@@ -330,24 +444,6 @@ describe('paired device protocols', () => {
 		expect(filterAcceptedClickShifts(['up'], 1001, lastShiftTimes)).toEqual(['up']);
 	});
 
-	test('registers and corrects Click controller roles from button presses', () => {
-		const withPlus = registerClickControllerRole({}, 'plus-device', ['up']);
-		expect(withPlus).toEqual({ 'plus-device': 'up' });
-		expect(registerClickControllerRole(withPlus, 'plus-device', ['up'])).toBe(withPlus);
-		const identified = registerClickControllerRole(withPlus, 'minus-device', ['down']);
-		expect(identified).toEqual({
-			'minus-device': 'down',
-			'plus-device': 'up',
-		});
-		expect(registerClickControllerRole(identified, 'plus-device', ['down'])).toEqual({
-			'minus-device': 'up',
-			'plus-device': 'down',
-		});
-		expect(registerClickControllerRole(withPlus, 'other-device', ['up'])).toEqual({
-			'other-device': 'up',
-		});
-	});
-
 	test('restores at most two remembered Click controller ids', () => {
 		expect(storedClickDeviceIds({ getItem: () => '["left","right","extra"]' })).toEqual([
 			'left',
@@ -363,5 +459,75 @@ describe('paired device protocols', () => {
 			})
 		).toEqual({ minus: 'down', plus: 'up' });
 		expect(storedClickControllerRoles({ getItem: () => 'broken' })).toEqual({});
+	});
+
+	test('restores only the + slot and migrates its legacy identity record', () => {
+		expect(
+			storedClickControllerDeviceIds({
+				getItem: (key) =>
+					key === CLICK_CONTROLLER_DEVICES_STORAGE_KEY
+						? '{"up":"plus-device","down":"minus-device"}'
+						: null,
+			})
+		).toEqual({ up: 'plus-device' });
+		expect(
+			storedClickControllerDeviceIds({
+				getItem: (key) =>
+					key === CLICK_CONTROLLER_DEVICES_STORAGE_KEY
+						? '{"up":"same-device","down":"same-device"}'
+						: null,
+			})
+		).toEqual({ up: 'same-device' });
+		expect(
+			storedClickControllerDeviceIds({
+				getItem: (key) => {
+					if (key === CLICK_DEVICE_IDS_STORAGE_KEY) {
+						return '["plus-device","minus-device"]';
+					}
+					if (key === CLICK_CONTROLLER_ROLES_STORAGE_KEY) {
+						return '{"plus-device":"up","minus-device":"down"}';
+					}
+					return null;
+				},
+			})
+		).toEqual({ up: 'plus-device' });
+	});
+
+	test('restores only valid persisted Click firmware and battery details', () => {
+		expect(
+			storedClickControllerDetails({
+				getItem: (key) =>
+					key === CLICK_CONTROLLER_DETAILS_STORAGE_KEY
+						? '{"up":{"firmwareVersion":" 1.2.0 ","battery":91},"down":{"firmwareVersion":"1.1.0","battery":101}}'
+						: null,
+			})
+		).toEqual({ up: { battery: 91, firmwareVersion: '1.2.0' } });
+		expect(storedClickControllerDetails({ getItem: () => 'broken' })).toEqual({});
+	});
+
+	test('stores each physical Click controller in an independent fixed slot', () => {
+		const store = createZwiftClickStore();
+		store.actions.activateController('up', 'down');
+		expect(store.get().activeControllerShifts).toEqual({ up: 'down' });
+		store.actions.activateController('up', 'up');
+		expect(store.get().activeControllerShifts).toEqual({ up: 'up' });
+		store.actions.setController('up', 'plus-device');
+		store.actions.setController('down', 'minus-device');
+		store.actions.setControllerPhase('up', 'connected');
+		store.actions.setControllerPhase('down', 'reconnecting');
+		store.actions.setControllerDetails('up', { battery: 84, firmwareVersion: '1.2.0' });
+		expect(store.get()).toMatchObject({
+			controllerDetails: { up: { battery: 84, firmwareVersion: '1.2.0' } },
+			controllerIds: { down: 'minus-device', up: 'plus-device' },
+			controllerPhases: { down: 'reconnecting', up: 'connected' },
+		});
+		store.actions.removeController('down');
+		store.actions.deactivateController('up');
+		expect(store.get().activeControllerShifts).toEqual({});
+		expect(store.get().controllerIds).toEqual({ up: 'plus-device' });
+		expect(store.get().controllerPhases).toEqual({ up: 'connected' });
+		expect(store.get().controllerDetails).toEqual({
+			up: { battery: 84, firmwareVersion: '1.2.0' },
+		});
 	});
 });

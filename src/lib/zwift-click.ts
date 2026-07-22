@@ -1,4 +1,4 @@
-import { BLUETOOTH_GATT_CONNECTION_TIMEOUT_MS } from '../constants';
+import { BATTERY, BLUETOOTH_GATT_CONNECTION_TIMEOUT_MS, DEVICE_INFORMATION } from '../constants';
 import { bluetoothGattCoordinator } from './bluetooth-gatt-coordinator';
 import { withPromiseTimeout } from './promise-timeout';
 import { isRecord, isString } from './type-guards';
@@ -12,28 +12,65 @@ export const ZWIFT_SYNC_TX_CHARACTERISTIC = '00000004-19ca-4651-86e5-fa29dcdd09d
 export const ZWIFT_MANUFACTURER_ID = 2378;
 export const CLICK_DEVICE_IDS_STORAGE_KEY = 'zwift-click-v2-device-ids';
 export const CLICK_CONTROLLER_ROLES_STORAGE_KEY = 'zwift-click-v2-controller-roles';
+export const CLICK_CONTROLLER_DEVICES_STORAGE_KEY = 'zwift-click-v2-controller-devices';
+export const CLICK_CONTROLLER_DETAILS_STORAGE_KEY = 'zwift-click-v2-controller-details';
+export const CLICK_LATEST_FIRMWARE_VERSION = '1.2.0';
 export const MAX_CLICK_CONTROLLERS = 2;
-export const CLICK_MINUS_REFRESH_INTERVAL_MS = 50_000;
 export const CLICK_SHIFT = {
 	DOWN: 'down',
 	UP: 'up',
 } as const;
+// The domain model retains both physical roles so the second controller can be
+// supported later. Ride Control currently pairs only the reliable + controller.
+export const CLICK_CONTROLLER_ORDER = [CLICK_SHIFT.UP] as const;
 
 const CONTROLLER_NOTIFICATION = 0x23;
 const MINUS_BUTTON_MASK = 0x01_00;
 const PLUS_BUTTON_MASK = 0x10_00;
+const Y_BUTTON_MASK = 0x00_40;
 const ALL_BUTTONS_RELEASED = 0xff_ff_ff_ff;
 const CLICK_CONNECTION_TIMEOUT_MS = BLUETOOTH_GATT_CONNECTION_TIMEOUT_MS;
 const CLICK_V2_RIGHT_SIDE = 0x0a;
 const CLICK_V2_LEFT_SIDE = 0x0b;
-const CLICK_V2_RESET = 0x18;
-const CLICK_V2_STOPPED_SESSION_PREFIXES = [
-	[0xff, 0x05, 0x00, 0xea, 0x05],
-	[0xff, 0x05, 0x00, 0xfa, 0x05],
-] as const;
+const CLICK_V2_BATTERY_NOTIFICATION = 0x19;
 
 export type ClickShift = (typeof CLICK_SHIFT)[keyof typeof CLICK_SHIFT];
-export type ClickControllerRoles = Record<string, ClickShift>;
+export type ClickControllerDeviceIds = Partial<Record<ClickShift, string>>;
+export interface ClickControllerDetails {
+	battery?: number;
+	firmwareVersion?: string;
+}
+export type ClickControllerDetailsByRole = Partial<Record<ClickShift, ClickControllerDetails>>;
+
+const CLICK_V2_SIDE_BY_ROLE: Record<ClickShift, number> = {
+	[CLICK_SHIFT.DOWN]: CLICK_V2_LEFT_SIDE,
+	[CLICK_SHIFT.UP]: CLICK_V2_RIGHT_SIDE,
+};
+
+export function clickControllerLabel(role: ClickShift): string {
+	return role === CLICK_SHIFT.UP ? '+ Controller' : '− Controller';
+}
+
+export function clickControllerRequestOptions(role: ClickShift): RequestDeviceOptions {
+	return {
+		filters: [
+			{
+				manufacturerData: [
+					{
+						companyIdentifier: ZWIFT_MANUFACTURER_ID,
+						dataPrefix: new Uint8Array([CLICK_V2_SIDE_BY_ROLE[role]]),
+					},
+				],
+			},
+		],
+		optionalManufacturerData: [ZWIFT_MANUFACTURER_ID],
+		optionalServices: [ZWIFT_CLICK_SERVICE, ZWIFT_LEGACY_SERVICE, BATTERY, DEVICE_INFORMATION],
+	};
+}
+
+export function clickFirmwareNeedsUpdate(firmwareVersion: string | undefined): boolean {
+	return firmwareVersion !== undefined && firmwareVersion !== CLICK_LATEST_FIRMWARE_VERSION;
+}
 
 export function clickControllerRoleFromManufacturerData(
 	manufacturerData: BluetoothManufacturerData
@@ -51,10 +88,6 @@ export function clickControllerRoleFromManufacturerData(
 	}
 }
 
-export function clickControllerNeedsPeriodicRefresh(role: ClickShift | undefined): boolean {
-	return role === CLICK_SHIFT.DOWN;
-}
-
 export function shouldMaintainClickConnection(
 	automaticReconnect: boolean,
 	connectionActive: boolean,
@@ -63,23 +96,38 @@ export function shouldMaintainClickConnection(
 	return automaticReconnect && connectionActive && !forgotten;
 }
 
-export function shouldScheduleClickReconnect(
-	automaticReconnect: boolean,
-	connectionActive: boolean,
-	forgotten: boolean,
-	restarting: boolean
+export function abortPendingClickConnectionOnAdvertisement(
+	device: BluetoothDevice,
+	connectionPending: boolean
 ): boolean {
-	return (
-		!restarting &&
-		shouldMaintainClickConnection(automaticReconnect, connectionActive, forgotten)
-	);
+	const { gatt } = device;
+	if (!(connectionPending && gatt && !gatt.connected)) {
+		return false;
+	}
+	// Web Bluetooth disconnect() aborts an outstanding connect(). This lets the
+	// reconnect controller immediately retry against the newly awake Click.
+	gatt.disconnect();
+	return true;
+}
+
+export function clickConnectionActiveForSession({
+	ended,
+	manuallyPaused,
+}: {
+	ended: boolean;
+	manuallyPaused: boolean;
+}): boolean {
+	return !(ended || manuallyPaused);
 }
 
 export function filterClickShiftsForController(
 	shifts: ClickShift[],
 	role: ClickShift | undefined
 ): ClickShift[] {
-	return role ? shifts.filter((shift) => shift === role) : shifts;
+	if (role === CLICK_SHIFT.DOWN) {
+		return shifts.filter((shift) => shift === CLICK_SHIFT.DOWN);
+	}
+	return shifts;
 }
 
 export async function waitForUsableClickNotification(
@@ -143,33 +191,9 @@ export function filterAcceptedClickShifts(
 	});
 }
 
-export function registerClickControllerRole(
-	roles: ClickControllerRoles,
-	deviceId: string,
-	shifts: ClickShift[]
-): ClickControllerRoles {
-	const role = shifts.length === 1 ? shifts[0] : undefined;
-	if (!role || roles[deviceId] === role) {
-		return roles;
-	}
-	const previousRole = roles[deviceId];
-	const next = { ...roles };
-	for (const [otherDeviceId, otherRole] of Object.entries(next)) {
-		if (otherDeviceId !== deviceId && otherRole === role) {
-			if (previousRole) {
-				next[otherDeviceId] = previousRole;
-			} else {
-				delete next[otherDeviceId];
-			}
-		}
-	}
-	next[deviceId] = role;
-	return next;
-}
-
 function pressedShifts(buttonMap: number): ClickShift[] {
 	const shifts: ClickShift[] = [];
-	if ((buttonMap & MINUS_BUTTON_MASK) === 0) {
+	if ((buttonMap & MINUS_BUTTON_MASK) === 0 || (buttonMap & Y_BUTTON_MASK) === 0) {
 		shifts.push(CLICK_SHIFT.DOWN);
 	}
 	if ((buttonMap & PLUS_BUTTON_MASK) === 0) {
@@ -184,18 +208,33 @@ export function clickV2StartCommand(): ArrayBuffer {
 	return command;
 }
 
-export function clickV2ResetCommand(): ArrayBuffer {
-	const command = new ArrayBuffer(1);
-	new Uint8Array(command)[0] = CLICK_V2_RESET;
-	return command;
+function unsignedVarint(bytes: Uint8Array, offset: number): number | undefined {
+	let value = 0;
+	let multiplier = 1;
+	for (let index = offset; index < bytes.length && multiplier <= 2 ** 28; index += 1) {
+		const byte = bytes[index];
+		if (byte === undefined) {
+			return;
+		}
+		value += (byte & 0x7f) * multiplier;
+		if ((byte & 0x80) === 0) {
+			return value >>> 0;
+		}
+		multiplier *= 128;
+	}
 }
 
-export function clickV2SessionStopped(value: DataView): boolean {
+export function clickBatteryLevel(value: DataView): number | undefined {
 	const bytes = new Uint8Array(value.buffer, value.byteOffset, value.byteLength);
-	return CLICK_V2_STOPPED_SESSION_PREFIXES.some(
-		(prefix) =>
-			bytes.length >= prefix.length && prefix.every((byte, index) => bytes[index] === byte)
-	);
+	if (bytes[0] !== CLICK_V2_BATTERY_NOTIFICATION) {
+		return;
+	}
+	const percentageTagOffset = bytes.indexOf(0x10, 1);
+	const protobufPercentage =
+		percentageTagOffset < 0 ? undefined : unsignedVarint(bytes, percentageTagOffset + 1);
+	const legacyPercentage = bytes[1] === 0 ? bytes[2] : undefined;
+	const percentage = protobufPercentage ?? legacyPercentage;
+	return percentage !== undefined && percentage <= 100 ? percentage : undefined;
 }
 
 function readButtonMap(message: Uint8Array): number | undefined {
@@ -246,7 +285,10 @@ export function parseClickV2Shift(
 		return;
 	}
 	const shifts: ClickShift[] = [];
-	if ((previousButtonMap & MINUS_BUTTON_MASK) !== 0 && (buttonMap & MINUS_BUTTON_MASK) === 0) {
+	if (
+		((previousButtonMap & MINUS_BUTTON_MASK) !== 0 && (buttonMap & MINUS_BUTTON_MASK) === 0) ||
+		((previousButtonMap & Y_BUTTON_MASK) !== 0 && (buttonMap & Y_BUTTON_MASK) === 0)
+	) {
 		shifts.push(CLICK_SHIFT.DOWN);
 	}
 	if ((previousButtonMap & PLUS_BUTTON_MASK) !== 0 && (buttonMap & PLUS_BUTTON_MASK) === 0) {
@@ -266,13 +308,13 @@ export function storedClickDeviceIds(storage: Pick<Storage, 'getItem'> = localSt
 
 export function storedClickControllerRoles(
 	storage: Pick<Storage, 'getItem'> = localStorage
-): ClickControllerRoles {
+): Record<string, ClickShift> {
 	try {
 		const saved = JSON.parse(storage.getItem(CLICK_CONTROLLER_ROLES_STORAGE_KEY) ?? '{}');
 		if (!isRecord(saved)) {
 			return {};
 		}
-		const roles: ClickControllerRoles = {};
+		const roles: Record<string, ClickShift> = {};
 		for (const [deviceId, role] of Object.entries(saved)) {
 			if (
 				(role === CLICK_SHIFT.UP || role === CLICK_SHIFT.DOWN) &&
@@ -282,6 +324,94 @@ export function storedClickControllerRoles(
 			}
 		}
 		return roles;
+	} catch {
+		return {};
+	}
+}
+
+function parsedControllerDeviceIds(value: unknown): ClickControllerDeviceIds {
+	if (!isRecord(value)) {
+		return {};
+	}
+	const controllerIds: ClickControllerDeviceIds = {};
+	const usedDeviceIds = new Set<string>();
+	for (const role of CLICK_CONTROLLER_ORDER) {
+		const deviceId = value[role];
+		if (isString(deviceId) && !usedDeviceIds.has(deviceId)) {
+			controllerIds[role] = deviceId;
+			usedDeviceIds.add(deviceId);
+		}
+	}
+	return controllerIds;
+}
+
+export function storedClickControllerDeviceIds(
+	storage: Pick<Storage, 'getItem'> = localStorage
+): ClickControllerDeviceIds {
+	try {
+		const current = parsedControllerDeviceIds(
+			JSON.parse(storage.getItem(CLICK_CONTROLLER_DEVICES_STORAGE_KEY) ?? 'null')
+		);
+		if (Object.keys(current).length) {
+			return current;
+		}
+	} catch {
+		// Fall through to the legacy device-id and role records.
+	}
+	const legacyDeviceIds = new Set(storedClickDeviceIds(storage));
+	const migrated: ClickControllerDeviceIds = {};
+	for (const [deviceId, role] of Object.entries(storedClickControllerRoles(storage))) {
+		if (
+			CLICK_CONTROLLER_ORDER.some((enabledRole) => enabledRole === role) &&
+			legacyDeviceIds.has(deviceId) &&
+			migrated[role] === undefined
+		) {
+			migrated[role] = deviceId;
+		}
+	}
+	return migrated;
+}
+
+function parsedControllerDetails(value: unknown): ClickControllerDetailsByRole {
+	if (!isRecord(value)) {
+		return {};
+	}
+	const detailsByRole: ClickControllerDetailsByRole = {};
+	for (const role of CLICK_CONTROLLER_ORDER) {
+		const valueForRole = value[role];
+		if (!isRecord(valueForRole)) {
+			continue;
+		}
+		const details: ClickControllerDetails = {};
+		const { battery, firmwareVersion } = valueForRole;
+		if (
+			typeof battery === 'number' &&
+			Number.isInteger(battery) &&
+			battery >= 0 &&
+			battery <= 100
+		) {
+			details.battery = battery;
+		}
+		if (isString(firmwareVersion)) {
+			const normalizedFirmwareVersion = firmwareVersion.trim().slice(0, 32);
+			if (normalizedFirmwareVersion) {
+				details.firmwareVersion = normalizedFirmwareVersion;
+			}
+		}
+		if (Object.keys(details).length) {
+			detailsByRole[role] = details;
+		}
+	}
+	return detailsByRole;
+}
+
+export function storedClickControllerDetails(
+	storage: Pick<Storage, 'getItem'> = localStorage
+): ClickControllerDetailsByRole {
+	try {
+		return parsedControllerDetails(
+			JSON.parse(storage.getItem(CLICK_CONTROLLER_DETAILS_STORAGE_KEY) ?? '{}')
+		);
 	} catch {
 		return {};
 	}

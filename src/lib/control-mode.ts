@@ -14,3 +14,13 @@ export function isControlMode(value: unknown): value is ControlMode {
 export function trainingControlMode(clickPaired: boolean, workoutSelected: boolean): ControlMode {
 	return clickPaired || workoutSelected ? CONTROL_MODE.GEAR : CONTROL_MODE.RESISTANCE;
 }
+
+export function virtualShiftingConnectionReady({
+	trainerConnected,
+}: {
+	clickConnectedCount: number;
+	clickPairedCount: number;
+	trainerConnected: boolean;
+}): boolean {
+	return trainerConnected;
+}

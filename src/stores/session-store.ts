@@ -142,6 +142,7 @@ export function createSessionStore(restored: StoredSession, now = Date.now()) {
 				endedAt,
 				isRiding: false,
 				manuallyPaused: false,
+				plannedWorkout: current.workout,
 			}));
 		},
 		markDiscarded: () => {

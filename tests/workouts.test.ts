@@ -51,6 +51,18 @@ describe('terrain workouts', () => {
 			workoutDashboardPreview({
 				distance: 4.2,
 				elevationTotals: { ascent: 80, descent: 60 },
+				ended: true,
+				workout: completedWorkout,
+			})
+		).toEqual({
+			distance: 0,
+			elevationTotals: { ascent: 0, descent: 0 },
+			workout: undefined,
+		});
+		expect(
+			workoutDashboardPreview({
+				distance: 4.2,
+				elevationTotals: { ascent: 80, descent: 60 },
 				ended: false,
 				selectedWorkout: completedWorkout,
 				workout: completedWorkout,

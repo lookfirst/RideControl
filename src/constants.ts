@@ -6,6 +6,7 @@ export const CYCLING_POWER = 0x18_18;
 export const CYCLING_SPEED_AND_CADENCE = 0x18_16;
 export const HEART_RATE = 0x18_0d;
 export const BATTERY = 0x18_0f;
+export const DEVICE_INFORMATION = 0x18_0a;
 export const INDOOR_BIKE_DATA = 0x2a_d2;
 export const CONTROL_POINT = 0x2a_d9;
 export const FITNESS_MACHINE_STATUS = 0x2a_da;
@@ -30,6 +31,7 @@ export const optionalServices: BluetoothServiceUUID[] = [
 	CYCLING_SPEED_AND_CADENCE,
 	HEART_RATE,
 	BATTERY,
+	DEVICE_INFORMATION,
 ];
 
 export const emptyMetrics: Metrics = {

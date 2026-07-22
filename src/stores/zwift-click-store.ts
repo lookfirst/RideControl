@@ -4,67 +4,105 @@ import {
 	removeConnectionPhase,
 	setConnectionPhase,
 } from '../lib/device-connection';
-import type { ClickControllerRoles } from '../lib/zwift-click';
+import type {
+	ClickControllerDetails,
+	ClickControllerDetailsByRole,
+	ClickControllerDeviceIds,
+	ClickShift,
+} from '../lib/zwift-click';
 
 export interface ZwiftClickStoreState {
-	activeControllerIds: string[];
-	controllerPhases: Record<string, DeviceConnectionPhase>;
-	controllerRoles: ClickControllerRoles;
-	deviceIds: string[];
-	pairing: boolean;
+	activeControllerShifts: Partial<Record<ClickShift, ClickShift>>;
+	controllerDetails: ClickControllerDetailsByRole;
+	controllerIds: ClickControllerDeviceIds;
+	controllerPhases: Partial<Record<ClickShift, DeviceConnectionPhase>>;
+	pairingRole?: ClickShift;
 }
 
 export function createZwiftClickStore() {
 	return createStore(
 		{
-			activeControllerIds: [],
+			activeControllerShifts: {},
+			controllerDetails: {},
+			controllerIds: {},
 			controllerPhases: {},
-			controllerRoles: {},
-			deviceIds: [],
-			pairing: false,
+			pairingRole: undefined,
 		} as ZwiftClickStoreState,
 		({ setState }) => ({
-			activateController: (deviceId: string) => {
+			activateController: (role: ClickShift, shift: ClickShift) => {
 				setState((current) =>
-					current.activeControllerIds.includes(deviceId)
+					current.activeControllerShifts[role] === shift
 						? current
 						: {
 								...current,
-								activeControllerIds: [...current.activeControllerIds, deviceId],
+								activeControllerShifts: {
+									...current.activeControllerShifts,
+									[role]: shift,
+								},
 							}
 				);
 			},
 			clearActiveControllers: () => {
 				setState((current) =>
-					current.activeControllerIds.length
-						? { ...current, activeControllerIds: [] }
+					Object.keys(current.activeControllerShifts).length
+						? { ...current, activeControllerShifts: {} }
 						: current
 				);
 			},
-			deactivateController: (deviceId: string) => {
-				setState((current) => ({
-					...current,
-					activeControllerIds: current.activeControllerIds.filter(
-						(id) => id !== deviceId
-					),
-				}));
-			},
-			removeControllerPhase: (deviceId: string) => {
+			deactivateController: (role: ClickShift) => {
 				setState((current) => {
-					const controllerPhases = removeConnectionPhase(
-						current.controllerPhases,
-						deviceId
-					);
-					return controllerPhases === current.controllerPhases
-						? current
-						: { ...current, controllerPhases };
+					if (!current.activeControllerShifts[role]) {
+						return current;
+					}
+					const activeControllerShifts = { ...current.activeControllerShifts };
+					delete activeControllerShifts[role];
+					return { ...current, activeControllerShifts };
 				});
 			},
-			setControllerPhase: (deviceId: string, phase: DeviceConnectionPhase) => {
+			removeController: (role: ClickShift) => {
+				setState((current) => {
+					const activeControllerShifts = { ...current.activeControllerShifts };
+					const controllerDetails = { ...current.controllerDetails };
+					const controllerIds = { ...current.controllerIds };
+					delete activeControllerShifts[role];
+					delete controllerDetails[role];
+					delete controllerIds[role];
+					return {
+						...current,
+						activeControllerShifts,
+						controllerDetails,
+						controllerIds,
+						controllerPhases: removeConnectionPhase(current.controllerPhases, role),
+					};
+				});
+			},
+			setController: (role: ClickShift, deviceId: string) => {
+				setState((current) =>
+					current.controllerIds[role] === deviceId
+						? current
+						: {
+								...current,
+								controllerIds: { ...current.controllerIds, [role]: deviceId },
+							}
+				);
+			},
+			setControllerDetails: (role: ClickShift, details: ClickControllerDetails) => {
+				setState((current) => ({
+					...current,
+					controllerDetails: {
+						...current.controllerDetails,
+						[role]: { ...current.controllerDetails[role], ...details },
+					},
+				}));
+			},
+			setControllerDetailsByRole: (controllerDetails: ClickControllerDetailsByRole) => {
+				setState((current) => ({ ...current, controllerDetails }));
+			},
+			setControllerPhase: (role: ClickShift, phase: DeviceConnectionPhase) => {
 				setState((current) => {
 					const controllerPhases = setConnectionPhase(
 						current.controllerPhases,
-						deviceId,
+						role,
 						phase
 					);
 					return controllerPhases === current.controllerPhases
@@ -72,17 +110,16 @@ export function createZwiftClickStore() {
 						: { ...current, controllerPhases };
 				});
 			},
-			setControllerPhases: (controllerPhases: Record<string, DeviceConnectionPhase>) => {
+			setControllerPhases: (
+				controllerPhases: Partial<Record<ClickShift, DeviceConnectionPhase>>
+			) => {
 				setState((current) => ({ ...current, controllerPhases }));
 			},
-			setControllerRoles: (controllerRoles: ClickControllerRoles) => {
-				setState((current) => ({ ...current, controllerRoles }));
+			setControllers: (controllerIds: ClickControllerDeviceIds) => {
+				setState((current) => ({ ...current, controllerIds }));
 			},
-			setDeviceIds: (deviceIds: string[]) => {
-				setState((current) => ({ ...current, deviceIds }));
-			},
-			setPairing: (pairing: boolean) => {
-				setState((current) => ({ ...current, pairing }));
+			setPairingRole: (pairingRole?: ClickShift) => {
+				setState((current) => ({ ...current, pairingRole }));
 			},
 		})
 	);

@@ -291,32 +291,25 @@ describe('view components', () => {
 					connectionActive: true,
 					controllers: [
 						{
-							active: false,
+							active: true,
+							activeShift: 'down',
+							battery: 84,
 							busy: true,
 							connected: false,
-							id: 'minus-click',
-							label: '− Controller',
-							paired: true,
-							phase: 'reconnecting',
-							reconnecting: true,
-							status: 'Reconnecting…',
-						},
-						{
-							active: true,
-							busy: false,
-							connected: false,
+							firmwareVersion: '1.2.0',
 							id: 'plus-click',
 							label: '+ Controller',
 							paired: true,
-							phase: 'offline',
-							reconnecting: false,
-							status: 'Paired · offline',
+							phase: 'reconnecting',
+							reconnecting: true,
+							role: 'up',
+							status: 'Reconnecting…',
 						},
 					],
 					onForgetController: () => undefined,
+					onPairController: () => undefined,
 					paired: true,
-					pairedCount: 2,
-					pairing: false,
+					pairedCount: 1,
 					phase: 'reconnecting',
 					reconnecting: true,
 				}}
@@ -351,7 +344,15 @@ describe('view components', () => {
 		expect(panel).toContain('Relaunch Chrome, then pair each device once more.');
 		expect(panel).not.toContain('github.com/RideControlOrg/RideControl#automatic-reconnect');
 		expect(panel).toContain('+ Controller');
-		expect(panel.indexOf('+ Controller')).toBeLessThan(panel.indexOf('− Controller'));
+		expect(panel).not.toContain('− Controller');
+		expect(panel).toContain('aria-label="− shift pressed"');
+		expect(panel).toContain('>−</output>');
+		expect(panel).toContain('grid h-5 w-5 shrink-0');
+		expect(panel).toContain('Firmware 1.2.0 · 84% battery');
+		expect(panel).not.toContain('Use firmware 1.2.0');
+		expect(panel).not.toContain(
+			'https://support.zwift.com/updating-your-zwift-click-firmware-B1IdjkGW6'
+		);
 		expect(panel).toContain('connection-status-pulse');
 		expect(panel).toContain('bg-mint/10');
 		expect(panel).not.toContain('shadow-[inset_0_0_18px');
@@ -368,18 +369,20 @@ describe('view components', () => {
 							active: false,
 							busy: false,
 							connected: false,
+							firmwareVersion: '1.1.0',
 							id: 'saved-plus-click',
 							label: '+ Controller',
 							paired: true,
 							phase: 'offline',
 							reconnecting: false,
+							role: 'up',
 							status: 'Paired · offline',
 						},
 					],
 					onForgetController: () => undefined,
+					onPairController: () => undefined,
 					paired: true,
 					pairedCount: 1,
-					pairing: false,
 					phase: 'offline',
 					reconnecting: false,
 					status: 'Paired · offline',
@@ -390,11 +393,18 @@ describe('view components', () => {
 				trainer={common}
 			/>
 		);
-		expect(inactiveClickPanel).toContain('Connects during an active session');
+		expect(inactiveClickPanel).toContain('Reconnects when the session resumes');
 		expect(inactiveClickPanel).not.toContain('>Reconnect</button>');
+		expect(inactiveClickPanel).toContain('blue Y button shifts down');
 		expect(inactiveClickPanel).toContain(
-			'Saved controllers connect for an active ride session and disconnect when it ends.'
+			'Use firmware 1.2.0. Update it in the Zwift Companion app under Equipment → Zwift Click →'
 		);
+		expect(inactiveClickPanel).toContain('>Update Firmware</a>.');
+		expect(inactiveClickPanel).not.toContain('Zwift firmware instructions');
+		expect(inactiveClickPanel).toContain(
+			'https://support.zwift.com/updating-your-zwift-click-firmware-B1IdjkGW6'
+		);
+		expect(inactiveClickPanel.match(/>Pair<\/button>/g)).toHaveLength(2);
 		const configuredPanel = render(
 			<DevicePairingPanel
 				automaticReconnectConfigured
@@ -405,8 +415,8 @@ describe('view components', () => {
 					connectionActive: true,
 					controllers: [],
 					onForgetController: () => undefined,
+					onPairController: () => undefined,
 					pairedCount: 0,
-					pairing: false,
 					reconnecting: false,
 				}}
 				heartRate={common}
@@ -427,8 +437,8 @@ describe('view components', () => {
 					connectionActive: true,
 					controllers: [],
 					onForgetController: () => undefined,
+					onPairController: () => undefined,
 					pairedCount: 0,
-					pairing: false,
 					reconnecting: false,
 				}}
 				heartRate={common}
@@ -468,7 +478,6 @@ describe('view components', () => {
 		expect(disabled).not.toContain(
 			'Connect the trainer and controllers before shifting gears.'
 		);
-		expect(disabled).not.toContain('Use Zwift Click');
 		expect(disabled.match(/disabled=""/g)).toHaveLength(2);
 	});
 
@@ -477,7 +486,6 @@ describe('view components', () => {
 			<TrainingControl
 				connected
 				control={{
-					clickPaired: false,
 					gear: 12,
 					mode: 'gear',
 					onShift: () => undefined,
@@ -486,8 +494,7 @@ describe('view components', () => {
 		);
 		expect(gear).toContain('Virtual shifting');
 		expect(gear).toContain('of 24');
-		expect(gear).toContain('Use the buttons or');
-		expect(gear).not.toContain('Zwift Click, the buttons');
+		expect(gear).not.toContain('to shift');
 		expect(gear).not.toContain('Resistance control');
 
 		const resistance = render(

@@ -31,7 +31,11 @@ import {
 	loadOpenSideTray,
 	persistOpenSideTray,
 } from './lib/app-overlay';
-import { CONTROL_MODE, trainingControlMode } from './lib/control-mode';
+import {
+	CONTROL_MODE,
+	trainingControlMode,
+	virtualShiftingConnectionReady,
+} from './lib/control-mode';
 import { eventTargetsInteractiveControl, keyboardEventHasModifiers } from './lib/dom';
 import { resistanceForVirtualGear } from './lib/gears';
 import { type AppShortcut, appShortcutForKey, gearingKeyboardShortcuts } from './lib/keyboard';
@@ -42,7 +46,7 @@ import {
 	workoutSelectionLocked,
 	workoutTerrainAtDistance,
 } from './lib/workouts';
-import { MAX_CLICK_CONTROLLERS } from './lib/zwift-click';
+import { clickConnectionActiveForSession } from './lib/zwift-click';
 import { preferencesStore } from './stores/preferences-store';
 import type { Metrics, SavedSession, StoredSession, WorkoutCourse } from './types';
 
@@ -76,7 +80,6 @@ export function App({ initialSession = emptySession }: { initialSession?: Stored
 		setActiveOverlayState(overlay);
 	}, []);
 	const devicesOpen = activeOverlay === APP_OVERLAY.DEVICES;
-	const [initialClickConnectionActive] = useState(() => !initialSession.ended);
 	const clickShiftRef = useRef<(change: number) => void>(() => undefined);
 	const handleClickShift = useCallback((change: number) => clickShiftRef.current(change), []);
 	const heartRate = useHeartRateMonitor(rememberedDevices, trainer.setNotice);
@@ -84,8 +87,7 @@ export function App({ initialSession = emptySession }: { initialSession?: Stored
 		handleClickShift,
 		trainer.setNotice,
 		devicesOpen,
-		rememberedDevices,
-		initialClickConnectionActive
+		rememberedDevices
 	);
 	const liveMetrics = metricsWithHeartRate(
 		trainer.metrics,
@@ -95,8 +97,11 @@ export function App({ initialSession = emptySession }: { initialSession?: Stored
 	const { connected } = trainer;
 	const speedUnit = useSelector(preferencesStore, (preferences) => preferences.speedUnit);
 	const workoutLibrary = useWorkoutLibrary();
-	const virtualShiftingReady =
-		trainer.connected && (!click.paired || click.connectedCount === MAX_CLICK_CONTROLLERS);
+	const virtualShiftingReady = virtualShiftingConnectionReady({
+		clickConnectedCount: click.connectedCount,
+		clickPairedCount: click.pairedCount,
+		trainerConnected: trainer.connected,
+	});
 	const gearResistanceRef = useRef<(fromGear: number, toGear: number) => void>(
 		trainer.shiftResistanceForGears
 	);
@@ -153,9 +158,11 @@ export function App({ initialSession = emptySession }: { initialSession?: Stored
 		resistance: workoutResistance,
 	});
 	const workflow = useSessionWorkflow(session, trainer.setNotice, trainer.settleAfterRide);
+	const workoutLocked = workoutSelectionLocked(session);
+	const clickConnectionActive = clickConnectionActiveForSession(session);
 	useEffect(() => {
-		click.setConnectionActive(!session.ended);
-	}, [click.setConnectionActive, session.ended]);
+		click.setConnectionActive(clickConnectionActive);
+	}, [click.setConnectionActive, clickConnectionActive]);
 	const dashboardKeyboardEnabled = activeOverlay === undefined && !workflow.saveDialogOpen;
 	clickShiftRef.current = shiftHandlerUnlessBlocked(
 		gearControl.shiftGear,
@@ -276,7 +283,6 @@ export function App({ initialSession = emptySession }: { initialSession?: Stored
 		? session.selectedWorkout.course
 		: undefined;
 	const selectedWorkoutId = selectedWorkoutCourse ? selectedWorkoutCourse.id : undefined;
-	const workoutLocked = workoutSelectionLocked(session);
 	useEffect(() => {
 		if (!selectedWorkoutCourse) {
 			return;
@@ -306,7 +312,7 @@ export function App({ initialSession = emptySession }: { initialSession?: Stored
 		trainer.connectionBusy,
 		heartRate.busy,
 		click.busy,
-		click.pairing,
+		click.pairingRole !== undefined,
 	].some(Boolean);
 
 	return (
@@ -371,7 +377,6 @@ export function App({ initialSession = emptySession }: { initialSession?: Stored
 						control={
 							virtualShiftingActive
 								? {
-										clickPaired: click.paired,
 										gear: gearControl.gear,
 										mode: CONTROL_MODE.GEAR,
 										onShift: gearControl.shiftGear,
@@ -431,7 +436,7 @@ export function App({ initialSession = emptySession }: { initialSession?: Stored
 					onDisconnect: click.disconnect,
 					onForget: click.forget,
 					onForgetController: click.forgetDevice,
-					onPair: click.pair,
+					onPairController: click.pair,
 					onReconnect: click.reconnect,
 				}}
 				heartRate={{

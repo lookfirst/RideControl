@@ -4,13 +4,11 @@ import { GearControl } from './gear-control';
 import { TrainingControlPanel } from './training-control-panel';
 
 export function GearTrainingControl({
-	clickPaired,
 	connected,
 	gear,
 	onShift,
 	shiftFlash,
 }: {
-	clickPaired: boolean;
 	connected: boolean;
 	gear: number;
 	onShift: (change: number) => void;
@@ -19,7 +17,6 @@ export function GearTrainingControl({
 	return (
 		<TrainingControlPanel title="Virtual shifting" unit={`of ${MAX_GEAR}`} value={gear}>
 			<GearControl
-				clickPaired={clickPaired}
 				disabled={!connected}
 				gear={gear}
 				onChange={onShift}
