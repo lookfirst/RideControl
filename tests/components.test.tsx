@@ -929,6 +929,31 @@ describe('view components', () => {
 		expect(gearModeWithoutSamples).toContain('Gear</button>');
 	});
 
+	test('supports a chart selection scoped outside the shared dashboard preference', () => {
+		const history = [
+			{
+				cadence: 85,
+				elapsedSeconds: 1,
+				heartRate: 140,
+				power: 180,
+				resistance: 42,
+				speed: 30,
+			},
+		];
+		const trayChart = render(
+			<SessionChart
+				history={history}
+				onSelectChartMode={() => undefined}
+				route={[]}
+				selectedChartMode="power"
+				speedUnit="kmh"
+			/>
+		);
+		expect(trayChart).toContain('Power over time');
+		expect(trayChart).not.toContain('Speed over time');
+		expect(trayChart).not.toContain('Cadence over time');
+	});
+
 	test('graphs recorded workout elevation with a distinct color', () => {
 		const [course] = WORKOUT_COURSES;
 		if (!course) {

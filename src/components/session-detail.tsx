@@ -16,7 +16,7 @@ import {
 import { sessionDetailScrollPositionStorageKey } from '../lib/session-history-preferences';
 import { downloadSessionTcx } from '../lib/tcx';
 import { workoutTerrainAtDistance } from '../lib/workouts';
-import type { SavedSession, SpeedUnit } from '../types';
+import type { ChartMode, SavedSession, SpeedUnit } from '../types';
 import { SessionMetric } from './metrics';
 import { SessionChart } from './session-chart';
 import { SessionSummary } from './session-summary';
@@ -89,7 +89,9 @@ export function SessionDetail({
 	onCancelDelete,
 	onConfirmDelete,
 	onDelete,
+	onSelectChartMode,
 	onStartNew,
+	selectedChartMode,
 	session,
 	speedUnit,
 }: {
@@ -99,7 +101,9 @@ export function SessionDetail({
 	onCancelDelete?: () => void;
 	onConfirmDelete?: () => void;
 	onDelete?: () => void;
+	onSelectChartMode?: (mode: ChartMode) => void;
 	onStartNew?: () => void;
+	selectedChartMode?: ChartMode;
 	session: SavedSession;
 	speedUnit: SpeedUnit;
 }) {
@@ -269,7 +273,9 @@ export function SessionDetail({
 				controlMode={session.controlMode}
 				history={session.history}
 				keyboardEnabled={chartKeyboardEnabled}
+				onSelectChartMode={onSelectChartMode}
 				route={session.workout ? session.workout.course.points : EMPTY_ROUTE}
+				selectedChartMode={selectedChartMode}
 				speedUnit={speedUnit}
 			/>
 		</div>

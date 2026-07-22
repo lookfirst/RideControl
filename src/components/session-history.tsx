@@ -17,7 +17,8 @@ import {
 	historyShortcutForKey,
 } from '../lib/keyboard';
 import { adjacentSession } from '../lib/saved-sessions';
-import type { SavedSession, SpeedUnit } from '../types';
+import { preferencesStore } from '../stores/preferences-store';
+import type { ChartMode, SavedSession, SpeedUnit } from '../types';
 import { KeyboardShortcutsDialog } from './keyboard-shortcuts-dialog';
 import { SessionDetail } from './session-detail';
 import { SessionHistoryList } from './session-history-list';
@@ -62,6 +63,9 @@ export function SessionHistory({
 	} = useSessionHistory(open);
 	const [deleteConfirmationOpen, setDeleteConfirmationOpen] = useState(false);
 	const [historyHelpOpen, setHistoryHelpOpen] = useState(false);
+	const [selectedChartMode, setSelectedChartMode] = useState<ChartMode>(
+		() => preferencesStore.get().chartMode
+	);
 	const [downloadFormat, setDownloadFormat] = useState<ActivityFileFormat>(
 		ACTIVITY_FILE_FORMAT.FIT
 	);
@@ -177,7 +181,9 @@ export function SessionHistory({
 				onCancelDelete={() => setDeleteConfirmationOpen(false)}
 				onConfirmDelete={() => deleteSelectedSession()}
 				onDelete={() => setDeleteConfirmationOpen(true)}
+				onSelectChartMode={setSelectedChartMode}
 				onStartNew={() => onStartNew(selected)}
+				selectedChartMode={selectedChartMode}
 				session={selected}
 				speedUnit={speedUnit}
 			/>

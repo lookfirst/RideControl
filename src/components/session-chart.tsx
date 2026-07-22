@@ -109,16 +109,24 @@ export function SessionChart({
 	controlMode,
 	history,
 	keyboardEnabled = true,
+	onSelectChartMode,
 	route,
+	selectedChartMode,
 	speedUnit,
 }: {
 	controlMode?: ControlMode;
 	history: MetricSample[];
 	keyboardEnabled?: boolean;
+	onSelectChartMode?: (mode: ChartMode) => void;
 	route: readonly RoutePoint[];
+	selectedChartMode?: ChartMode;
 	speedUnit: SpeedUnit;
 }) {
-	const selectedMode = useSelector(preferencesStore, (preferences) => preferences.chartMode);
+	const preferredChartMode = useSelector(
+		preferencesStore,
+		(preferences) => preferences.chartMode
+	);
+	const selectedMode = selectedChartMode ?? preferredChartMode;
 	const resolvedControlMode =
 		controlMode ??
 		(history.some((sample) => sample.gear !== undefined)
@@ -254,8 +262,8 @@ export function SessionChart({
 		chartHistory.length > 1 ? (chartHistory.at(-1)?.elapsedSeconds ?? 0) - historyStart : 0;
 
 	const selectMode = useCallback(
-		(mode: ChartMode) => preferencesStore.actions.selectChartMode(mode),
-		[]
+		(mode: ChartMode) => (onSelectChartMode ?? preferencesStore.actions.selectChartMode)(mode),
+		[onSelectChartMode]
 	);
 
 	useEffect(() => {
