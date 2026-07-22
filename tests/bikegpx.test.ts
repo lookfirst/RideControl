@@ -105,7 +105,10 @@ describe('BikeGPX backend client', () => {
 		const fetchMock = mock(async () => Response.json(catalog));
 		globalThis.fetch = fetchMock as unknown as typeof fetch;
 		expect(await fetchBikeGpxCatalog()).toEqual(catalog);
-		expect(fetchMock).toHaveBeenCalledWith('/api/bikegpx/routes', { signal: undefined });
+		expect(fetchMock).toHaveBeenCalledWith('/api/bikegpx/routes', {
+			cache: 'no-cache',
+			signal: undefined,
+		});
 	});
 
 	test('loads an already processed route and analysis from the backend API', async () => {
@@ -117,8 +120,8 @@ describe('BikeGPX backend client', () => {
 		globalThis.fetch = fetchMock as unknown as typeof fetch;
 		expect(await fetchBikeGpxRoute(route)).toEqual(result);
 		expect(fetchMock).toHaveBeenCalledWith(
-			'/api/bikegpx/routes/2635?prepared-route-version=2',
-			{ signal: undefined }
+			'/api/bikegpx/routes/2635?prepared-route-version=4',
+			{ cache: undefined, signal: undefined }
 		);
 	});
 

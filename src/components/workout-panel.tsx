@@ -337,7 +337,7 @@ export function WorkoutPanel({
 	const [renamingCourse, setRenamingCourse] = useState<WorkoutCourse>();
 	const [mappedCourse, setMappedCourse] = useState<WorkoutCourse>();
 	const [searchQuery, setSearchQuery] = useState('');
-	const bikeGpxCatalog = useBikeGpxCatalog(open);
+	const bikeGpxCatalog = useBikeGpxCatalog(bikeGpxBrowserOpen);
 	const sensors = useSensors(
 		useSensor(PointerSensor, {
 			activationConstraint: { distance: 6 },

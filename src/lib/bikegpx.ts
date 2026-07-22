@@ -11,8 +11,13 @@ import { isWorkoutDifficulty, type WorkoutDifficulty } from './workout-schema';
 export const BIKEGPX_ROUTES_URL = 'https://bikegpx.com/bike_routes/';
 const SEARCH_WHITESPACE = /\s+/u;
 const NUMERIC_ROUTE_ID = /^\d+$/;
-const PREPARED_ROUTE_VERSION = 2;
-const API_ROOT = (import.meta.env.VITE_RIDECONTROL_API_URL || '/api').replace(/\/$/u, '');
+const PREPARED_ROUTE_VERSION = 4;
+const CONFIGURED_API_ROOT = import.meta.env.VITE_RIDECONTROL_API_URL || '/api';
+const API_ROOT = (
+	import.meta.env.DEV && CONFIGURED_API_ROOT === 'http://localhost:8787/api'
+		? 'http://127.0.0.1:8787/api'
+		: CONFIGURED_API_ROOT
+).replace(/\/$/u, '');
 
 export interface BikeGpxRouteSummary {
 	country: string;
@@ -232,9 +237,10 @@ function restoreBikeGpxRouteResult(value: unknown): BikeGpxRouteResult | undefin
 
 async function apiResponse(
 	path: string,
-	signal?: AbortSignal
+	signal?: AbortSignal,
+	cache?: RequestCache
 ): Promise<{ response: Response; value: unknown }> {
-	const response = await fetch(`${API_ROOT}${path}`, { signal });
+	const response = await fetch(`${API_ROOT}${path}`, { cache, signal });
 	const value: unknown = await response.json();
 	return { response, value };
 }
@@ -245,8 +251,8 @@ function backendError(value: unknown): Error {
 	return new Error(message);
 }
 
-async function apiJson(path: string, signal?: AbortSignal): Promise<unknown> {
-	const { response, value } = await apiResponse(path, signal);
+async function apiJson(path: string, signal?: AbortSignal, cache?: RequestCache): Promise<unknown> {
+	const { response, value } = await apiResponse(path, signal, cache);
 	if (!response.ok) {
 		throw backendError(value);
 	}
@@ -254,7 +260,7 @@ async function apiJson(path: string, signal?: AbortSignal): Promise<unknown> {
 }
 
 export async function fetchBikeGpxCatalog(signal?: AbortSignal): Promise<BikeGpxCatalog> {
-	const catalog = restoreBikeGpxCatalog(await apiJson('/bikegpx/routes', signal));
+	const catalog = restoreBikeGpxCatalog(await apiJson('/bikegpx/routes', signal, 'no-cache'));
 	if (!catalog) {
 		throw new Error('The Ride Control backend returned an invalid BikeGPX catalog.');
 	}

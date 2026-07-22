@@ -435,7 +435,6 @@ function RoutePreviewDetails({
 	onImport,
 	route,
 	speedUnit,
-	status,
 }: {
 	alreadyImported: boolean;
 	analysis?: BikeGpxRouteAnalysis;
@@ -445,7 +444,6 @@ function RoutePreviewDetails({
 	onImport: () => void;
 	route: BikeGpxRouteSummary;
 	speedUnit: SpeedUnit;
-	status: string;
 }) {
 	const location = bikeGpxRouteLocation(route);
 	return (
@@ -469,13 +467,13 @@ function RoutePreviewDetails({
 						>
 							View source route
 						</a>
-						{importError || status ? (
+						{importError ? (
 							<span
-								aria-live={importError ? 'assertive' : 'polite'}
-								className={`mt-1 block leading-relaxed ${importError ? 'text-rose-300' : 'text-cyan-300'}`}
-								role={importError ? 'alert' : 'status'}
+								aria-live="assertive"
+								className="mt-1 block text-rose-300 leading-relaxed"
+								role="alert"
 							>
-								{importError || status}
+								{importError}
 							</span>
 						) : null}
 					</div>
@@ -516,7 +514,7 @@ function RoutePreview({
 	speedUnit: SpeedUnit;
 }) {
 	const preview = useRoutePreview(route);
-	const [feedback, setFeedback] = useState({ error: '', routeId: '', status: '' });
+	const [feedback, setFeedback] = useState({ error: '', routeId: '' });
 	const [importing, setImporting] = useState(false);
 	const alreadyImported = preview.course ? customCourseIds.has(preview.course.id) : false;
 	const visibleFeedback = route?.id === feedback.routeId ? feedback : undefined;
@@ -525,17 +523,12 @@ function RoutePreview({
 		if (!(preview.course && route)) {
 			return;
 		}
-		setFeedback({ error: '', routeId: route.id, status: '' });
+		setFeedback({ error: '', routeId: route.id });
 		setImporting(true);
 		try {
-			const imported = await onImportCourse(preview.course);
-			setFeedback({
-				error: '',
-				routeId: route.id,
-				status: `${imported.name} imported and saved on this device.`,
-			});
+			await onImportCourse(preview.course);
 		} catch (error) {
-			setFeedback({ error: errorMessage(error), routeId: route.id, status: '' });
+			setFeedback({ error: errorMessage(error), routeId: route.id });
 		} finally {
 			setImporting(false);
 		}
@@ -576,7 +569,6 @@ function RoutePreview({
 					onImport={importRoute}
 					route={route}
 					speedUnit={speedUnit}
-					status={visibleFeedback?.status ?? ''}
 				/>
 			) : (
 				<div className="absolute inset-0 grid place-items-center px-8 text-center text-slate-400 text-sm">
