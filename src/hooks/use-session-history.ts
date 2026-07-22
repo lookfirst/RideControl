@@ -17,11 +17,13 @@ import type { SavedSession, SavedSessionSummary } from '../types';
 
 const PAGE_SIZE = 30;
 
-export function useSessionHistory(open: boolean) {
+export function useSessionHistory(open: boolean, preferredSessionId?: string) {
 	const [summaries, setSummaries] = useState<SavedSessionSummary[]>([]);
 	const [total, setTotal] = useState(0);
 	const [selected, setSelected] = useState<SavedSession>();
-	const [selectedId, setSelectedId] = useState(loadSelectedSessionId);
+	const [selectedId, setSelectedId] = useState(
+		() => preferredSessionId ?? loadSelectedSessionId()
+	);
 	const selectedIdRef = useRef(selectedId);
 	const [loading, setLoading] = useState(false);
 	const [deleting, setDeleting] = useState(false);
@@ -32,6 +34,7 @@ export function useSessionHistory(open: boolean) {
 	const [error, setError] = useState('');
 	const deleteInProgress = useRef(false);
 	const historyLoadGeneration = useRef(0);
+	const historyInitialized = useRef(false);
 
 	const rememberSelectedSession = useCallback((id: string | undefined) => {
 		selectedIdRef.current = id;
@@ -56,7 +59,7 @@ export function useSessionHistory(open: boolean) {
 	);
 
 	const loadHistory = useCallback(
-		async (preferredSessionId?: string, includeAll = false) => {
+		async (requestedSessionId?: string, includeAll = false) => {
 			const generation = historyLoadGeneration.current + 1;
 			historyLoadGeneration.current = generation;
 			const [sessions, count] = await Promise.all([
@@ -69,8 +72,8 @@ export function useSessionHistory(open: boolean) {
 			setSummaries(sessions);
 			setTotal(count);
 			setError('');
-			const nextSessionId = sessions.some((session) => session.id === preferredSessionId)
-				? preferredSessionId
+			const nextSessionId = sessions.some((session) => session.id === requestedSessionId)
+				? requestedSessionId
 				: sessions[0]?.id;
 			if (nextSessionId) {
 				await selectSession(nextSessionId);
@@ -85,15 +88,24 @@ export function useSessionHistory(open: boolean) {
 	useEffect(() => {
 		if (!open) {
 			historyLoadGeneration.current += 1;
+			historyInitialized.current = false;
 			setHistoryStatus('');
 			setHighlightedSessionIds([]);
 			return;
 		}
-		const rememberedSessionId = selectedIdRef.current;
-		loadHistory(rememberedSessionId, rememberedSessionId !== undefined).catch(
-			(loadError: unknown) => setError(errorMessage(loadError))
-		);
-	}, [loadHistory, open]);
+		if (
+			historyInitialized.current &&
+			(!preferredSessionId || preferredSessionId === selectedIdRef.current)
+		) {
+			return;
+		}
+		const requestedSessionId = preferredSessionId ?? selectedIdRef.current;
+		loadHistory(requestedSessionId, requestedSessionId !== undefined)
+			.then(() => {
+				historyInitialized.current = true;
+			})
+			.catch((loadError: unknown) => setError(errorMessage(loadError)));
+	}, [loadHistory, open, preferredSessionId]);
 
 	const importActivityFile = useCallback(
 		async (file: File) => {

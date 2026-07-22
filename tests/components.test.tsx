@@ -521,6 +521,7 @@ describe('view components', () => {
 			<WorkoutPanel
 				courses={WORKOUT_COURSES}
 				customCourseIds={noCustomWorkoutIds}
+				focusedCourseId={course.id}
 				onClose={() => undefined}
 				onImportCourse={() => Promise.reject(new Error('Not used in this render test'))}
 				onImportFile={() => Promise.reject(new Error('Not used in this render test'))}
@@ -534,6 +535,8 @@ describe('view components', () => {
 			/>
 		);
 		expect(panel).toContain('Terrain workouts');
+		expect(panel).toContain('data-focused="true"');
+		expect(panel).toContain(`id="workout-${course.id}"`);
 		expect(panel).toContain('Harbor Ring');
 		expect(panel).toContain('Prairie Roll');
 		expect(panel).toContain('Cedar Circuit');

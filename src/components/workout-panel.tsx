@@ -19,6 +19,7 @@ import {
 	lazy,
 	Suspense,
 	useCallback,
+	useEffect,
 	useMemo,
 	useRef,
 	useState,
@@ -26,10 +27,6 @@ import {
 import { useBikeGpxCatalog } from '../hooks/use-bikegpx-catalog';
 import { useFileDrop } from '../hooks/use-file-drop';
 import { usePersistentScrollPosition } from '../hooks/use-persistent-scroll-position';
-import {
-	loadBikeGpxBrowserOpen,
-	persistBikeGpxBrowserOpen,
-} from '../lib/bikegpx-browser-preferences';
 import { errorMessage } from '../lib/errors';
 import { descriptionWithoutDistance, formatDistance, formatElevation } from '../lib/units';
 import {
@@ -72,6 +69,8 @@ function WorkoutCourseCard({
 	dragHandleAttributes,
 	dragHandleListeners,
 	dragged,
+	focused,
+	onFocus,
 	onMove,
 	onRemove,
 	onRename,
@@ -89,6 +88,8 @@ function WorkoutCourseCard({
 	dragHandleAttributes: DraggableAttributes;
 	dragHandleListeners: DraggableSyntheticListeners;
 	dragged: boolean;
+	focused: boolean;
+	onFocus: () => void;
 	onMove: (direction: -1 | 1) => void;
 	onRemove: () => void;
 	onRename: () => void;
@@ -111,10 +112,20 @@ function WorkoutCourseCard({
 			onMove(1);
 		}
 	};
+	let emphasis = 'border-line';
+	if (selected) {
+		emphasis = 'border-mint/50 shadow-[0_0_20px_rgba(173,245,189,.08)]';
+	} else if (focused) {
+		emphasis = 'border-cyan-400/60 shadow-[0_0_20px_rgba(34,211,238,.08)]';
+	}
 
 	return (
 		<article
-			className={`relative overflow-hidden rounded-2xl border bg-[#12171d] transition-colors ${selected ? 'border-mint/50 shadow-[0_0_20px_rgba(173,245,189,.08)]' : 'border-line'} ${dragged ? 'cursor-grabbing opacity-95 shadow-[0_20px_50px_rgba(0,0,0,.5)]' : ''}`}
+			className={`relative overflow-hidden rounded-2xl border bg-[#12171d] transition-colors ${emphasis} ${dragged ? 'cursor-grabbing opacity-95 shadow-[0_20px_50px_rgba(0,0,0,.5)]' : ''}`}
+			data-focused={focused ? 'true' : undefined}
+			id={`workout-${encodeURIComponent(course.id)}`}
+			onFocusCapture={onFocus}
+			onPointerDownCapture={onFocus}
 			ref={setNodeRef}
 			style={style}
 		>
@@ -292,37 +303,48 @@ function WorkoutDropBoundary({ index }: { index: number }) {
 
 export function WorkoutPanel({
 	activeCourse,
+	bikeGpxBrowserOpen = false,
+	bikeGpxRouteId,
 	courses,
 	customCourseIds,
+	focusedCourseId,
 	onClose,
+	onCloseBikeGpx,
+	onFocusCourse,
 	onImportCourse,
 	onImportFile,
 	onRemoveCourse,
 	onRenameCourse,
 	onReorderCourse,
+	onOpenBikeGpx,
+	onSelectBikeGpxRoute,
 	onSelect,
 	open,
 	selectionLocked,
 	speedUnit,
 }: {
 	activeCourse?: WorkoutCourse;
+	bikeGpxBrowserOpen?: boolean;
+	bikeGpxRouteId?: string;
 	courses: WorkoutCourse[];
 	customCourseIds: ReadonlySet<string>;
+	focusedCourseId?: string;
 	onClose: () => void;
+	onCloseBikeGpx?: () => void;
+	onFocusCourse?: (courseId: string | undefined) => void;
 	onImportCourse: (course: WorkoutCourse) => Promise<WorkoutCourse>;
 	onImportFile: (file: File) => Promise<WorkoutCourse>;
 	onRemoveCourse: (courseId: string) => void;
 	onRenameCourse: (courseId: string, name: string) => WorkoutCourse;
 	onReorderCourse: (movedCourseId: string, destinationIndex: number) => void;
+	onOpenBikeGpx?: () => void;
+	onSelectBikeGpxRoute?: (routeId: string | undefined) => void;
 	onSelect: (course?: WorkoutCourse) => void;
 	open: boolean;
 	selectionLocked: boolean;
 	speedUnit: SpeedUnit;
 }) {
 	const importInput = useRef<HTMLInputElement>(null);
-	const [bikeGpxBrowserOpen, setBikeGpxBrowserOpenState] = useState(
-		() => open && loadBikeGpxBrowserOpen()
-	);
 	const [importing, setImporting] = useState(false);
 	const [libraryStatus, setLibraryStatus] = useState('');
 	const [importError, setImportError] = useState('');
@@ -347,10 +369,22 @@ export function WorkoutPanel({
 		WORKOUT_SCROLL_POSITION_STORAGE_KEY,
 		open
 	);
-	const setBikeGpxBrowserOpen = useCallback((nextOpen: boolean) => {
-		persistBikeGpxBrowserOpen(nextOpen);
-		setBikeGpxBrowserOpenState(nextOpen);
-	}, []);
+	useEffect(() => {
+		if (!(open && focusedCourseId)) {
+			return;
+		}
+		const focusedCourse = courses.find((course) => course.id === focusedCourseId);
+		if (!focusedCourse) {
+			onFocusCourse?.(undefined);
+			return;
+		}
+		const frame = window.requestAnimationFrame(() => {
+			document
+				.getElementById(`workout-${encodeURIComponent(focusedCourseId)}`)
+				?.scrollIntoView({ block: 'center' });
+		});
+		return () => window.cancelAnimationFrame(frame);
+	}, [courses, focusedCourseId, onFocusCourse, open]);
 
 	const importWorkout = useCallback(
 		async (file: File) => {
@@ -378,7 +412,6 @@ export function WorkoutPanel({
 	const closePanel = () => {
 		setRenamingCourse(undefined);
 		setMappedCourse(undefined);
-		setBikeGpxBrowserOpen(false);
 		setSearchQuery('');
 		onClose();
 	};
@@ -488,7 +521,7 @@ export function WorkoutPanel({
 								/>
 								<button
 									className="h-9 rounded-lg border border-line px-3 font-semibold text-slate-300 text-xs hover:border-cyan-400/60 hover:text-white"
-									onClick={() => setBikeGpxBrowserOpen(true)}
+									onClick={onOpenBikeGpx}
 									type="button"
 								>
 									Browse BikeGPX
@@ -563,6 +596,8 @@ export function WorkoutPanel({
 											course={course}
 											custom={customCourseIds.has(course.id)}
 											disabled={selectionLocked}
+											focused={focusedCourseId === course.id}
+											onFocus={() => onFocusCourse?.(course.id)}
 											onMove={(direction) => {
 												const target = filteredCourses[index + direction];
 												if (target) {
@@ -637,7 +672,7 @@ export function WorkoutPanel({
 						catalogError={bikeGpxCatalog.error}
 						catalogLoading={bikeGpxCatalog.loading}
 						customCourseIds={customCourseIds}
-						onClose={() => setBikeGpxBrowserOpen(false)}
+						onClose={() => onCloseBikeGpx?.()}
 						onImportCourse={async (course) => {
 							const imported = await onImportCourse(course);
 							setSearchQuery('');
@@ -646,6 +681,8 @@ export function WorkoutPanel({
 							return imported;
 						}}
 						onRefreshCatalog={bikeGpxCatalog.refresh}
+						onSelectRouteId={onSelectBikeGpxRoute}
+						requestedRouteId={bikeGpxRouteId}
 						speedUnit={speedUnit}
 					/>
 				</Suspense>

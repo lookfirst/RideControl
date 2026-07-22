@@ -22,6 +22,17 @@ const EMPTY_BIKEGPX_BROWSER_SEARCH: BikeGpxBrowserSearch = {
 	selectedRouteId: '',
 };
 
+export function bikeGpxBrowserSearchForRoute(routeId: string): BikeGpxBrowserSearch {
+	return { ...EMPTY_BIKEGPX_BROWSER_SEARCH, selectedRouteId: routeId };
+}
+
+export function bikeGpxBrowserSearchWithSelectedRoute(
+	search: BikeGpxBrowserSearch,
+	routeId: string
+): BikeGpxBrowserSearch {
+	return { ...search, selectedRouteId: routeId };
+}
+
 export const BIKEGPX_ROUTE_LIST_SCROLL_POSITION_STORAGE_KEY =
 	'ride-control-bikegpx-route-list-scroll-position';
 

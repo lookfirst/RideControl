@@ -34,13 +34,17 @@ function shouldIgnoreHistoryAction(event: KeyboardEvent) {
 
 export function SessionHistory({
 	onClose,
+	onSelectSessionId,
 	onStartNew,
 	open,
+	requestedSessionId,
 	speedUnit,
 }: {
 	onClose: () => void;
+	onSelectSessionId?: (sessionId: string) => void;
 	onStartNew: (session: SavedSession) => void;
 	open: boolean;
+	requestedSessionId?: string;
 	speedUnit: SpeedUnit;
 }) {
 	const {
@@ -60,7 +64,7 @@ export function SessionHistory({
 		selectSession: selectHistorySession,
 		summaries,
 		total,
-	} = useSessionHistory(open);
+	} = useSessionHistory(open, requestedSessionId);
 	const [deleteConfirmationOpen, setDeleteConfirmationOpen] = useState(false);
 	const [historyHelpOpen, setHistoryHelpOpen] = useState(false);
 	const [selectedChartMode, setSelectedChartMode] = useState<ChartMode>(
@@ -71,6 +75,12 @@ export function SessionHistory({
 	);
 	const importInput = useRef<HTMLInputElement>(null);
 	const transferring = exporting || importing;
+
+	useEffect(() => {
+		if (open && selected) {
+			onSelectSessionId?.(selected.id);
+		}
+	}, [onSelectSessionId, open, selected]);
 
 	useEffect(() => {
 		if (!open) {

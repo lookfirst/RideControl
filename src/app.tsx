@@ -32,6 +32,19 @@ import {
 	persistOpenSideTray,
 } from './lib/app-overlay';
 import {
+	APP_ROUTE_KIND,
+	type AppRoute,
+	appRouteFromPathname,
+	appRoutePath,
+	appRouteSideTray,
+	HOME_APP_ROUTE,
+} from './lib/app-route';
+import {
+	loadBikeGpxBrowserOpen,
+	loadBikeGpxBrowserSearch,
+	persistBikeGpxBrowserOpen,
+} from './lib/bikegpx-browser-preferences';
+import {
 	CONTROL_MODE,
 	trainingControlMode,
 	virtualShiftingConnectionReady,
@@ -69,16 +82,112 @@ function shiftHandlerUnlessBlocked(handler: (change: number) => void, blocked: b
 	return blocked ? () => undefined : handler;
 }
 
+interface InitialNavigation {
+	overlay?: AppOverlay;
+	route: AppRoute;
+}
+
+function restoredRoute(overlay: AppOverlay | undefined): AppRoute {
+	if (overlay === APP_OVERLAY.DEVICES) {
+		return { kind: APP_ROUTE_KIND.DEVICES };
+	}
+	if (overlay === APP_OVERLAY.HISTORY) {
+		return { kind: APP_ROUTE_KIND.SESSION };
+	}
+	if (overlay === APP_OVERLAY.WORKOUTS) {
+		if (loadBikeGpxBrowserOpen()) {
+			return {
+				kind: APP_ROUTE_KIND.BIKEGPX,
+				routeId: loadBikeGpxBrowserSearch().selectedRouteId || undefined,
+			};
+		}
+		return { kind: APP_ROUTE_KIND.WORKOUT };
+	}
+	return HOME_APP_ROUTE;
+}
+
+function initialNavigation(): InitialNavigation {
+	const pathname = globalThis.location?.pathname ?? '/';
+	const linkedRoute = appRouteFromPathname(pathname);
+	const linkedOverlay = appRouteSideTray(linkedRoute);
+	if (linkedOverlay) {
+		return { overlay: linkedOverlay, route: linkedRoute };
+	}
+	const restoredOverlay = loadOpenSideTray();
+	return {
+		overlay: restoredOverlay ?? (shouldShowWelcome() ? APP_OVERLAY.WELCOME : undefined),
+		route: restoredRoute(restoredOverlay),
+	};
+}
+
+function updateBrowserRoute(route: AppRoute, replace: boolean) {
+	if (!globalThis.history) {
+		return;
+	}
+	const path = appRoutePath(route);
+	if (globalThis.location.pathname === path) {
+		return;
+	}
+	if (replace) {
+		globalThis.history.replaceState(null, '', path);
+	} else {
+		globalThis.history.pushState(null, '', path);
+	}
+}
+
 export function App({ initialSession = emptySession }: { initialSession?: StoredSession }) {
+	const [initialAppNavigation] = useState(initialNavigation);
 	const rememberedDevices = useRememberedBluetoothDevices();
 	const trainer = useTrainer(rememberedDevices);
+	const [appRoute, setAppRoute] = useState<AppRoute>(initialAppNavigation.route);
 	const [activeOverlay, setActiveOverlayState] = useState<AppOverlay | undefined>(
-		() => loadOpenSideTray() ?? (shouldShowWelcome() ? APP_OVERLAY.WELCOME : undefined)
+		initialAppNavigation.overlay
 	);
-	const setActiveOverlay = useCallback((overlay: AppOverlay | undefined) => {
+	const showAppRoute = useCallback((route: AppRoute) => {
+		const overlay = appRouteSideTray(route);
+		persistBikeGpxBrowserOpen(route.kind === APP_ROUTE_KIND.BIKEGPX);
 		persistOpenSideTray(overlay);
+		setAppRoute(route);
 		setActiveOverlayState(overlay);
 	}, []);
+	const navigateToAppRoute = useCallback(
+		(route: AppRoute, replace = false) => {
+			showAppRoute(route);
+			updateBrowserRoute(route, replace);
+		},
+		[showAppRoute]
+	);
+	const setActiveOverlay = useCallback(
+		(overlay: AppOverlay | undefined) => {
+			if (overlay === APP_OVERLAY.DEVICES) {
+				navigateToAppRoute({ kind: APP_ROUTE_KIND.DEVICES });
+				return;
+			}
+			if (overlay === APP_OVERLAY.HISTORY) {
+				navigateToAppRoute({ kind: APP_ROUTE_KIND.SESSION });
+				return;
+			}
+			if (overlay === APP_OVERLAY.WORKOUTS) {
+				navigateToAppRoute({ kind: APP_ROUTE_KIND.WORKOUT });
+				return;
+			}
+			persistBikeGpxBrowserOpen(false);
+			persistOpenSideTray(overlay);
+			setAppRoute(HOME_APP_ROUTE);
+			setActiveOverlayState(overlay);
+			updateBrowserRoute(HOME_APP_ROUTE, true);
+		},
+		[navigateToAppRoute]
+	);
+	useEffect(() => {
+		updateBrowserRoute(initialAppNavigation.route, true);
+		persistBikeGpxBrowserOpen(initialAppNavigation.route.kind === APP_ROUTE_KIND.BIKEGPX);
+		const handlePopState = () => {
+			showAppRoute(appRouteFromPathname(globalThis.location.pathname));
+		};
+		window.addEventListener('popstate', handlePopState);
+		return () => window.removeEventListener('popstate', handlePopState);
+	}, [initialAppNavigation.route, showAppRoute]);
 	const devicesOpen = activeOverlay === APP_OVERLAY.DEVICES;
 	const clickShiftRef = useRef<(change: number) => void>(() => undefined);
 	const handleClickShift = useCallback((change: number) => clickShiftRef.current(change), []);
@@ -283,6 +392,36 @@ export function App({ initialSession = emptySession }: { initialSession?: Stored
 		? session.selectedWorkout.course
 		: undefined;
 	const selectedWorkoutId = selectedWorkoutCourse ? selectedWorkoutCourse.id : undefined;
+	const bikeGpxBrowserOpen = appRoute.kind === APP_ROUTE_KIND.BIKEGPX;
+	const bikeGpxRouteId = bikeGpxBrowserOpen ? appRoute.routeId : undefined;
+	const focusedWorkoutId =
+		appRoute.kind === APP_ROUTE_KIND.WORKOUT ? appRoute.workoutId : undefined;
+	const requestedSessionId =
+		appRoute.kind === APP_ROUTE_KIND.SESSION ? appRoute.sessionId : undefined;
+	const focusWorkout = useCallback(
+		(courseId: string | undefined) => {
+			navigateToAppRoute({ kind: APP_ROUTE_KIND.WORKOUT, workoutId: courseId }, true);
+		},
+		[navigateToAppRoute]
+	);
+	const openBikeGpx = useCallback(() => {
+		navigateToAppRoute({ kind: APP_ROUTE_KIND.BIKEGPX });
+	}, [navigateToAppRoute]);
+	const closeBikeGpx = useCallback(() => {
+		navigateToAppRoute({ kind: APP_ROUTE_KIND.WORKOUT }, true);
+	}, [navigateToAppRoute]);
+	const selectBikeGpxRoute = useCallback(
+		(routeId: string | undefined) => {
+			navigateToAppRoute({ kind: APP_ROUTE_KIND.BIKEGPX, routeId }, true);
+		},
+		[navigateToAppRoute]
+	);
+	const selectHistorySession = useCallback(
+		(sessionId: string) => {
+			navigateToAppRoute({ kind: APP_ROUTE_KIND.SESSION, sessionId }, true);
+		},
+		[navigateToAppRoute]
+	);
 	useEffect(() => {
 		if (!selectedWorkoutCourse) {
 			return;
@@ -411,21 +550,30 @@ export function App({ initialSession = emptySession }: { initialSession?: Stored
 			/>
 			<SessionHistory
 				onClose={() => setActiveOverlay(undefined)}
+				onSelectSessionId={selectHistorySession}
 				onStartNew={continueFromHistory}
 				open={activeOverlay === APP_OVERLAY.HISTORY}
+				requestedSessionId={requestedSessionId}
 				speedUnit={speedUnit}
 			/>
 			<WorkoutPanel
 				activeCourse={session.selectedWorkout?.course}
+				bikeGpxBrowserOpen={bikeGpxBrowserOpen}
+				bikeGpxRouteId={bikeGpxRouteId}
 				courses={workoutLibrary.courses}
 				customCourseIds={workoutLibrary.customCourseIds}
+				focusedCourseId={focusedWorkoutId}
 				onClose={() => setActiveOverlay(undefined)}
+				onCloseBikeGpx={closeBikeGpx}
+				onFocusCourse={focusWorkout}
 				onImportCourse={async (course) => workoutLibrary.importCourse(course)}
 				onImportFile={workoutLibrary.importFile}
+				onOpenBikeGpx={openBikeGpx}
 				onRemoveCourse={removeWorkout}
 				onRenameCourse={workoutLibrary.renameCourse}
 				onReorderCourse={workoutLibrary.reorderCourse}
 				onSelect={selectWorkout}
+				onSelectBikeGpxRoute={selectBikeGpxRoute}
 				open={activeOverlay === APP_OVERLAY.WORKOUTS}
 				selectionLocked={workoutLocked}
 				speedUnit={speedUnit}

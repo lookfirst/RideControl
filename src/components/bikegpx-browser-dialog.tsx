@@ -17,6 +17,8 @@ import {
 } from '../lib/bikegpx';
 import {
 	BIKEGPX_ROUTE_LIST_SCROLL_POSITION_STORAGE_KEY,
+	bikeGpxBrowserSearchForRoute,
+	bikeGpxBrowserSearchWithSelectedRoute,
 	loadBikeGpxBrowserSearch,
 	persistBikeGpxBrowserSearch,
 } from '../lib/bikegpx-browser-preferences';
@@ -587,6 +589,8 @@ export function BikeGpxBrowserDialog({
 	onClose,
 	onImportCourse,
 	onRefreshCatalog,
+	onSelectRouteId,
+	requestedRouteId,
 	speedUnit,
 }: {
 	catalog?: BikeGpxCatalog;
@@ -596,11 +600,18 @@ export function BikeGpxBrowserDialog({
 	onClose: () => void;
 	onImportCourse: (course: WorkoutCourse) => Promise<WorkoutCourse>;
 	onRefreshCatalog: () => Promise<void>;
+	onSelectRouteId?: (routeId: string | undefined) => void;
+	requestedRouteId?: string;
 	speedUnit: SpeedUnit;
 }) {
 	useCloseOnEscape(true, onClose);
 	const closeButtonRef = useDialogInitialFocus<HTMLButtonElement>();
-	const [search, setSearchState] = useState(loadBikeGpxBrowserSearch);
+	const reportedRouteId = useRef<string | undefined>(undefined);
+	const [search, setSearchState] = useState(() =>
+		requestedRouteId
+			? bikeGpxBrowserSearchForRoute(requestedRouteId)
+			: loadBikeGpxBrowserSearch()
+	);
 	const setSearch = useCallback((update: (current: typeof search) => typeof search) => {
 		setSearchState((current) => {
 			const next = update(current);
@@ -641,10 +652,46 @@ export function BikeGpxBrowserDialog({
 		]
 	);
 	const selectedRoute = bikeGpxPreviewRoute(filteredRoutes, selectedRouteId);
+	useEffect(() => {
+		if (requestedRouteId === selectedRouteId) {
+			if (reportedRouteId.current === requestedRouteId) {
+				reportedRouteId.current = undefined;
+			}
+			return;
+		}
+		if (!(requestedRouteId && requestedRouteId !== selectedRouteId)) {
+			return;
+		}
+		const next =
+			reportedRouteId.current === requestedRouteId
+				? bikeGpxBrowserSearchWithSelectedRoute(search, requestedRouteId)
+				: bikeGpxBrowserSearchForRoute(requestedRouteId);
+		reportedRouteId.current = undefined;
+		setSearchState(next);
+		persistBikeGpxBrowserSearch(next);
+	}, [requestedRouteId, search, selectedRouteId]);
+	const reportSelectedRoute = useCallback(
+		(routeId: string | undefined) => {
+			reportedRouteId.current = routeId;
+			onSelectRouteId?.(routeId);
+		},
+		[onSelectRouteId]
+	);
+	useEffect(() => {
+		if (
+			!(requestedRouteId && requestedRouteId !== selectedRouteId) &&
+			selectedRoute &&
+			selectedRoute.id !== requestedRouteId
+		) {
+			reportSelectedRoute(selectedRoute.id);
+		}
+	}, [reportSelectedRoute, requestedRouteId, selectedRoute, selectedRouteId]);
 
 	const selectRoute = (route: BikeGpxRouteSummary) => {
 		setSearch((current) => ({ ...current, selectedRouteId: route.id }));
+		reportSelectedRoute(route.id);
 	};
+	const clearSelectedRoute = () => reportSelectedRoute(undefined);
 
 	return (
 		<div className="fixed inset-0 z-50 bg-black/45 backdrop-blur-[2px]">
@@ -712,6 +759,7 @@ export function BikeGpxBrowserDialog({
 								country: nextCountry,
 								selectedRouteId: '',
 							}));
+							clearSelectedRoute();
 						}}
 						onDifficultyChange={(nextDifficulty) => {
 							setSearch((current) => ({
@@ -719,6 +767,7 @@ export function BikeGpxBrowserDialog({
 								difficulty: nextDifficulty,
 								selectedRouteId: '',
 							}));
+							clearSelectedRoute();
 						}}
 						onMaximumDistanceChange={(nextDistance) => {
 							setSearch((current) => ({
@@ -726,6 +775,7 @@ export function BikeGpxBrowserDialog({
 								maximumDistance: nextDistance,
 								selectedRouteId: '',
 							}));
+							clearSelectedRoute();
 						}}
 						onMinimumDistanceChange={(nextDistance) => {
 							setSearch((current) => ({
@@ -733,6 +783,7 @@ export function BikeGpxBrowserDialog({
 								minimumDistance: nextDistance,
 								selectedRouteId: '',
 							}));
+							clearSelectedRoute();
 						}}
 						onQueryChange={(nextQuery) => {
 							setSearch((current) => ({
@@ -740,6 +791,7 @@ export function BikeGpxBrowserDialog({
 								query: nextQuery,
 								selectedRouteId: '',
 							}));
+							clearSelectedRoute();
 						}}
 						onRefreshCatalog={onRefreshCatalog}
 						onSelectRoute={selectRoute}

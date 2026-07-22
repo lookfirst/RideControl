@@ -1,5 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import {
+	bikeGpxBrowserSearchForRoute,
+	bikeGpxBrowserSearchWithSelectedRoute,
 	loadBikeGpxBrowserOpen,
 	loadBikeGpxBrowserSearch,
 	persistBikeGpxBrowserOpen,
@@ -7,6 +9,37 @@ import {
 } from '../src/lib/bikegpx-browser-preferences';
 
 describe('BikeGPX browser preferences', () => {
+	test('creates an unfiltered search for a directly linked route', () => {
+		expect(bikeGpxBrowserSearchForRoute('2635')).toEqual({
+			country: '',
+			maximumDistance: '',
+			minimumDistance: '',
+			query: '',
+			selectedRouteId: '2635',
+		});
+	});
+
+	test('preserves active filters when the visible result updates the direct link', () => {
+		expect(
+			bikeGpxBrowserSearchWithSelectedRoute(
+				{
+					country: 'Australia',
+					maximumDistance: '30',
+					minimumDistance: '10',
+					query: 'trail',
+					selectedRouteId: '',
+				},
+				'4513'
+			)
+		).toEqual({
+			country: 'Australia',
+			maximumDistance: '30',
+			minimumDistance: '10',
+			query: 'trail',
+			selectedRouteId: '4513',
+		});
+	});
+
 	test('persists, restores, and clears the open browser', () => {
 		const values = new Map<string, string>();
 		const storage = {
