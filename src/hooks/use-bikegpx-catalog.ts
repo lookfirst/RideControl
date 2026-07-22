@@ -2,7 +2,6 @@ import { useCallback, useEffect, useState } from 'react';
 import { type BikeGpxCatalog, fetchBikeGpxCatalog } from '../lib/bikegpx';
 import { errorMessage } from '../lib/errors';
 
-const CATALOG_REFRESH_INTERVAL_MS = 15_000;
 let catalogRequest: Promise<BikeGpxCatalog> | undefined;
 
 function requestCatalog(): Promise<BikeGpxCatalog> {
@@ -22,36 +21,26 @@ export function useBikeGpxCatalog(active: boolean) {
 			return;
 		}
 		let cancelled = false;
-		let initialRequest = true;
-		const loadCatalog = () => {
-			if (initialRequest) {
-				setError('');
-				setLoading(true);
-				initialRequest = false;
-			}
-			requestCatalog()
-				.then((nextCatalog) => {
-					if (!cancelled) {
-						setCatalog(nextCatalog);
-						setError('');
-					}
-				})
-				.catch((nextError) => {
-					if (!cancelled) {
-						setError(errorMessage(nextError));
-					}
-				})
-				.finally(() => {
-					if (!cancelled) {
-						setLoading(false);
-					}
-				});
-		};
-		loadCatalog();
-		const refreshInterval = window.setInterval(loadCatalog, CATALOG_REFRESH_INTERVAL_MS);
+		setError('');
+		setLoading(true);
+		requestCatalog()
+			.then((nextCatalog) => {
+				if (!cancelled) {
+					setCatalog(nextCatalog);
+				}
+			})
+			.catch((nextError) => {
+				if (!cancelled) {
+					setError(errorMessage(nextError));
+				}
+			})
+			.finally(() => {
+				if (!cancelled) {
+					setLoading(false);
+				}
+			});
 		return () => {
 			cancelled = true;
-			window.clearInterval(refreshInterval);
 		};
 	}, [active]);
 

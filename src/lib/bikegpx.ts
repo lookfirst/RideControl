@@ -13,11 +13,7 @@ const SEARCH_WHITESPACE = /\s+/u;
 const NUMERIC_ROUTE_ID = /^\d+$/;
 const PREPARED_ROUTE_VERSION = 4;
 const CONFIGURED_API_ROOT = import.meta.env.VITE_RIDECONTROL_API_URL || '/api';
-const API_ROOT = (
-	import.meta.env.DEV && CONFIGURED_API_ROOT === 'http://localhost:8787/api'
-		? 'http://127.0.0.1:8787/api'
-		: CONFIGURED_API_ROOT
-).replace(/\/$/u, '');
+const API_ROOT = CONFIGURED_API_ROOT.replace(/\/$/u, '');
 
 export interface BikeGpxRouteSummary {
 	country: string;
