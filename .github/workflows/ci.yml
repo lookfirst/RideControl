@@ -64,8 +64,6 @@ jobs:
       - name: Build Worker
         run: bun run build
       - name: Deploy Worker
-        uses: cloudflare/wrangler-action@v3
-        with:
-          accountId: c1e6e1378d9461aa07039950b1bf8b89
-          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          command: deploy
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: bunx wrangler deploy
