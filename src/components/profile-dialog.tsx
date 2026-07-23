@@ -24,6 +24,8 @@ import {
 	poundsForKilograms,
 	type RiderProfile,
 } from '../lib/profile';
+import { SPEED_UNIT_OPTIONS } from '../lib/units';
+import { requestUnloadConfirmation } from '../lib/unload';
 import type { SpeedUnit } from '../types';
 
 const fieldClass =
@@ -70,14 +72,18 @@ function profileInitial(name: string): string {
 export function ProfileDialog({
 	onClose,
 	onSave,
+	onSelectSpeedUnit,
 	open,
+	physicsSettingsLocked,
 	profile,
 	speedUnit,
 	storageError,
 }: {
 	onClose: () => void;
 	onSave: (profile: RiderProfile) => Promise<void>;
+	onSelectSpeedUnit: (unit: SpeedUnit) => void;
 	open: boolean;
+	physicsSettingsLocked: boolean;
 	profile: RiderProfile;
 	speedUnit: SpeedUnit;
 	storageError: string;
@@ -85,6 +91,7 @@ export function ProfileDialog({
 	const closeButtonRef = useDialogInitialFocus<HTMLButtonElement>(open);
 	useCloseOnEscape(open, onClose);
 	useBodyScrollLock(open);
+	const [selectedSpeedUnit, setSelectedSpeedUnit] = useState(speedUnit);
 	const [name, setName] = useState(profile.name);
 	const [identity, setIdentity] = useState(profile.identity);
 	const [riderWeight, setRiderWeight] = useState(() =>
@@ -103,9 +110,17 @@ export function ProfileDialog({
 	const [error, setError] = useState('');
 	const [saving, setSaving] = useState(false);
 	const imageUrl = useMemo(() => (image ? URL.createObjectURL(image) : undefined), [image]);
-	const weightUnit = speedUnit === 'mph' ? 'lb' : 'kg';
-	const riderRange = weightRange(speedUnit, MINIMUM_RIDER_WEIGHT_KG, MAXIMUM_RIDER_WEIGHT_KG);
-	const bikeRange = weightRange(speedUnit, MINIMUM_BIKE_WEIGHT_KG, MAXIMUM_BIKE_WEIGHT_KG);
+	const weightUnit = selectedSpeedUnit === 'mph' ? 'lb' : 'kg';
+	const riderRange = weightRange(
+		selectedSpeedUnit,
+		MINIMUM_RIDER_WEIGHT_KG,
+		MAXIMUM_RIDER_WEIGHT_KG
+	);
+	const bikeRange = weightRange(
+		selectedSpeedUnit,
+		MINIMUM_BIKE_WEIGHT_KG,
+		MAXIMUM_BIKE_WEIGHT_KG
+	);
 	const parsedFront = parsedTeeth(frontChainrings);
 	const parsedRear = parsedTeeth(rearCassette);
 	const gearCount =
@@ -115,11 +130,21 @@ export function ProfileDialog({
 					rearCassetteTeeth: parsedRear,
 				})
 			: 0;
+	const profileChanged =
+		selectedSpeedUnit !== speedUnit ||
+		name !== profile.name ||
+		identity !== profile.identity ||
+		riderWeight !== displayWeight(profile.riderWeightKg, selectedSpeedUnit) ||
+		bikeWeight !== displayWeight(profile.bikeWeightKg, selectedSpeedUnit) ||
+		frontChainrings !== formattedTeeth(profile.frontChainringTeeth) ||
+		rearCassette !== formattedTeeth(profile.rearCassetteTeeth) ||
+		image !== profile.image;
 
 	useEffect(() => {
 		if (!open) {
 			return;
 		}
+		setSelectedSpeedUnit(speedUnit);
 		setName(profile.name);
 		setIdentity(profile.identity);
 		setRiderWeight(displayWeight(profile.riderWeightKg, speedUnit));
@@ -140,14 +165,40 @@ export function ProfileDialog({
 		[imageUrl]
 	);
 
+	useEffect(() => {
+		if (!(open && profileChanged)) {
+			return;
+		}
+		const confirmUnsavedProfileExit = (event: BeforeUnloadEvent) => {
+			requestUnloadConfirmation(event);
+		};
+		window.addEventListener('beforeunload', confirmUnsavedProfileExit);
+		return () => window.removeEventListener('beforeunload', confirmUnsavedProfileExit);
+	}, [open, profileChanged]);
+
 	if (!open) {
 		return null;
 	}
 
+	const selectSpeedUnit = (unit: SpeedUnit) => {
+		if (unit === selectedSpeedUnit) {
+			return;
+		}
+		const riderWeightKg = storedWeight(riderWeight, selectedSpeedUnit);
+		const bikeWeightKg = storedWeight(bikeWeight, selectedSpeedUnit);
+		if (Number.isFinite(riderWeightKg)) {
+			setRiderWeight(displayWeight(riderWeightKg, unit));
+		}
+		if (Number.isFinite(bikeWeightKg)) {
+			setBikeWeight(displayWeight(bikeWeightKg, unit));
+		}
+		setSelectedSpeedUnit(unit);
+	};
+
 	const submitProfile = async (event: React.FormEvent<HTMLFormElement>) => {
 		event.preventDefault();
-		const riderWeightKg = storedWeight(riderWeight, speedUnit);
-		const bikeWeightKg = storedWeight(bikeWeight, speedUnit);
+		const riderWeightKg = storedWeight(riderWeight, selectedSpeedUnit);
+		const bikeWeightKg = storedWeight(bikeWeight, selectedSpeedUnit);
 		if (
 			!Number.isFinite(riderWeightKg) ||
 			riderWeightKg < MINIMUM_RIDER_WEIGHT_KG ||
@@ -196,6 +247,7 @@ export function ProfileDialog({
 				rearCassetteTeeth: parsedRear,
 				riderWeightKg,
 			});
+			onSelectSpeedUnit(selectedSpeedUnit);
 			onClose();
 		} catch {
 			setError('Your profile could not be saved in this browser. Please try again.');
@@ -315,10 +367,30 @@ export function ProfileDialog({
 								Optional and never used in workout calculations.
 							</span>
 						</label>
+						<fieldset className="sm:col-span-2">
+							<legend className={labelClass}>Display units</legend>
+							<div className="mt-2 inline-flex h-10 rounded-lg border border-line bg-[#10151a] p-1">
+								{SPEED_UNIT_OPTIONS.map((option) => (
+									<button
+										aria-pressed={selectedSpeedUnit === option.value}
+										className={`rounded px-3 py-1 font-bold text-xs ${selectedSpeedUnit === option.value ? 'bg-slate-700 text-white' : 'text-slate-500 hover:text-slate-300'}`}
+										key={option.value}
+										onClick={() => selectSpeedUnit(option.value)}
+										type="button"
+									>
+										{option.label}
+									</button>
+								))}
+							</div>
+							<p className={helpClass}>
+								Controls speed, distance, elevation, and weight units.
+							</p>
+						</fieldset>
 						<label className={labelClass} htmlFor="profile-rider-weight">
 							Your weight ({weightUnit})
 							<input
 								className={fieldClass}
+								disabled={physicsSettingsLocked}
 								id="profile-rider-weight"
 								inputMode="decimal"
 								max={riderRange.maximum}
@@ -333,6 +405,7 @@ export function ProfileDialog({
 							Bike weight ({weightUnit})
 							<input
 								className={fieldClass}
+								disabled={physicsSettingsLocked}
 								id="profile-bike-weight"
 								inputMode="decimal"
 								max={bikeRange.maximum}
@@ -347,6 +420,7 @@ export function ProfileDialog({
 							Front chainrings
 							<input
 								className={fieldClass}
+								disabled={physicsSettingsLocked}
 								id="profile-front-chainrings"
 								inputMode="numeric"
 								onChange={(event) => setFrontChainrings(event.target.value)}
@@ -361,6 +435,7 @@ export function ProfileDialog({
 							Rear cassette
 							<input
 								className={fieldClass}
+								disabled={physicsSettingsLocked}
 								id="profile-rear-cassette"
 								inputMode="numeric"
 								onChange={(event) => setRearCassette(event.target.value)}
@@ -374,6 +449,13 @@ export function ProfileDialog({
 						</label>
 					</div>
 
+					{physicsSettingsLocked ? (
+						<p className="mt-5 text-amber-200 text-sm leading-6">
+							Weight and drivetrain settings are locked after a ride starts so its
+							recorded profile remains accurate. End the session to edit them for your
+							next ride.
+						</p>
+					) : null}
 					<p className="mt-5 rounded-xl border border-line bg-[#10151a] px-4 py-3 text-slate-400 text-sm leading-6">
 						Rider and bike weight adjust terrain load. Chainring and cassette sizes
 						define the virtual gear ratios. Your profile stays in IndexedDB on this

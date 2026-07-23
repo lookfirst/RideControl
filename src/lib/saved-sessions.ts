@@ -10,6 +10,7 @@ import type {
 import { IMPORTED_FIT_ID_PREFIX } from './activity-file';
 import { restoreElevationTotals } from './elevation';
 import { indexedDbRequestResult, indexedDbTransactionComplete } from './indexed-db';
+import { riderPhysicsProfileFromStoredValue } from './profile';
 import {
 	aggregateGear,
 	aggregateResistance,
@@ -470,6 +471,7 @@ export function normalizeSavedSession(session: SavedSession): SavedSession {
 		controlMode: controlModeForHistory(session.history, session.controlMode),
 		elevationTotals: restoreElevationTotals(session.elevationTotals, session.history),
 		importedAt: normalizedImportedAt(session.importedAt),
+		profileSnapshot: riderPhysicsProfileFromStoredValue(session.profileSnapshot),
 		workout: restoreSessionWorkout(session.workout),
 	};
 }

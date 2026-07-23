@@ -854,7 +854,8 @@ describe('view components', () => {
 		expect(html).not.toContain('fixed right-4 bottom-3 left-4');
 		expect(html).toContain('rounded-2xl border border-line bg-panel p-4');
 		expect(html).toContain('xl:grid-cols-[1.45fr_.55fr]');
-		expect(html.indexOf('KM/H')).toBeLessThan(html.indexOf('Show keyboard controls'));
+		expect(html).not.toContain('>KM/H</button>');
+		expect(html).not.toContain('>MPH</button>');
 		expect(html).toMatch(enabledEndSessionButton);
 	});
 
@@ -939,7 +940,9 @@ describe('view components', () => {
 				<ProfileDialog
 					onClose={() => undefined}
 					onSave={async () => undefined}
+					onSelectSpeedUnit={() => undefined}
 					open={false}
+					physicsSettingsLocked={false}
 					profile={profile}
 					speedUnit="mph"
 					storageError=""
@@ -950,7 +953,9 @@ describe('view components', () => {
 			<ProfileDialog
 				onClose={() => undefined}
 				onSave={async () => undefined}
+				onSelectSpeedUnit={() => undefined}
 				open
+				physicsSettingsLocked={false}
 				profile={profile}
 				speedUnit="mph"
 				storageError=""
@@ -963,12 +968,32 @@ describe('view components', () => {
 		expect(html).toContain('value="Non-binary"');
 		expect(html).toContain('value="Two-Spirit"');
 		expect(html).toContain('never used in workout calculations');
+		expect(html).toContain('Display units');
+		expect(html).toContain('aria-pressed="true"');
+		expect(html).toContain('>KM/H</button>');
+		expect(html).toContain('>MPH</button>');
+		expect(html).toContain('Controls speed, distance, elevation, and weight units.');
 		expect(html).toContain('Your weight (lb)');
 		expect(html).toContain('Bike weight (lb)');
 		expect(html).toContain('value="53/39"');
 		expect(html).toContain('This setup creates 24 virtual gears');
 		expect(html).toContain('IndexedDB');
 		expect(html).toContain('aria-label="Close profile"');
+		const lockedHtml = render(
+			<ProfileDialog
+				onClose={() => undefined}
+				onSave={async () => undefined}
+				onSelectSpeedUnit={() => undefined}
+				open
+				physicsSettingsLocked
+				profile={profile}
+				speedUnit="mph"
+				storageError=""
+			/>
+		);
+		expect(lockedHtml).toContain('Weight and drivetrain settings are locked');
+		expect(lockedHtml).toContain('id="profile-rider-weight"');
+		expect(lockedHtml).toContain('disabled=""');
 	});
 
 	test('shows manual virtual shifting for a terrain workout without Click controllers', async () => {

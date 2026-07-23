@@ -2,6 +2,11 @@ import { createStore } from '@tanstack/react-store';
 import { emptyMetrics, emptySession } from '../constants';
 import { CONTROL_MODE, type ControlMode } from '../lib/control-mode';
 import { estimatedCyclingCalories } from '../lib/cycling-energy';
+import {
+	type RiderPhysicsProfile,
+	sameRiderPhysicsProfile,
+	snapshotRiderPhysicsProfile,
+} from '../lib/profile';
 import { addMetricAggregates, sessionContinuation } from '../lib/session';
 import { kilometersTraveled } from '../lib/units';
 import {
@@ -25,6 +30,7 @@ interface RecordSessionTick {
 	};
 	distanceDelta?: number;
 	metrics: Metrics;
+	profileSnapshot?: RiderPhysicsProfile;
 	seconds: number;
 }
 
@@ -89,6 +95,16 @@ function elevationTotalsAfterTick(current: SessionStoreState, distance: number) 
 		: current.elevationTotals;
 }
 
+function profileSnapshotAfterTick(
+	current: RiderPhysicsProfile | undefined,
+	observed: RiderPhysicsProfile | undefined
+): RiderPhysicsProfile | undefined {
+	if (current) {
+		return current;
+	}
+	return observed ? snapshotRiderPhysicsProfile(observed) : undefined;
+}
+
 export function sessionSnapshotFromState(state: SessionStoreState): SessionSnapshot {
 	return {
 		aggregates: state.aggregates,
@@ -100,6 +116,7 @@ export function sessionSnapshotFromState(state: SessionStoreState): SessionSnaps
 		endedAt: state.endedAt,
 		history: state.history,
 		maximums: state.maximums,
+		profileSnapshot: state.profileSnapshot,
 		startedAt: state.startedAt,
 		workout: state.workout,
 	};
@@ -119,6 +136,7 @@ export function storedSessionFromState(state: SessionStoreState): StoredSession 
 		history: state.history,
 		maximums: state.maximums,
 		plannedWorkout: state.plannedWorkout,
+		profileSnapshot: state.profileSnapshot,
 		savedSessionId: state.savedSessionId,
 		startedAt: state.startedAt,
 		workout: state.workout,
@@ -181,7 +199,22 @@ export function createSessionStore(restored: StoredSession, now = Date.now()) {
 				return { ...current, maximums };
 			});
 		},
-		recordTick: ({ control, distanceDelta, metrics, seconds }: RecordSessionTick) => {
+		observeProfileSnapshot: (profile: RiderPhysicsProfile) => {
+			setState((current) =>
+				current.elapsedSeconds === 0 &&
+				!current.ended &&
+				!sameRiderPhysicsProfile(current.profileSnapshot, profile)
+					? { ...current, profileSnapshot: snapshotRiderPhysicsProfile(profile) }
+					: current
+			);
+		},
+		recordTick: ({
+			control,
+			distanceDelta,
+			metrics,
+			profileSnapshot,
+			seconds,
+		}: RecordSessionTick) => {
 			setState((current) => {
 				if (!current.isRiding) {
 					return current;
@@ -227,6 +260,10 @@ export function createSessionStore(restored: StoredSession, now = Date.now()) {
 					elapsedSeconds,
 					elevationTotals,
 					history: [...current.history, sample],
+					profileSnapshot: profileSnapshotAfterTick(
+						current.profileSnapshot,
+						profileSnapshot
+					),
 				};
 			});
 		},

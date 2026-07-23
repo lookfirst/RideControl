@@ -11,6 +11,7 @@ import { CONTROL_MODE, type ControlMode, isControlMode } from './control-mode';
 import { restoreElevationTotals } from './elevation';
 import { clampGear, MAX_GEAR, MIN_GEAR } from './gears';
 import { clamp, nonNegativeNumber } from './numbers';
+import { riderPhysicsProfileFromStoredValue } from './profile';
 import { clampResistance, DEFAULT_RESISTANCE, MAX_RESISTANCE, MIN_RESISTANCE } from './resistance';
 import { isFiniteNumber, isRecord, isString } from './type-guards';
 import { restoreSessionWorkout } from './workouts';
@@ -33,6 +34,7 @@ export function sessionContinuation(snapshot: SessionSnapshot): StoredSession {
 		endedAt: 0,
 		history: snapshot.history,
 		maximums: snapshot.maximums,
+		profileSnapshot: snapshot.profileSnapshot,
 		startedAt: snapshot.startedAt,
 		workout: snapshot.workout,
 	};
@@ -40,13 +42,6 @@ export function sessionContinuation(snapshot: SessionSnapshot): StoredSession {
 
 export function sessionNeedsUnloadWarning(ended: boolean, elapsedSeconds: number): boolean {
 	return !ended && elapsedSeconds > 0;
-}
-
-export function requestUnloadConfirmation(
-	event: Pick<BeforeUnloadEvent, 'preventDefault' | 'returnValue'>
-): void {
-	event.preventDefault();
-	event.returnValue = true;
 }
 
 export function addAggregate(
@@ -216,6 +211,7 @@ export function restoreStoredSession(value: unknown): StoredSession {
 			speed: nonNegativeNumber(maximums.speed),
 		},
 		plannedWorkout: restoreSessionWorkout(parsed.plannedWorkout),
+		profileSnapshot: riderPhysicsProfileFromStoredValue(parsed.profileSnapshot),
 		savedSessionId: isString(parsed.savedSessionId) ? parsed.savedSessionId : undefined,
 		startedAt: nonNegativeNumber(parsed.startedAt),
 		workout: restoreSessionWorkout(parsed.workout),

@@ -12,6 +12,7 @@ import { CONTROL_MODE } from './control-mode';
 import { elevationTotalsForSamples } from './elevation';
 import { clampGear } from './gears';
 import { nonNegativeNumber } from './numbers';
+import { parsedTeeth, riderPhysicsProfileFromStoredValue } from './profile';
 import { clampResistance } from './resistance';
 import { addMetricAggregates } from './session';
 import { IMPORTED_TCX_ID_PREFIX, isRideControlTcxExtensionNamespace } from './tcx-schema';
@@ -154,6 +155,21 @@ function activityWorkout(activity: Element): SessionWorkout | undefined {
 			points,
 			routeType: text(child(workout, 'CourseType')) || undefined,
 		},
+	});
+}
+
+function activityProfileSnapshot(activity: Element) {
+	const profile = descendants(activity, 'ProfileSnapshot').find((element) =>
+		isRideControlTcxExtensionNamespace(element.namespaceURI)
+	);
+	if (!profile) {
+		return;
+	}
+	return riderPhysicsProfileFromStoredValue({
+		bikeWeightKg: numberValue(child(profile, 'BikeWeightKilograms')),
+		frontChainringTeeth: parsedTeeth(text(child(profile, 'FrontChainrings'))),
+		rearCassetteTeeth: parsedTeeth(text(child(profile, 'RearCassette'))),
+		riderWeightKg: numberValue(child(profile, 'RiderWeightKilograms')),
 	});
 }
 
@@ -300,6 +316,7 @@ function parseActivity(activity: Element): SavedSession {
 					KILOMETERS_PER_HOUR_PER_METER_PER_SECOND
 			),
 		},
+		profileSnapshot: activityProfileSnapshot(activity),
 		startedAt,
 		workout: activityWorkout(activity),
 	};

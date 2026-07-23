@@ -33,7 +33,59 @@ const liveMetrics: Metrics = {
 	speed: 36,
 };
 
+const firstProfile = {
+	bikeWeightKg: 8,
+	frontChainringTeeth: [50, 34],
+	rearCassetteTeeth: [11, 13, 15, 17],
+	riderWeightKg: 68,
+};
+
+const secondProfile = {
+	bikeWeightKg: 9,
+	frontChainringTeeth: [53, 39],
+	rearCassetteTeeth: [12, 14, 16, 18],
+	riderWeightKg: 75,
+};
+
 describe('session store', () => {
+	test('captures current physics settings and freezes them once recording begins', () => {
+		const store = createSessionStore(restoredSession(), 1000);
+		store.actions.observeProfileSnapshot(firstProfile);
+		expect(store.get().profileSnapshot).toEqual(firstProfile);
+		expect(store.get().profileSnapshot?.frontChainringTeeth).not.toBe(
+			firstProfile.frontChainringTeeth
+		);
+
+		store.actions.observeProfileSnapshot(secondProfile);
+		expect(store.get().profileSnapshot).toEqual(secondProfile);
+		store.actions.syncRiding(true);
+		store.actions.recordTick({
+			control: { gear: 4, mode: 'gear', resistance: 30 },
+			metrics: liveMetrics,
+			profileSnapshot: secondProfile,
+			seconds: 1,
+		});
+		store.actions.observeProfileSnapshot(firstProfile);
+		expect(store.get().profileSnapshot).toEqual(secondProfile);
+		expect(sessionSnapshotFromState(store.get()).profileSnapshot).toEqual(secondProfile);
+		expect(storedSessionFromState(store.get()).profileSnapshot).toEqual(secondProfile);
+
+		store.actions.reset('gear', 2000);
+		expect(store.get().profileSnapshot).toBeUndefined();
+	});
+
+	test('captures a profile on the first tick when none was observed before recording', () => {
+		const store = createSessionStore(restoredSession(), 1000);
+		store.actions.syncRiding(true);
+		store.actions.recordTick({
+			control: { gear: 4, mode: 'gear', resistance: 30 },
+			metrics: liveMetrics,
+			profileSnapshot: firstProfile,
+			seconds: 1,
+		});
+		expect(store.get().profileSnapshot).toEqual(firstProfile);
+	});
+
 	test('records a complete ride tick as one atomic update', () => {
 		const store = createSessionStore(restoredSession(), 1000);
 		store.actions.syncRiding(true);

@@ -60,7 +60,8 @@ import { unreachable } from './lib/errors';
 import { maximumGear, resistanceForVirtualGear } from './lib/gears';
 import { type AppShortcut, appShortcutForKey, gearingKeyboardShortcuts } from './lib/keyboard';
 import { profileTotalMassKg, type RiderProfile } from './lib/profile';
-import { requestUnloadConfirmation, sessionNeedsUnloadWarning } from './lib/session';
+import { sessionNeedsUnloadWarning } from './lib/session';
+import { requestUnloadConfirmation } from './lib/unload';
 import { rememberWelcomeDismissal, shouldShowWelcome } from './lib/welcome';
 import {
 	workoutDashboardPreview,
@@ -306,7 +307,8 @@ export function App({ initialSession = emptySession }: { initialSession?: Stored
 		},
 		trainer.lastPedalingAt,
 		trainer.trainerReportsDistance,
-		initialSession
+		initialSession,
+		riderProfile.ready ? riderProfile.profile : undefined
 	);
 	const dashboardWorkout = workoutDashboardPreview({
 		distance: session.rideDistance,
@@ -557,9 +559,7 @@ export function App({ initialSession = emptySession }: { initialSession?: Stored
 						onOpenDevices={() => setActiveOverlay(APP_OVERLAY.DEVICES)}
 						onOpenHistory={() => setActiveOverlay(APP_OVERLAY.HISTORY)}
 						onOpenShortcuts={() => setActiveOverlay(APP_OVERLAY.SHORTCUTS)}
-						onSelectSpeedUnit={preferencesStore.actions.selectSpeedUnit}
 						pairedDeviceCount={pairedDeviceCount}
-						speedUnit={speedUnit}
 					/>
 				</DashboardToolbar>
 				<RideMetrics
@@ -720,7 +720,9 @@ export function App({ initialSession = emptySession }: { initialSession?: Stored
 			<ProfileDialog
 				onClose={() => setActiveOverlay(undefined)}
 				onSave={riderProfile.save}
+				onSelectSpeedUnit={preferencesStore.actions.selectSpeedUnit}
 				open={activeOverlay === APP_OVERLAY.PROFILE}
+				physicsSettingsLocked={warnBeforeUnload}
 				profile={riderProfile.profile}
 				speedUnit={speedUnit}
 				storageError={riderProfile.storageError}
