@@ -6,11 +6,13 @@ import {
 	MAXIMUM_VIRTUAL_DRIVE_RATIO,
 	MIN_GEAR,
 	MINIMUM_VIRTUAL_DRIVE_RATIO,
+	maximumGear,
 	resistanceAfterGearShift,
 	resistanceForVirtualGear,
 	shiftedGear,
 	storedGear,
 	VIRTUAL_GEAR_COMBINATIONS,
+	virtualGearCombinations,
 	virtualGearLoadMultiplier,
 	virtualGearRatio,
 } from '../src/lib/gears';
@@ -103,5 +105,18 @@ describe('virtual gears', () => {
 		expect(harder).toBe(31.2);
 		expect(resistanceAfterGearShift(harder, 13, 12)).toBeCloseTo(30, 1);
 		expect(resistanceAfterGearShift(3, 12, 1)).toBe(1.2);
+	});
+
+	test('builds personalized gear ratios and scales terrain by rider and bike mass', () => {
+		const drivetrain = {
+			frontChainringTeeth: [50, 34],
+			rearCassetteTeeth: [11, 13, 15, 17],
+		};
+		expect(maximumGear(drivetrain)).toBe(8);
+		expect(virtualGearCombinations(drivetrain).at(0)?.ratio).toBe(2);
+		expect(virtualGearCombinations(drivetrain).at(-1)?.ratio).toBeCloseTo(50 / 11, 10);
+		const defaultMassResistance = resistanceForVirtualGear(20, 4, drivetrain, 84);
+		const heavierResistance = resistanceForVirtualGear(20, 4, drivetrain, 100);
+		expect(heavierResistance).toBeGreaterThan(defaultMassResistance);
 	});
 });

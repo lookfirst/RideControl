@@ -5,11 +5,13 @@ const linkClass =
 
 export function AppFooter({
 	onOpenPrivacy,
+	onOpenProfile,
 	onOpenTerms,
 	onOpenVersion,
 	onOpenWelcome,
 }: {
 	onOpenPrivacy: () => void;
+	onOpenProfile: () => void;
 	onOpenTerms: () => void;
 	onOpenVersion: () => void;
 	onOpenWelcome: () => void;
@@ -32,6 +34,10 @@ export function AppFooter({
 			>
 				Sponsor
 			</a>
+			<span aria-hidden="true">·</span>
+			<button className={linkClass} onClick={onOpenProfile} type="button">
+				Profile
+			</button>
 			<span aria-hidden="true">·</span>
 			<a className={linkClass} href="mailto:hello@ridecontrol.xyz">
 				Contact

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { MAX_GEAR, MIN_GEAR } from '../lib/gears';
+import { MIN_GEAR } from '../lib/gears';
 import type { ResistanceAdjustmentDirection } from '../types';
 import { Icon } from './icon';
 
@@ -9,11 +9,13 @@ const HOLD_REPEAT_MS = 180;
 export function GearControl({
 	disabled,
 	gear,
+	maximumGear,
 	onChange,
 	shiftFlash,
 }: {
 	disabled: boolean;
 	gear: number;
+	maximumGear: number;
 	onChange: (change: number) => void;
 	shiftFlash?: ResistanceAdjustmentDirection;
 }) {
@@ -60,13 +62,14 @@ export function GearControl({
 		if (
 			disabled ||
 			(heldDirection === 'decrease' && gear === MIN_GEAR) ||
-			(heldDirection === 'increase' && gear === MAX_GEAR)
+			(heldDirection === 'increase' && gear === maximumGear)
 		) {
 			stopHolding();
 		}
-	}, [disabled, gear, heldDirection, stopHolding]);
+	}, [disabled, gear, heldDirection, maximumGear, stopHolding]);
 
-	const progress = ((gear - MIN_GEAR) / (MAX_GEAR - MIN_GEAR)) * 100;
+	const progress =
+		maximumGear === MIN_GEAR ? 100 : ((gear - MIN_GEAR) / (maximumGear - MIN_GEAR)) * 100;
 	const activeDirection = heldDirection ?? shiftFlash;
 	const buttonClass =
 		'grid h-9 w-9 shrink-0 place-items-center rounded-lg border border-line text-slate-300 transition duration-150 hover:border-mint disabled:opacity-40';
@@ -109,7 +112,7 @@ export function GearControl({
 				<button
 					aria-label="Shift to a harder gear"
 					className={`${buttonClass} ${activeDirection === 'increase' ? activeClass : ''}`}
-					disabled={disabled || gear === MAX_GEAR}
+					disabled={disabled || gear === maximumGear}
 					onClick={(event) => {
 						if (event.detail === 0) {
 							onChange(1);

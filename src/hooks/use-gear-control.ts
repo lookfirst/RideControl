@@ -12,11 +12,13 @@ import type { ResistanceAdjustmentDirection } from '../types';
 
 export function useGearControl({
 	active,
+	maximumGear,
 	onGearChange,
 	ready,
 	setNotice,
 }: {
 	active: boolean;
+	maximumGear: number;
 	onGearChange: (fromGear: number, toGear: number) => void;
 	ready: boolean;
 	setNotice: (notice: string) => void;
@@ -26,6 +28,7 @@ export function useGearControl({
 	const gearRef = useRef(gear);
 	const keyboardControlsEnabled = useRef(true);
 	const shiftFlashTimer = useRef<number | undefined>(undefined);
+	const maximumGearRef = useRef(maximumGear);
 
 	const shiftGear = useCallback(
 		(change: number) => {
@@ -34,7 +37,7 @@ export function useGearControl({
 				return;
 			}
 			const previous = gearRef.current;
-			const next = shiftedGear(previous, change);
+			const next = shiftedGear(previous, change, maximumGear);
 			if (next === previous) {
 				return;
 			}
@@ -49,8 +52,25 @@ export function useGearControl({
 			localStorage.setItem(GEAR_STORAGE_KEY, String(next));
 			onGearChange(previous, next);
 		},
-		[onGearChange, ready, setNotice]
+		[maximumGear, onGearChange, ready, setNotice]
 	);
+
+	useEffect(() => {
+		const previousMaximum = maximumGearRef.current;
+		maximumGearRef.current = maximumGear;
+		if (previousMaximum === maximumGear) {
+			return;
+		}
+		const previous = gearRef.current;
+		const previousProgress = previousMaximum <= 1 ? 0 : (previous - 1) / (previousMaximum - 1);
+		const next = Math.round(previousProgress * Math.max(0, maximumGear - 1)) + 1;
+		if (next === previous) {
+			return;
+		}
+		gearRef.current = next;
+		setGear(next);
+		localStorage.setItem(GEAR_STORAGE_KEY, String(next));
+	}, [maximumGear]);
 
 	useEffect(() => {
 		if (!active) {

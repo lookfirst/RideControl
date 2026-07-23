@@ -90,10 +90,11 @@ export function PrivacyPolicyDialog({ onClose, open }: { onClose: () => void; op
 			<section className={sectionClass}>
 				<h3 className={headingClass}>Information stored on your device</h3>
 				<p>
-					Ride details, workouts, comments, device identifiers, preferences, and recovery
-					data are stored in your browser using IndexedDB or local storage. Ride Control
-					does not create an account or upload your recorded ride history. Bluetooth
-					access is controlled by your browser and operating system.
+					Ride details, workouts, comments, profile details and image, device identifiers,
+					preferences, and recovery data are stored in your browser using IndexedDB or
+					local storage. Ride Control does not create an account or upload your profile or
+					recorded ride history. Bluetooth access is controlled by your browser and
+					operating system.
 				</p>
 			</section>
 
@@ -143,10 +144,11 @@ export function PrivacyPolicyDialog({ onClose, open }: { onClose: () => void; op
 			<section className={sectionClass}>
 				<h3 className={headingClass}>Retention and your choices</h3>
 				<p>
-					You can delete sessions and workouts, forget devices, or clear Ride Control site
-					data in your browser. Clearing browser data may permanently remove rides that
-					you have not exported. Service providers retain technical request data according
-					to their operational, security, and legal requirements.
+					You can edit your profile, delete sessions and workouts, forget devices, or
+					clear Ride Control site data in your browser. Clearing browser data may
+					permanently remove your profile and rides that you have not exported. Service
+					providers retain technical request data according to their operational,
+					security, and legal requirements.
 				</p>
 			</section>
 

@@ -10,6 +10,7 @@ import { KeyboardShortcutsDialog } from '../src/components/keyboard-shortcuts-di
 import { PrivacyPolicyDialog, TermsOfServiceDialog } from '../src/components/legal-dialog';
 import { Metric, SessionMetric, SmallMetric } from '../src/components/metrics';
 import { Notification } from '../src/components/notification';
+import { ProfileDialog } from '../src/components/profile-dialog';
 import { RenameWorkoutDialog } from '../src/components/rename-workout-dialog';
 import { ResistanceControl } from '../src/components/resistance-control';
 import { SessionChart } from '../src/components/session-chart';
@@ -503,6 +504,7 @@ describe('view components', () => {
 			<GearControl
 				disabled={false}
 				gear={12}
+				maximumGear={24}
 				onChange={() => undefined}
 				shiftFlash="increase"
 			/>
@@ -515,7 +517,9 @@ describe('view components', () => {
 		expect(html).toContain('grid h-9 w-9 shrink-0 place-items-center rounded-lg');
 		expect(html).toContain('scale-105 border-mint bg-mint/15 text-mint');
 		expect(html).not.toContain('Connect the trainer before shifting gears.');
-		const disabled = render(<GearControl disabled gear={12} onChange={() => undefined} />);
+		const disabled = render(
+			<GearControl disabled gear={12} maximumGear={24} onChange={() => undefined} />
+		);
 		expect(disabled).not.toContain('Connect the trainer before shifting gears.');
 		expect(disabled.match(/disabled=""/g)).toHaveLength(2);
 	});
@@ -526,6 +530,7 @@ describe('view components', () => {
 				connected
 				control={{
 					gear: 12,
+					maximumGear: 24,
 					mode: 'gear',
 					onShift: () => undefined,
 				}}
@@ -841,6 +846,7 @@ describe('view components', () => {
 		expect(html).toContain('border-slate-700/70 border-t');
 		expect(html).toContain('text-slate-500 text-xs');
 		expect(html).toContain('type="button">Ride Control</button>');
+		expect(html).toContain('type="button">Profile</button>');
 		expect(html).toContain('mx-auto w-full min-w-0 max-w-7xl flex-1 px-3 py-3');
 		expect(html).toContain('mb-4 flex flex-wrap items-center justify-between gap-3');
 		expect(html).toContain('mt-4 grid min-w-0 gap-4 *:min-w-0');
@@ -917,6 +923,52 @@ describe('view components', () => {
 		expect(html).toContain('The backend component is closed source');
 		expect(html).toContain('optional paid additions');
 		expect(html).toContain('aria-label="Close terms of service"');
+	});
+
+	test('renders an inclusive local profile editor', () => {
+		const profile = {
+			bikeWeightKg: 9,
+			frontChainringTeeth: [53, 39],
+			identity: '',
+			name: 'Riley',
+			rearCassetteTeeth: [12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 24],
+			riderWeightKg: 75,
+		};
+		expect(
+			render(
+				<ProfileDialog
+					onClose={() => undefined}
+					onSave={async () => undefined}
+					open={false}
+					profile={profile}
+					speedUnit="mph"
+					storageError=""
+				/>
+			)
+		).toBe('');
+		const html = render(
+			<ProfileDialog
+				onClose={() => undefined}
+				onSave={async () => undefined}
+				open
+				profile={profile}
+				speedUnit="mph"
+				storageError=""
+			/>
+		);
+		expect(html).toContain('aria-modal="true"');
+		expect(html).toContain('id="profile-title">Profile</h2>');
+		expect(html).toContain('Choose profile image');
+		expect(html).toContain('Sex or gender identity');
+		expect(html).toContain('value="Non-binary"');
+		expect(html).toContain('value="Two-Spirit"');
+		expect(html).toContain('never used in workout calculations');
+		expect(html).toContain('Your weight (lb)');
+		expect(html).toContain('Bike weight (lb)');
+		expect(html).toContain('value="53/39"');
+		expect(html).toContain('This setup creates 24 virtual gears');
+		expect(html).toContain('IndexedDB');
+		expect(html).toContain('aria-label="Close profile"');
 	});
 
 	test('shows manual virtual shifting for a terrain workout without Click controllers', async () => {

@@ -7,6 +7,7 @@ import { errorMessage } from '../lib/errors';
 import { resistanceAfterGearShift } from '../lib/gears';
 import { scheduleNoticeDismissal } from '../lib/notification';
 import { clamp } from '../lib/numbers';
+import type { VirtualDrivetrain } from '../lib/profile';
 import type { RememberedBluetoothDeviceCatalog } from '../lib/remembered-bluetooth-devices';
 import {
 	clampResistance,
@@ -19,7 +20,10 @@ import { RESISTANCE_STORAGE_KEY } from '../lib/session';
 import { createTrainerStore } from '../stores/trainer-store';
 import { useTrainerConnection } from './use-trainer-connection';
 
-export function useTrainer(rememberedDevices: RememberedBluetoothDeviceCatalog) {
+export function useTrainer(
+	rememberedDevices: RememberedBluetoothDeviceCatalog,
+	drivetrain: VirtualDrivetrain
+) {
 	const store = useMemo(() => createTrainerStore(), []);
 	const state = useSelector(store);
 	const { setNotice, setResistance, setResistanceKeyFlash, setResistanceRamp } = store.actions;
@@ -180,11 +184,11 @@ export function useTrainer(rememberedDevices: RememberedBluetoothDeviceCatalog) 
 	const shiftResistanceForGears = useCallback(
 		(fromGear: number, toGear: number) => {
 			applyResistanceImmediately(
-				resistanceAfterGearShift(resistanceTarget.current, fromGear, toGear),
+				resistanceAfterGearShift(resistanceTarget.current, fromGear, toGear, drivetrain),
 				true
 			);
 		},
-		[applyResistanceImmediately]
+		[applyResistanceImmediately, drivetrain]
 	);
 	const updateProgramShiftResistance = useCallback(
 		(value: number) => applyResistanceImmediately(value, false),

@@ -5,6 +5,7 @@ export const APP_OVERLAY = {
 	DEVICES: 'devices',
 	HISTORY: 'history',
 	PRIVACY: 'privacy',
+	PROFILE: 'profile',
 	SHORTCUTS: 'shortcuts',
 	TERMS: 'terms',
 	WELCOME: 'welcome',

@@ -7,6 +7,7 @@ import { ResistanceTrainingControl } from './resistance-training-control';
 type TrainingControlModel =
 	| {
 			gear: number;
+			maximumGear: number;
 			mode: typeof CONTROL_MODE.GEAR;
 			onShift: (change: number) => void;
 			shiftFlash?: ResistanceAdjustmentDirection;
@@ -32,6 +33,7 @@ export function TrainingControl({
 				<GearTrainingControl
 					connected={connected}
 					gear={control.gear}
+					maximumGear={control.maximumGear}
 					onShift={control.onShift}
 					shiftFlash={control.shiftFlash}
 				/>
