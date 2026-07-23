@@ -70,15 +70,15 @@ export function SmallMetric({
 	value: string;
 }) {
 	return (
-		<div className={large ? 'px-4 py-3 sm:px-5' : 'p-4 sm:p-5'}>
+		<div className={large ? 'min-w-0 px-3 py-3 sm:px-5' : 'min-w-0 p-4 sm:p-5'}>
 			<p className="font-bold text-[11px] text-slate-500 tracking-[.12em]">{label}</p>
 			<p
-				className={`mt-1 flex items-baseline gap-2 font-semibold tracking-tight ${large ? 'text-3xl sm:text-5xl' : 'text-lg sm:text-2xl'}`}
+				className={`mt-1 flex min-w-0 items-baseline gap-1.5 font-semibold tracking-tight sm:gap-2 ${large ? 'text-3xl sm:text-5xl min-[420px]:text-2xl' : 'text-lg sm:text-2xl'}`}
 			>
-				<span>{value}</span>
+				<span className="min-w-0">{value}</span>
 				{unit ? (
 					<span
-						className={`font-medium text-slate-400 tracking-normal ${large ? 'text-base sm:text-xl' : 'text-xs sm:text-sm'}`}
+						className={`shrink-0 font-medium text-slate-400 tracking-normal ${large ? 'text-sm sm:text-xl' : 'text-xs sm:text-sm'}`}
 					>
 						{unit}
 					</span>

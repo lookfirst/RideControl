@@ -43,7 +43,7 @@ export function SessionHistoryList({
 
 	return (
 		<aside
-			className="max-h-64 shrink-0 overflow-y-auto border-line border-b bg-[#12171d] p-3 md:max-h-none md:w-80 md:border-r md:border-b-0"
+			className="max-h-64 min-w-0 shrink-0 overflow-y-auto overflow-x-hidden border-line border-b bg-[#12171d] p-3 md:max-h-none md:w-80 md:border-r md:border-b-0"
 			data-testid="session-list"
 			onScroll={sessionListScroll.onScroll}
 			ref={sessionListScroll.ref}

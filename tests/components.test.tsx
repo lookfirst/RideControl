@@ -91,11 +91,12 @@ describe('view components', () => {
 	test('renders a compact session metric', () => {
 		expect(render(<SmallMetric label="TIME" value="01:02:03" />)).toContain('01:02:03');
 		const largeMetric = render(<SmallMetric label="TIME" large value="01:02:03" />);
-		expect(largeMetric).toContain('px-4 py-3 sm:px-5');
-		expect(largeMetric).toContain('text-3xl sm:text-5xl');
+		expect(largeMetric).toContain('min-w-0 px-3 py-3 sm:px-5');
+		expect(largeMetric).toContain('text-3xl sm:text-5xl min-[420px]:text-2xl');
 		const distance = render(<SmallMetric label="DISTANCE" large unit="mi" value="10.00" />);
 		expect(distance).toContain('>10.00</span>');
-		expect(distance).toContain('text-base sm:text-xl');
+		expect(distance).toContain('shrink-0 font-medium');
+		expect(distance).toContain('text-sm sm:text-xl');
 		expect(distance).toContain('>mi</span>');
 		const html = render(
 			<SessionMetric
@@ -834,9 +835,11 @@ describe('view components', () => {
 		expect(html).toContain('show again');
 		expect(html).toContain('tracking-wide transition hover:text-slate-400');
 		expect(html).toContain('type="button">Ride Control</button>');
-		expect(html).toContain('mx-auto max-w-7xl px-5 py-5 sm:px-8');
+		expect(html).toContain('mx-auto w-full min-w-0 max-w-7xl flex-1 px-3 py-3');
 		expect(html).toContain('mb-4 flex flex-wrap items-center justify-between gap-3');
-		expect(html).toContain('mt-4 grid gap-4 xl:grid-cols-[1.45fr_.55fr]');
+		expect(html).toContain('mt-4 grid min-w-0 gap-4 *:min-w-0');
+		expect(html).toContain('pb-[max(0.75rem,env(safe-area-inset-bottom))]');
+		expect(html).not.toContain('fixed right-4 bottom-3 left-4');
 		expect(html).toContain('rounded-2xl border border-line bg-panel p-4');
 		expect(html).toContain('xl:grid-cols-[1.45fr_.55fr]');
 		expect(html.indexOf('KM/H')).toBeLessThan(html.indexOf('Show keyboard controls'));
@@ -940,22 +943,22 @@ describe('view components', () => {
 		expect(html).toContain('Resistance</button>');
 		expect(html).not.toContain('Gear over time');
 		expect(html).not.toContain('Gear</button>');
-		expect(html).toContain('grid-cols-[3.75rem_minmax(0,1fr)]');
-		expect(html).toContain('absolute right-2 -translate-y-1/2 whitespace-nowrap');
-		expect(html).toContain('pointer-events-none relative h-full w-15 shrink-0');
+		expect(html).toContain('grid-cols-[3rem_minmax(0,1fr)]');
+		expect(html).toContain('absolute right-1 -translate-y-1/2 whitespace-nowrap sm:right-2');
+		expect(html).toContain('pointer-events-none relative h-full w-12 shrink-0');
 		expect(html).toContain('h-full min-w-0 flex-1 overflow-hidden');
 		expect(html).toContain('class="block h-full w-full"');
-		expect(html).toContain('flex w-full gap-1 overflow-x-auto');
+		expect(html).toContain('scrollbar-hidden flex w-full gap-1 overflow-x-auto');
 		expect(html).toContain('min-w-max flex-1');
 		expect(html).toContain('h-1.5 w-1.5 shrink-0 rounded-full');
-		expect(html).toContain('text-[13px] transition');
+		expect(html).toContain('text-[11px] transition sm:text-[13px]');
 		expect(html).toContain(
-			'mt-6 overflow-hidden rounded-xl border border-line bg-[#12171d] p-4'
+			'mt-4 min-w-0 overflow-hidden rounded-xl border border-line bg-[#12171d] p-2 sm:mt-6 sm:p-4'
 		);
 		expect(html).toMatch(solidChartBoundaries);
 		expect(html).toMatch(dashedChartGuides);
 		expect(html.match(/data-chart-separator="true"/g)).toHaveLength(4);
-		expect(html.match(/-my-3 ml-15 h-6 bg-white\/1\.5/g)).toHaveLength(4);
+		expect(html.match(/-my-3 ml-12 h-6 bg-white\/1\.5 sm:ml-15/g)).toHaveLength(4);
 		expect(html).not.toContain('absolute top-[11%] bottom-[8%] left-1');
 		const gearModeWithoutSamples = render(
 			<SessionChart controlMode="gear" history={[]} route={[]} speedUnit="kmh" />
@@ -1173,6 +1176,8 @@ describe('view components', () => {
 		expect(html).toContain('data-side-tray="true"');
 		expect(html).toContain('No saved sessions yet');
 		expect(html).toContain('data-testid="session-list"');
+		expect(html).toContain('min-h-0 min-w-0 flex-1 flex-col overflow-hidden');
+		expect(html).toContain('overflow-y-auto overflow-x-hidden');
 		expect(html).toContain('Import FIT/TCX');
 		expect(html).toContain('data-testid="download-all-sessions"');
 		expect(html).toContain('aria-label="Download all sessions as FIT"');
@@ -1183,6 +1188,9 @@ describe('view components', () => {
 		expect(html).toContain('ml-auto');
 		expect(html).toContain('translate-x-0');
 		expect(html).toContain('Show history keyboard controls');
+		expect(html).toContain('absolute top-3 right-14 grid h-9 w-9');
+		expect(html).toContain('absolute top-3 right-3 grid h-9 w-9');
+		expect(html.match(/hover:text-white sm:static/g)).toHaveLength(2);
 	});
 
 	test('highlights every session from the latest import in history navigation', () => {
@@ -1227,6 +1235,7 @@ describe('view components', () => {
 		expect(list).not.toContain('ring-cyan-400/70');
 		const detail = render(<SessionDetail session={importedSession} speedUnit="kmh" />);
 		expect(detail).toContain('data-testid="session-detail"');
+		expect(detail).toContain('overflow-y-auto overflow-x-hidden');
 		expect(detail).toContain('>Imported<');
 		expect(detail).not.toContain('Imported TCX');
 		expect(detail).toContain('MAX</strong>45');

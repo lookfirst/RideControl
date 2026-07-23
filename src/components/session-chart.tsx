@@ -59,10 +59,10 @@ export function ChartPlot({
 	const labelPositions = [14, 52, 90];
 	return (
 		<div className={`flex w-full ${heightClass}`}>
-			<div className="pointer-events-none relative h-full w-15 shrink-0 font-medium text-[10px] text-slate-400">
+			<div className="pointer-events-none relative h-full w-12 shrink-0 font-medium text-[9px] text-slate-400 sm:w-15 sm:text-[10px]">
 				{labels.map((label, index) => (
 					<span
-						className="absolute right-2 -translate-y-1/2 whitespace-nowrap"
+						className="absolute right-1 -translate-y-1/2 whitespace-nowrap sm:right-2"
 						key={label}
 						style={{ top: `${labelPositions[index]}%` }}
 					>
@@ -301,11 +301,11 @@ export function SessionChart({
 	}, [availableModes, effectiveMode, keyboardEnabled, selectMode]);
 
 	return (
-		<div className="mt-6 overflow-hidden rounded-xl border border-line bg-[#12171d] p-4">
-			<div className="flex w-full gap-1 overflow-x-auto rounded-lg bg-[#0d1217] p-1">
+		<div className="mt-4 min-w-0 overflow-hidden rounded-xl border border-line bg-[#12171d] p-2 sm:mt-6 sm:p-4">
+			<div className="scrollbar-hidden flex w-full gap-1 overflow-x-auto rounded-lg bg-[#0d1217] p-1">
 				{availableModes.map((mode) => (
 					<button
-						className={`inline-flex min-w-max flex-1 items-center justify-center gap-1 whitespace-nowrap rounded-md px-1.5 py-2 font-semibold text-[13px] transition ${effectiveMode === mode.value ? 'bg-slate-700 text-white' : 'text-slate-500 hover:text-slate-200'}`}
+						className={`inline-flex min-w-max flex-1 items-center justify-center gap-1 whitespace-nowrap rounded-md px-1.5 py-2 font-semibold text-[11px] transition sm:text-[13px] ${effectiveMode === mode.value ? 'bg-slate-700 text-white' : 'text-slate-500 hover:text-slate-200'}`}
 						key={mode.value}
 						onClick={() => selectMode(mode.value)}
 						type="button"
@@ -336,7 +336,11 @@ export function SessionChart({
 							<ChartPlot
 								color={item.color}
 								decimals={item.decimals}
-								heightClass={effectiveMode === CHART_MODE.ALL ? 'h-24' : 'h-52'}
+								heightClass={
+									effectiveMode === CHART_MODE.ALL
+										? 'h-20 sm:h-24'
+										: 'h-40 sm:h-52'
+								}
 								maximum={item.chartMaximum}
 								minimum={item.minimum}
 								positions={historyPositions}
@@ -348,14 +352,14 @@ export function SessionChart({
 							index < visibleSeries.length - 1 ? (
 								<div
 									aria-hidden="true"
-									className="pointer-events-none relative -my-3 ml-15 h-6 bg-white/1.5"
+									className="pointer-events-none relative -my-3 ml-12 h-6 bg-white/1.5 sm:ml-15"
 									data-chart-separator="true"
 								/>
 							) : null}
 						</Fragment>
 					))}
 				</div>
-				<div className="mt-1 grid grid-cols-[3.75rem_minmax(0,1fr)] text-[10px] text-slate-500">
+				<div className="mt-1 grid grid-cols-[3rem_minmax(0,1fr)] text-[9px] text-slate-500 sm:grid-cols-[3.75rem_minmax(0,1fr)] sm:text-[10px]">
 					<span aria-hidden="true" />
 					<div className="flex justify-between">
 						{[0, 0.25, 0.5, 0.75, 1].map((position) => (

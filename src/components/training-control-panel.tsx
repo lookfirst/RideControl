@@ -12,7 +12,7 @@ export function TrainingControlPanel({
 	value: number;
 }) {
 	return (
-		<div className="self-start rounded-2xl border border-line bg-panel p-4 sm:p-5">
+		<div className="w-full min-w-0 self-start rounded-2xl border border-line bg-panel p-4 sm:p-5">
 			<div className="flex items-center justify-between gap-4">
 				<h2 className="font-bold text-lg">{title}</h2>
 				<div className="text-right">

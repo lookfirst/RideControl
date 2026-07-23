@@ -216,7 +216,7 @@ export function SessionHistory({
 				open={open}
 				panelClassName="flex max-w-6xl flex-col overflow-hidden sm:w-[min(72rem,calc(100vw-2rem))]"
 			>
-				<header className="flex flex-wrap items-center gap-x-4 gap-y-2 border-line border-b px-5 py-3">
+				<header className="relative flex flex-wrap items-center gap-x-4 gap-y-2 border-line border-b py-3 pr-24 pl-5 sm:px-5">
 					<div className="mr-auto flex min-w-0 items-center gap-2">
 						<h2 className="font-bold text-xl" id="session-history-title">
 							Sessions
@@ -232,7 +232,7 @@ export function SessionHistory({
 							) : null}
 						</p>
 					</div>
-					<div className="flex items-center gap-1">
+					<div className="flex flex-wrap items-center gap-1">
 						<input
 							accept=".fit,.tcx,.zip,application/vnd.ant.fit,application/vnd.garmin.tcx+xml,application/zip"
 							className="hidden"
@@ -286,7 +286,7 @@ export function SessionHistory({
 						</fieldset>
 						<button
 							aria-label="Show history keyboard controls"
-							className="grid h-9 w-9 place-items-center rounded-lg font-bold text-slate-400 text-sm hover:bg-slate-700 hover:text-white"
+							className="absolute top-3 right-14 grid h-9 w-9 place-items-center rounded-lg font-bold text-slate-400 text-sm hover:bg-slate-700 hover:text-white sm:static"
 							onClick={() => {
 								setDeleteConfirmationOpen(false);
 								setHistoryHelpOpen(true);
@@ -297,7 +297,7 @@ export function SessionHistory({
 						</button>
 						<button
 							aria-label="Close session history"
-							className="grid h-9 w-9 place-items-center rounded-lg text-slate-400 hover:bg-slate-700 hover:text-white"
+							className="absolute top-3 right-3 grid h-9 w-9 place-items-center rounded-lg text-slate-400 hover:bg-slate-700 hover:text-white sm:static"
 							onClick={onClose}
 							type="button"
 						>
@@ -305,7 +305,7 @@ export function SessionHistory({
 						</button>
 					</div>
 				</header>
-				<div className="flex min-h-0 flex-1 flex-col md:flex-row">
+				<div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden md:flex-row">
 					<SessionHistoryList
 						error={error}
 						highlightedSessionIds={highlightedSessionIds}
