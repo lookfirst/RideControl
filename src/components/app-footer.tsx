@@ -2,7 +2,7 @@ import { BUILD_PR_URL, BUILD_TIMESTAMP_UTC, formatBuildTimestamp } from '../lib/
 
 export function AppFooter({ onOpenWelcome }: { onOpenWelcome: () => void }) {
 	return (
-		<footer className="fixed right-4 bottom-3 left-4 z-20 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-[11px] text-slate-600">
+		<footer className="mx-auto flex w-full max-w-7xl flex-wrap items-center gap-x-1.5 gap-y-0.5 px-3 pt-2 pb-[max(0.75rem,env(safe-area-inset-bottom))] text-[11px] text-slate-600 sm:px-8">
 			<button
 				className="font-semibold tracking-wide transition hover:text-slate-400"
 				onClick={onOpenWelcome}

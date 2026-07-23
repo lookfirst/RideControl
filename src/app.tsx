@@ -498,7 +498,7 @@ export function App({ initialSession = emptySession }: { initialSession?: Stored
 	].some(Boolean);
 
 	return (
-		<main className="min-h-screen bg-ink selection:bg-mint/30">
+		<main className="flex min-h-dvh min-w-0 flex-col overflow-x-clip bg-ink selection:bg-mint/30">
 			<Dashboard>
 				<DashboardToolbar>
 					<SessionControls

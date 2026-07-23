@@ -152,7 +152,7 @@ export function SessionDetail({
 
 	return (
 		<div
-			className="min-w-0 flex-1 overflow-y-auto p-5 sm:p-6"
+			className="min-w-0 flex-1 overflow-y-auto overflow-x-hidden p-3 sm:p-6"
 			data-testid="session-detail"
 			onScroll={detailScroll.onScroll}
 			ref={detailScroll.ref}

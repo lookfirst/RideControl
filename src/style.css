@@ -63,6 +63,12 @@
 }
 
 @layer components {
+	.scrollbar-hidden {
+		scrollbar-width: none;
+	}
+	.scrollbar-hidden::-webkit-scrollbar {
+		display: none;
+	}
 	.resistance-slider {
 		height: 0.375rem;
 		appearance: none;
