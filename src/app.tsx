@@ -6,6 +6,7 @@ import { BuildDetailsDialog } from './components/build-details-dialog';
 import { Dashboard, DashboardToolbar, DashboardWorkspace } from './components/dashboard-layout';
 import { DashboardTools } from './components/dashboard-tools';
 import { DevicePairingPanel } from './components/device-pairing';
+import type { GpxBrowserSelection } from './components/gpx-browser-dialog';
 import { KeyboardShortcutsDialog } from './components/keyboard-shortcuts-dialog';
 import { PrivacyPolicyDialog, TermsOfServiceDialog } from './components/legal-dialog';
 import { Notification } from './components/notification';
@@ -52,11 +53,6 @@ import {
 	HOME_APP_ROUTE,
 } from './lib/app-route';
 import {
-	loadBikeGpxBrowserOpen,
-	loadBikeGpxBrowserSearch,
-	persistBikeGpxBrowserOpen,
-} from './lib/bikegpx-browser-preferences';
-import {
 	CONTROL_MODE,
 	trainingControlMode,
 	virtualShiftingConnectionReady,
@@ -64,6 +60,11 @@ import {
 import { eventTargetsInteractiveControl, keyboardEventHasModifiers } from './lib/dom';
 import { unreachable } from './lib/errors';
 import { maximumGear, resistanceForVirtualGear } from './lib/gears';
+import {
+	loadGpxBrowserOpen,
+	loadGpxBrowserSearch,
+	persistGpxBrowserOpen,
+} from './lib/gpx-browser-preferences';
 import { type AppShortcut, appShortcutForKey, gearingKeyboardShortcuts } from './lib/keyboard';
 import { activeRiderPhysicsProfile, type RiderPhysicsProfile } from './lib/profile';
 import type { ProfileTab } from './lib/profile-tab';
@@ -144,10 +145,13 @@ function restoredRoute(overlay: AppOverlay | undefined): AppRoute {
 		return { kind: APP_ROUTE_KIND.PROFILE };
 	}
 	if (overlay === APP_OVERLAY.WORKOUTS) {
-		if (loadBikeGpxBrowserOpen()) {
+		if (loadGpxBrowserOpen()) {
+			const search = loadGpxBrowserSearch();
 			return {
-				kind: APP_ROUTE_KIND.BIKEGPX,
-				routeId: loadBikeGpxBrowserSearch().selectedRouteId || undefined,
+				collectionId: search.collectionId,
+				kind: APP_ROUTE_KIND.GPX,
+				providerId: search.providerId,
+				routeId: search.selectedRouteId || undefined,
 			};
 		}
 		return { kind: APP_ROUTE_KIND.WORKOUT };
@@ -188,12 +192,105 @@ function profileRouteRequest(route: AppRoute): ProfileTab | undefined {
 	return route.kind === APP_ROUTE_KIND.PROFILE ? route.profileTab : undefined;
 }
 
+function gpxRouteRequest(route: AppRoute): {
+	collectionId?: string;
+	providerId?: string;
+	routeId?: string;
+} {
+	return route.kind === APP_ROUTE_KIND.GPX ? route : {};
+}
+
 function sessionRouteRequest(route: AppRoute): {
 	calendarMonth?: string;
 	historyView?: SessionHistoryView;
 	sessionId?: string;
 } {
 	return route.kind === APP_ROUTE_KIND.SESSION ? route : {};
+}
+
+function navigateToGpxRoute(
+	navigate: ReturnType<typeof useNavigate>,
+	route: Extract<AppRoute, { kind: typeof APP_ROUTE_KIND.GPX }>,
+	replace: boolean
+) {
+	if (route.providerId && route.collectionId && route.routeId) {
+		navigate({
+			params: {
+				collectionId: route.collectionId,
+				providerId: route.providerId,
+				routeId: route.routeId,
+			},
+			replace,
+			to: APP_ROUTE_PATH.GPX_ROUTE,
+		}).catch(() => undefined);
+		return;
+	}
+	if (route.providerId && route.collectionId) {
+		navigate({
+			params: {
+				collectionId: route.collectionId,
+				providerId: route.providerId,
+			},
+			replace,
+			to: APP_ROUTE_PATH.GPX_COLLECTION,
+		}).catch(() => undefined);
+		return;
+	}
+	navigate({ replace, to: APP_ROUTE_PATH.GPX }).catch(() => undefined);
+}
+
+function navigateToRoute(
+	navigate: ReturnType<typeof useNavigate>,
+	route: AppRoute,
+	replace: boolean
+) {
+	switch (route.kind) {
+		case APP_ROUTE_KIND.GPX:
+			navigateToGpxRoute(navigate, route, replace);
+			return;
+		case APP_ROUTE_KIND.DEVICES:
+			navigate({ replace, to: APP_ROUTE_PATH.DEVICES }).catch(() => undefined);
+			return;
+		case APP_ROUTE_KIND.HOME:
+			navigate({ replace, to: APP_ROUTE_PATH.HOME }).catch(() => undefined);
+			return;
+		case APP_ROUTE_KIND.PROFILE:
+			navigate({
+				replace,
+				search: profileRouteSearch(route.profileTab),
+				to: APP_ROUTE_PATH.PROFILE,
+			}).catch(() => undefined);
+			return;
+		case APP_ROUTE_KIND.SESSION:
+			if (route.sessionId) {
+				navigate({
+					params: { sessionId: route.sessionId },
+					replace,
+					search: sessionRouteSearch(route.calendarMonth, route.historyView),
+					to: APP_ROUTE_PATH.SESSION,
+				}).catch(() => undefined);
+			} else {
+				navigate({
+					replace,
+					search: sessionRouteSearch(route.calendarMonth, route.historyView),
+					to: APP_ROUTE_PATH.SESSIONS,
+				}).catch(() => undefined);
+			}
+			return;
+		case APP_ROUTE_KIND.WORKOUT:
+			if (route.workoutId) {
+				navigate({
+					params: { workoutId: route.workoutId },
+					replace,
+					to: APP_ROUTE_PATH.WORKOUT,
+				}).catch(() => undefined);
+			} else {
+				navigate({ replace, to: APP_ROUTE_PATH.WORKOUTS }).catch(() => undefined);
+			}
+			return;
+		default:
+			return unreachable(route);
+	}
 }
 
 export function App({ initialSession = emptySession }: { initialSession?: StoredSession }) {
@@ -229,63 +326,9 @@ export function App({ initialSession = emptySession }: { initialSession?: Stored
 	const navigateToAppRoute = useCallback(
 		(route: AppRoute, replace = false) => {
 			const overlay = appRouteSideTray(route);
-			persistBikeGpxBrowserOpen(route.kind === APP_ROUTE_KIND.BIKEGPX);
+			persistGpxBrowserOpen(route.kind === APP_ROUTE_KIND.GPX);
 			persistOpenSideTray(overlay);
-			switch (route.kind) {
-				case APP_ROUTE_KIND.BIKEGPX:
-					if (route.routeId) {
-						navigate({
-							params: { routeId: route.routeId },
-							replace,
-							to: APP_ROUTE_PATH.BIKEGPX_ROUTE,
-						}).catch(() => undefined);
-					} else {
-						navigate({ replace, to: APP_ROUTE_PATH.BIKEGPX }).catch(() => undefined);
-					}
-					return;
-				case APP_ROUTE_KIND.DEVICES:
-					navigate({ replace, to: APP_ROUTE_PATH.DEVICES }).catch(() => undefined);
-					return;
-				case APP_ROUTE_KIND.HOME:
-					navigate({ replace, to: APP_ROUTE_PATH.HOME }).catch(() => undefined);
-					return;
-				case APP_ROUTE_KIND.PROFILE:
-					navigate({
-						replace,
-						search: profileRouteSearch(route.profileTab),
-						to: APP_ROUTE_PATH.PROFILE,
-					}).catch(() => undefined);
-					return;
-				case APP_ROUTE_KIND.SESSION:
-					if (route.sessionId) {
-						navigate({
-							params: { sessionId: route.sessionId },
-							replace,
-							search: sessionRouteSearch(route.calendarMonth, route.historyView),
-							to: APP_ROUTE_PATH.SESSION,
-						}).catch(() => undefined);
-					} else {
-						navigate({
-							replace,
-							search: sessionRouteSearch(route.calendarMonth, route.historyView),
-							to: APP_ROUTE_PATH.SESSIONS,
-						}).catch(() => undefined);
-					}
-					return;
-				case APP_ROUTE_KIND.WORKOUT:
-					if (route.workoutId) {
-						navigate({
-							params: { workoutId: route.workoutId },
-							replace,
-							to: APP_ROUTE_PATH.WORKOUT,
-						}).catch(() => undefined);
-					} else {
-						navigate({ replace, to: APP_ROUTE_PATH.WORKOUTS }).catch(() => undefined);
-					}
-					return;
-				default:
-					return unreachable(route);
-			}
+			navigateToRoute(navigate, route, replace);
 		},
 		[navigate]
 	);
@@ -310,7 +353,7 @@ export function App({ initialSession = emptySession }: { initialSession?: Stored
 				navigateToAppRoute({ kind: APP_ROUTE_KIND.WORKOUT });
 				return;
 			}
-			persistBikeGpxBrowserOpen(false);
+			persistGpxBrowserOpen(false);
 			persistOpenSideTray(overlay);
 			setActiveOverlayState(overlay);
 			navigate({ replace: true, to: APP_ROUTE_PATH.HOME }).catch(() => undefined);
@@ -324,7 +367,7 @@ export function App({ initialSession = emptySession }: { initialSession?: Stored
 			return;
 		}
 		const routeOverlay = appRouteSideTray(matchedAppRoute);
-		persistBikeGpxBrowserOpen(matchedAppRoute.kind === APP_ROUTE_KIND.BIKEGPX);
+		persistGpxBrowserOpen(matchedAppRoute.kind === APP_ROUTE_KIND.GPX);
 		persistOpenSideTray(routeOverlay);
 		setActiveOverlayState((currentOverlay) => {
 			if (routeOverlay) {
@@ -552,8 +595,12 @@ export function App({ initialSession = emptySession }: { initialSession?: Stored
 		? session.selectedWorkout.course
 		: undefined;
 	const selectedWorkoutId = selectedWorkoutCourse ? selectedWorkoutCourse.id : undefined;
-	const bikeGpxBrowserOpen = appRoute.kind === APP_ROUTE_KIND.BIKEGPX;
-	const bikeGpxRouteId = bikeGpxBrowserOpen ? appRoute.routeId : undefined;
+	const gpxBrowserOpen = appRoute.kind === APP_ROUTE_KIND.GPX;
+	const {
+		collectionId: gpxCollectionId,
+		providerId: gpxProviderId,
+		routeId: gpxRouteId,
+	} = gpxRouteRequest(appRoute);
 	const requestedProfileTab = profileRouteRequest(appRoute);
 	const focusedWorkoutId =
 		appRoute.kind === APP_ROUTE_KIND.WORKOUT ? appRoute.workoutId : undefined;
@@ -568,15 +615,15 @@ export function App({ initialSession = emptySession }: { initialSession?: Stored
 		},
 		[navigateToAppRoute]
 	);
-	const openBikeGpx = useCallback(() => {
-		navigateToAppRoute({ kind: APP_ROUTE_KIND.BIKEGPX });
+	const openGpx = useCallback(() => {
+		navigateToAppRoute({ kind: APP_ROUTE_KIND.GPX });
 	}, [navigateToAppRoute]);
-	const closeBikeGpx = useCallback(() => {
+	const closeGpx = useCallback(() => {
 		navigateToAppRoute({ kind: APP_ROUTE_KIND.WORKOUT }, true);
 	}, [navigateToAppRoute]);
-	const selectBikeGpxRoute = useCallback(
-		(routeId: string | undefined) => {
-			navigateToAppRoute({ kind: APP_ROUTE_KIND.BIKEGPX, routeId }, true);
+	const selectGpxRoute = useCallback(
+		(selection: GpxBrowserSelection) => {
+			navigateToAppRoute({ kind: APP_ROUTE_KIND.GPX, ...selection }, true);
 		},
 		[navigateToAppRoute]
 	);
@@ -791,22 +838,24 @@ export function App({ initialSession = emptySession }: { initialSession?: Stored
 			/>
 			<WorkoutPanel
 				activeCourse={session.selectedWorkout?.course}
-				bikeGpxBrowserOpen={bikeGpxBrowserOpen}
-				bikeGpxRouteId={bikeGpxRouteId}
 				courses={workoutLibrary.courses}
 				customCourseIds={workoutLibrary.customCourseIds}
 				focusedCourseId={focusedWorkoutId}
+				gpxBrowserOpen={gpxBrowserOpen}
+				gpxCollectionId={gpxCollectionId}
+				gpxProviderId={gpxProviderId}
+				gpxRouteId={gpxRouteId}
 				onClose={() => setActiveOverlay(undefined)}
-				onCloseBikeGpx={closeBikeGpx}
+				onCloseGpx={closeGpx}
 				onFocusCourse={focusWorkout}
 				onImportCourse={async (course) => workoutLibrary.importCourse(course)}
 				onImportFile={workoutLibrary.importFile}
-				onOpenBikeGpx={openBikeGpx}
+				onOpenGpx={openGpx}
 				onRemoveCourse={removeWorkout}
 				onRenameCourse={workoutLibrary.renameCourse}
 				onReorderCourse={workoutLibrary.reorderCourse}
 				onSelect={selectWorkout}
-				onSelectBikeGpxRoute={selectBikeGpxRoute}
+				onSelectGpxRoute={selectGpxRoute}
 				open={activeOverlay === APP_OVERLAY.WORKOUTS}
 				selectionLocked={workoutLocked}
 				speedUnit={speedUnit}

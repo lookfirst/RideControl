@@ -22,13 +22,19 @@ async function loadedRoute(pathname: string) {
 }
 
 describe('application deep links', () => {
-	test('matches direct BikeGPX, workout, session, devices, and profile links', async () => {
-		const bikeGpx = await loadedRoute('/bikegpx/2635');
-		expect(bikeGpx.match?.routeId).toBe(APP_ROUTE_PATH.BIKEGPX_ROUTE);
-		expect(bikeGpx.match?.params).toEqual({ routeId: '2635' });
-		expect(appRouteFromRouterMatch(bikeGpx.match)).toEqual({
-			kind: APP_ROUTE_KIND.BIKEGPX,
-			routeId: '2635',
+	test('matches direct GPX, workout, session, devices, and profile links', async () => {
+		const gpx = await loadedRoute('/gpx/cyclingstage/tour-de-france-2026/7');
+		expect(gpx.match?.routeId).toBe(APP_ROUTE_PATH.GPX_ROUTE);
+		expect(gpx.match?.params).toEqual({
+			collectionId: 'tour-de-france-2026',
+			providerId: 'cyclingstage',
+			routeId: '7',
+		});
+		expect(appRouteFromRouterMatch(gpx.match)).toEqual({
+			collectionId: 'tour-de-france-2026',
+			kind: APP_ROUTE_KIND.GPX,
+			providerId: 'cyclingstage',
+			routeId: '7',
 		});
 
 		const workout = await loadedRoute('/workouts/prairie%20roll');
@@ -70,7 +76,20 @@ describe('application deep links', () => {
 	});
 
 	test('matches collection links and redirects unknown paths home', async () => {
-		expect((await loadedRoute('/bikegpx')).match?.routeId).toBe(APP_ROUTE_PATH.BIKEGPX);
+		const collection = await loadedRoute('/gpx/bikegpx/public-routes');
+		expect(collection.match?.routeId).toBe(APP_ROUTE_PATH.GPX_COLLECTION);
+		expect(appRouteFromRouterMatch(collection.match)).toEqual({
+			collectionId: 'public-routes',
+			kind: APP_ROUTE_KIND.GPX,
+			providerId: 'bikegpx',
+		});
+		expect((await loadedRoute('/gpx')).match?.routeId).toBe(APP_ROUTE_PATH.GPX);
+		expect(appRouteFromRouterMatch((await loadedRoute('/bikegpx/2635')).match)).toEqual({
+			collectionId: 'public-routes',
+			kind: APP_ROUTE_KIND.GPX,
+			providerId: 'bikegpx',
+			routeId: '2635',
+		});
 		expect((await loadedRoute('/workouts')).match?.routeId).toBe(APP_ROUTE_PATH.WORKOUTS);
 		expect((await loadedRoute('/sessions')).match?.routeId).toBe(APP_ROUTE_PATH.SESSIONS);
 		const calendar = await loadedRoute('/sessions?date=2025-12&view=calendar');
@@ -104,10 +123,14 @@ describe('application deep links', () => {
 		await router.load();
 		expect(
 			router.buildLocation({
-				params: { routeId: '26/35' },
-				to: APP_ROUTE_PATH.BIKEGPX_ROUTE,
+				params: {
+					collectionId: 'tour/de-france',
+					providerId: 'cycling stage',
+					routeId: 'stage/1',
+				},
+				to: APP_ROUTE_PATH.GPX_ROUTE,
 			}).href
-		).toBe('/bikegpx/26%2F35');
+		).toBe('/gpx/cycling%20stage/tour%2Fde-france/stage%2F1');
 		expect(
 			router.buildLocation({
 				params: { workoutId: 'hill climb' },
@@ -134,7 +157,7 @@ describe('application deep links', () => {
 			}).href
 		).toBe('/profile?tab=bikes');
 
-		expect(appRouteSideTray({ kind: APP_ROUTE_KIND.BIKEGPX })).toBe(APP_OVERLAY.WORKOUTS);
+		expect(appRouteSideTray({ kind: APP_ROUTE_KIND.GPX })).toBe(APP_OVERLAY.WORKOUTS);
 		expect(appRouteSideTray({ kind: APP_ROUTE_KIND.WORKOUT })).toBe(APP_OVERLAY.WORKOUTS);
 		expect(appRouteSideTray({ kind: APP_ROUTE_KIND.SESSION })).toBe(APP_OVERLAY.HISTORY);
 		expect(appRouteSideTray({ kind: APP_ROUTE_KIND.DEVICES })).toBe(APP_OVERLAY.DEVICES);

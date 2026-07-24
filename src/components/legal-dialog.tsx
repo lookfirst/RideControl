@@ -124,8 +124,9 @@ export function PrivacyPolicyDialog({ onClose, open }: { onClose: () => void; op
 				<h3 className={headingClass}>Optional features and external services</h3>
 				<ul className="list-disc space-y-1 pl-5">
 					<li>
-						Browsing BikeGPX routes sends catalog, search, and route requests to the
-						Ride Control backend. It does not send your recorded ride history.
+						Browsing public route collections sends catalog and route requests to the
+						Ride Control service. Search and filter input stays in this browser, and it
+						does not send your recorded ride history.
 					</li>
 					<li>
 						If an imported GPX file has no route description, Ride Control may send its
@@ -133,8 +134,9 @@ export function PrivacyPolicyDialog({ onClose, open }: { onClose: () => void; op
 						name.
 					</li>
 					<li>
-						Links to BikeGPX, OpenStreetMap, GitHub, and sponsorship services are
-						governed by those services' own privacy practices.
+						Links to route providers such as BikeGPX and Cyclingstage, OpenStreetMap,
+						GitHub, and sponsorship services are governed by those services' own privacy
+						practices.
 					</li>
 					<li>
 						If you email us, your message and address are processed by our email

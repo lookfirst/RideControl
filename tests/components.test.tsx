@@ -653,8 +653,8 @@ describe('view components', () => {
 		expect(panel).toContain('Harbor Ring course map');
 		expect(panel).toContain('Harbor Ring elevation profile');
 		expect(panel).toContain('Import GPX');
-		expect(panel).toContain('Browse BikeGPX');
-		expect(panel).toContain('Browse thousands of public BikeGPX routes');
+		expect(panel).toContain('Browse routes');
+		expect(panel).toContain('Browse public route collections');
 		expect(panel).toContain('data-gpx-drop-target="true"');
 		expect(panel).toContain('data-testid="workout-list"');
 		expect(panel).toContain('placeholder="Search by name or difficulty"');

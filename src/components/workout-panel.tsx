@@ -24,7 +24,6 @@ import {
 	useRef,
 	useState,
 } from 'react';
-import { useBikeGpxCatalog } from '../hooks/use-bikegpx-catalog';
 import { useFileDrop } from '../hooks/use-file-drop';
 import { usePersistentScrollPosition } from '../hooks/use-persistent-scroll-position';
 import { APP_OVERLAY } from '../lib/app-overlay';
@@ -39,6 +38,7 @@ import { workoutMaximumGrade } from '../lib/workout-metrics';
 import { WORKOUT_VIEW, workoutRouteLabel } from '../lib/workout-schema';
 import { workoutDifficultyLabel, workoutMatchesSearch } from '../lib/workouts';
 import type { SpeedUnit, WorkoutCourse } from '../types';
+import type { GpxBrowserSelection } from './gpx-browser-dialog';
 import { Icon } from './icon';
 import { RenameWorkoutDialog } from './rename-workout-dialog';
 import { SideTray } from './side-tray';
@@ -53,9 +53,9 @@ const WorkoutMapDialog = lazy(async () => {
 	const module = await import('./workout-map-dialog');
 	return { default: module.WorkoutMapDialog };
 });
-const BikeGpxBrowserDialog = lazy(async () => {
-	const module = await import('./bikegpx-browser-dialog');
-	return { default: module.BikeGpxBrowserDialog };
+const GpxBrowserDialog = lazy(async () => {
+	const module = await import('./gpx-browser-dialog');
+	return { default: module.GpxBrowserDialog };
 });
 
 const workoutCollisionDetection: CollisionDetection = (args) => {
@@ -303,42 +303,46 @@ function WorkoutDropBoundary({ index }: { index: number }) {
 
 export function WorkoutPanel({
 	activeCourse,
-	bikeGpxBrowserOpen = false,
-	bikeGpxRouteId,
 	courses,
 	customCourseIds,
 	focusedCourseId,
+	gpxBrowserOpen = false,
+	gpxCollectionId,
+	gpxProviderId,
+	gpxRouteId,
 	onClose,
-	onCloseBikeGpx,
+	onCloseGpx,
 	onFocusCourse,
 	onImportCourse,
 	onImportFile,
 	onRemoveCourse,
 	onRenameCourse,
 	onReorderCourse,
-	onOpenBikeGpx,
-	onSelectBikeGpxRoute,
+	onOpenGpx,
+	onSelectGpxRoute,
 	onSelect,
 	open,
 	selectionLocked,
 	speedUnit,
 }: {
 	activeCourse?: WorkoutCourse;
-	bikeGpxBrowserOpen?: boolean;
-	bikeGpxRouteId?: string;
 	courses: WorkoutCourse[];
 	customCourseIds: ReadonlySet<string>;
 	focusedCourseId?: string;
+	gpxBrowserOpen?: boolean;
+	gpxCollectionId?: string;
+	gpxProviderId?: string;
+	gpxRouteId?: string;
 	onClose: () => void;
-	onCloseBikeGpx?: () => void;
+	onCloseGpx?: () => void;
 	onFocusCourse?: (courseId: string | undefined) => void;
 	onImportCourse: (course: WorkoutCourse) => Promise<WorkoutCourse>;
 	onImportFile: (file: File) => Promise<WorkoutCourse>;
 	onRemoveCourse: (courseId: string) => void;
 	onRenameCourse: (courseId: string, name: string) => WorkoutCourse;
 	onReorderCourse: (movedCourseId: string, destinationIndex: number) => void;
-	onOpenBikeGpx?: () => void;
-	onSelectBikeGpxRoute?: (routeId: string | undefined) => void;
+	onOpenGpx?: () => void;
+	onSelectGpxRoute?: (selection: GpxBrowserSelection) => void;
 	onSelect: (course?: WorkoutCourse) => void;
 	open: boolean;
 	selectionLocked: boolean;
@@ -351,7 +355,6 @@ export function WorkoutPanel({
 	const [renamingCourse, setRenamingCourse] = useState<WorkoutCourse>();
 	const [mappedCourse, setMappedCourse] = useState<WorkoutCourse>();
 	const [searchQuery, setSearchQuery] = useState('');
-	const bikeGpxCatalog = useBikeGpxCatalog(bikeGpxBrowserOpen);
 	const sensors = useSensors(
 		useSensor(PointerSensor, {
 			activationConstraint: { distance: 6 },
@@ -468,7 +471,7 @@ export function WorkoutPanel({
 		<>
 			<SideTray
 				closeLabel="Close terrain workouts"
-				closeOnEscape={!(bikeGpxBrowserOpen || mappedCourse || renamingCourse)}
+				closeOnEscape={!(gpxBrowserOpen || mappedCourse || renamingCourse)}
 				labelledBy="workout-panel-title"
 				onClose={closePanel}
 				open={open}
@@ -522,10 +525,10 @@ export function WorkoutPanel({
 								/>
 								<button
 									className="h-9 rounded-lg border border-line px-3 font-semibold text-slate-300 text-xs hover:border-cyan-400/60 hover:text-white"
-									onClick={onOpenBikeGpx}
+									onClick={onOpenGpx}
 									type="button"
 								>
-									Browse BikeGPX
+									Browse routes
 								</button>
 								<button
 									className="h-9 rounded-lg border border-line px-3 font-semibold text-slate-300 text-xs hover:border-cyan-400/60 hover:text-white disabled:cursor-wait disabled:opacity-60"
@@ -545,8 +548,7 @@ export function WorkoutPanel({
 								</button>
 							</div>
 							<p className="max-w-64 text-right text-[11px] text-slate-500 leading-snug">
-								Browse thousands of public BikeGPX routes or drop a GPX anywhere in
-								this tray.
+								Browse public route collections or drop a GPX anywhere in this tray.
 							</p>
 						</div>
 					</header>
@@ -657,23 +659,20 @@ export function WorkoutPanel({
 					</footer>
 				</div>
 			</SideTray>
-			{bikeGpxBrowserOpen ? (
+			{gpxBrowserOpen ? (
 				<Suspense
 					fallback={
 						<div
 							className="fixed inset-4 z-50 grid place-items-center rounded-2xl border border-slate-600 bg-panel text-slate-400 text-sm shadow-2xl shadow-black/70 xl:top-6 xl:right-152 xl:bottom-6 xl:left-6"
 							role="status"
 						>
-							Loading BikeGPX browser…
+							Loading route browser…
 						</div>
 					}
 				>
-					<BikeGpxBrowserDialog
-						catalog={bikeGpxCatalog.catalog}
-						catalogError={bikeGpxCatalog.error}
-						catalogLoading={bikeGpxCatalog.loading}
+					<GpxBrowserDialog
 						customCourseIds={customCourseIds}
-						onClose={() => onCloseBikeGpx?.()}
+						onClose={() => onCloseGpx?.()}
 						onImportCourse={async (course) => {
 							const imported = await onImportCourse(course);
 							setSearchQuery('');
@@ -681,9 +680,10 @@ export function WorkoutPanel({
 							setLibraryStatus(`${imported.name} imported and saved on this device.`);
 							return imported;
 						}}
-						onRefreshCatalog={bikeGpxCatalog.refresh}
-						onSelectRouteId={onSelectBikeGpxRoute}
-						requestedRouteId={bikeGpxRouteId}
+						onSelectRoute={onSelectGpxRoute}
+						requestedCollectionId={gpxCollectionId}
+						requestedProviderId={gpxProviderId}
+						requestedRouteId={gpxRouteId}
 						speedUnit={speedUnit}
 					/>
 				</Suspense>

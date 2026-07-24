@@ -57,8 +57,14 @@ export function createAppRouter({ history, initialSession = emptySession }: AppR
 		}),
 		createRoute({ getParentRoute: () => rootRoute, path: APP_ROUTE_PATH.WORKOUTS }),
 		createRoute({ getParentRoute: () => rootRoute, path: APP_ROUTE_PATH.WORKOUT }),
-		createRoute({ getParentRoute: () => rootRoute, path: APP_ROUTE_PATH.BIKEGPX }),
-		createRoute({ getParentRoute: () => rootRoute, path: APP_ROUTE_PATH.BIKEGPX_ROUTE }),
+		createRoute({ getParentRoute: () => rootRoute, path: APP_ROUTE_PATH.GPX }),
+		createRoute({ getParentRoute: () => rootRoute, path: APP_ROUTE_PATH.GPX_COLLECTION }),
+		createRoute({ getParentRoute: () => rootRoute, path: APP_ROUTE_PATH.GPX_ROUTE }),
+		createRoute({ getParentRoute: () => rootRoute, path: APP_ROUTE_PATH.BIKEGPX_LEGACY }),
+		createRoute({
+			getParentRoute: () => rootRoute,
+			path: APP_ROUTE_PATH.BIKEGPX_ROUTE_LEGACY,
+		}),
 		createRoute({
 			getParentRoute: () => rootRoute,
 			path: APP_ROUTE_PATH.SESSIONS,

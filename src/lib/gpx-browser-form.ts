@@ -1,10 +1,6 @@
 import { z } from 'zod';
 import type { SpeedUnit } from '../types';
-import {
-	type BikeGpxRouteAnalysis,
-	type BikeGpxRouteSummary,
-	bikeGpxRouteMatchesQuery,
-} from './bikegpx';
+import { type GpxRouteAnalysis, type GpxRouteSummary, gpxRouteMatchesQuery } from './gpx-provider';
 import { convertDistance } from './units';
 import { isWorkoutDifficulty, type WorkoutDifficulty } from './workout-schema';
 
@@ -12,22 +8,22 @@ const workoutDifficultySchema = z
 	.custom<WorkoutDifficulty>(isWorkoutDifficulty, 'Choose a valid route difficulty.')
 	.optional();
 
-export const bikeGpxBrowserFormSchema = z.object({
-	country: z.string(),
+export const gpxBrowserFormSchema = z.object({
 	difficulty: workoutDifficultySchema,
+	group: z.string(),
 	maximumDistance: z.string(),
 	minimumDistance: z.string(),
 	query: z.string(),
 });
 
-export type BikeGpxBrowserFormValues = z.infer<typeof bikeGpxBrowserFormSchema>;
+export type GpxBrowserFormValues = z.infer<typeof gpxBrowserFormSchema>;
 
-export function matchingBikeGpxRoutes(
-	routes: BikeGpxRouteSummary[],
-	values: BikeGpxBrowserFormValues,
+export function matchingGpxRoutes(
+	routes: GpxRouteSummary[],
+	values: GpxBrowserFormValues,
 	speedUnit: SpeedUnit,
-	analyses: Record<string, BikeGpxRouteAnalysis>
-): BikeGpxRouteSummary[] {
+	analyses: Record<string, GpxRouteAnalysis>
+): GpxRouteSummary[] {
 	const minimum = optionalDistance(values.minimumDistance);
 	const maximum = optionalDistance(values.maximumDistance);
 	return routes.filter((route) => {
@@ -37,11 +33,11 @@ export function matchingBikeGpxRoutes(
 			speedUnit
 		);
 		return (
-			(!values.country || route.country === values.country) &&
+			(!values.group || route.group === values.group) &&
 			(!values.difficulty || analysis?.difficulty === values.difficulty) &&
 			(minimum === undefined || displayedDistance >= minimum) &&
 			(maximum === undefined || displayedDistance <= maximum) &&
-			bikeGpxRouteMatchesQuery(route, values.query, analysis)
+			gpxRouteMatchesQuery(route, values.query, analysis)
 		);
 	});
 }

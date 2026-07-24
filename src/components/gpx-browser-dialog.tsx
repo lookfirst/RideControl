@@ -1,28 +1,28 @@
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useCloseOnEscape, useDialogInitialFocus } from '../hooks/use-dialog-behavior';
+import { useGpxCatalog, useGpxProviders } from '../hooks/use-gpx-catalog';
 import { usePersistentScrollPosition } from '../hooks/use-persistent-scroll-position';
-import {
-	BIKEGPX_ROUTES_URL,
-	type BikeGpxCatalog,
-	type BikeGpxRouteAnalysis,
-	type BikeGpxRouteResult,
-	type BikeGpxRouteSummary,
-	bikeGpxPreviewRoute,
-	bikeGpxRouteLocation,
-	bikeGpxRouteUrl,
-	fetchBikeGpxRoute,
-	formatBikeGpxRouteStats,
-} from '../lib/bikegpx';
-import { matchingBikeGpxRoutes } from '../lib/bikegpx-browser-form';
-import {
-	BIKEGPX_ROUTE_LIST_SCROLL_POSITION_STORAGE_KEY,
-	initialBikeGpxBrowserSearch,
-	persistBikeGpxBrowserSearch,
-	type ReportedBikeGpxRouteId,
-	reconcileBikeGpxBrowserRoute,
-} from '../lib/bikegpx-browser-preferences';
 import { errorMessage } from '../lib/errors';
+import { matchingGpxRoutes } from '../lib/gpx-browser-form';
+import {
+	gpxRouteListScrollPositionStorageKey,
+	initialGpxBrowserSearch,
+	persistGpxBrowserSearch,
+	type ReportedGpxRouteId,
+	reconcileGpxBrowserRoute,
+} from '../lib/gpx-browser-preferences';
+import {
+	fetchGpxRoute,
+	formatGpxRouteStats,
+	type GpxCatalog,
+	type GpxRouteAnalysis,
+	type GpxRouteResult,
+	type GpxRouteSummary,
+	gpxPreviewRoute,
+	gpxRouteAssetUrl,
+	gpxRouteKey,
+} from '../lib/gpx-provider';
 import { distanceUnitLabel } from '../lib/units';
 import {
 	isWorkoutDifficulty,
@@ -37,34 +37,32 @@ import { WorkoutRouteVisualization } from './workout-route-visualization';
 
 const ESTIMATED_ROUTE_ROW_HEIGHT = 104;
 const ROUTE_LIST_OVERSCAN = 6;
-const EMPTY_ROUTE_ANALYSES: Record<string, BikeGpxRouteAnalysis> = {};
-const routeResultCache = new Map<string, BikeGpxRouteResult>();
-const routeResultRequests = new Map<string, Promise<BikeGpxRouteResult>>();
+const EMPTY_ROUTE_ANALYSES: Record<string, GpxRouteAnalysis> = {};
+const routeResultCache = new Map<string, GpxRouteResult>();
+const routeResultRequests = new Map<string, Promise<GpxRouteResult>>();
 
-function requestRouteCourse(
-	route: BikeGpxRouteSummary,
-	useCache = true
-): Promise<BikeGpxRouteResult> {
+function requestRouteCourse(route: GpxRouteSummary, useCache = true): Promise<GpxRouteResult> {
+	const key = gpxRouteKey(route);
 	if (!useCache) {
-		routeResultCache.delete(route.id);
+		routeResultCache.delete(key);
 	}
-	const cached = useCache ? routeResultCache.get(route.id) : undefined;
+	const cached = useCache ? routeResultCache.get(key) : undefined;
 	if (cached) {
 		return Promise.resolve(cached);
 	}
-	const pending = routeResultRequests.get(route.id);
+	const pending = routeResultRequests.get(key);
 	if (pending) {
 		return pending;
 	}
-	const request = fetchBikeGpxRoute(route)
+	const request = fetchGpxRoute(route)
 		.then((result) => {
-			routeResultCache.set(route.id, result);
+			routeResultCache.set(key, result);
 			return result;
 		})
 		.finally(() => {
-			routeResultRequests.delete(route.id);
+			routeResultRequests.delete(key);
 		});
-	routeResultRequests.set(route.id, request);
+	routeResultRequests.set(key, request);
 	return request;
 }
 
@@ -75,14 +73,13 @@ function RouteListItem({
 	selected,
 	speedUnit,
 }: {
-	analysis: BikeGpxRouteAnalysis;
+	analysis: GpxRouteAnalysis;
 	onSelect: () => void;
-	route: BikeGpxRouteSummary;
+	route: GpxRouteSummary;
 	selected: boolean;
 	speedUnit: SpeedUnit;
 }) {
 	const difficulty = workoutDifficultyLabel(analysis.difficulty);
-	const location = bikeGpxRouteLocation(route);
 	return (
 		<button
 			aria-pressed={selected}
@@ -96,7 +93,7 @@ function RouteListItem({
 				{route.name}
 			</span>
 			<span className="mt-1 flex items-center justify-between gap-2 text-[11px]">
-				<span className="truncate text-slate-500">{route.country}</span>
+				<span className="truncate text-slate-500">{route.group}</span>
 				<span
 					className="shrink-0 rounded-full border border-violet-400/25 bg-violet-400/5 px-1.5 py-0.5 font-semibold text-[9px] text-violet-300 uppercase tracking-wide"
 					title="Difficulty calculated from distance, climbing, and maximum grade"
@@ -104,13 +101,13 @@ function RouteListItem({
 					{difficulty}
 				</span>
 			</span>
-			{location ? (
+			{route.location ? (
 				<span className="mt-1 block text-[11px] text-slate-400 leading-relaxed">
-					{location}
+					{route.location}
 				</span>
 			) : null}
 			<span className="mt-1 block text-[11px] text-slate-300 tabular-nums">
-				{formatBikeGpxRouteStats(route, analysis, speedUnit)}
+				{formatGpxRouteStats(route, analysis, speedUnit)}
 			</span>
 		</button>
 	);
@@ -121,12 +118,12 @@ function RouteSidebar({
 	catalog,
 	catalogError,
 	catalogLoading,
-	countries,
-	country,
+	group,
+	groups,
 	difficulty,
 	maximumDistance,
 	minimumDistance,
-	onCountryChange,
+	onGroupChange,
 	onDifficultyChange,
 	onMaximumDistanceChange,
 	onMinimumDistanceChange,
@@ -136,32 +133,34 @@ function RouteSidebar({
 	query,
 	routes,
 	selectedRouteId,
+	scrollStorageKey,
 	speedUnit,
 }: {
-	analyses: Record<string, BikeGpxRouteAnalysis>;
-	catalog?: BikeGpxCatalog;
+	analyses: Record<string, GpxRouteAnalysis>;
+	catalog?: GpxCatalog;
 	catalogError: string;
 	catalogLoading: boolean;
-	countries: string[];
-	country: string;
+	group: string;
+	groups: string[];
 	difficulty?: WorkoutDifficulty;
 	maximumDistance: string;
 	minimumDistance: string;
-	onCountryChange: (country: string) => void;
+	onGroupChange: (group: string) => void;
 	onDifficultyChange: (difficulty: WorkoutDifficulty | undefined) => void;
 	onMaximumDistanceChange: (distance: string) => void;
 	onMinimumDistanceChange: (distance: string) => void;
 	onQueryChange: (query: string) => void;
 	onRefreshCatalog: () => Promise<void>;
-	onSelectRoute: (route: BikeGpxRouteSummary) => void;
+	onSelectRoute: (route: GpxRouteSummary) => void;
 	query: string;
-	routes: BikeGpxRouteSummary[];
+	routes: GpxRouteSummary[];
 	selectedRouteId: string;
+	scrollStorageKey: string;
 	speedUnit: SpeedUnit;
 }) {
 	const routeListRef = useRef<HTMLDivElement>(null);
 	const routeListScroll = usePersistentScrollPosition<HTMLDivElement>(
-		BIKEGPX_ROUTE_LIST_SCROLL_POSITION_STORAGE_KEY,
+		scrollStorageKey,
 		true,
 		catalog?.fetchedAt
 	);
@@ -194,40 +193,40 @@ function RouteSidebar({
 	return (
 		<aside className="flex h-80 shrink-0 flex-col border-line border-b bg-[#10151a] lg:h-auto lg:w-72 lg:border-r lg:border-b-0">
 			<div className="space-y-2 border-line border-b p-3">
-				<label className="sr-only" htmlFor="bikegpx-search">
-					Search BikeGPX routes
+				<label className="sr-only" htmlFor="gpx-search">
+					Search GPX routes
 				</label>
 				<input
 					className="h-10 w-full rounded-lg border border-line bg-[#12171d] px-3 text-slate-100 text-sm outline-none placeholder:text-slate-600 focus:border-cyan-400/70 focus:ring-2 focus:ring-cyan-400/10"
-					id="bikegpx-search"
+					id="gpx-search"
 					onChange={(event) => onQueryChange(event.currentTarget.value)}
 					placeholder="Name, place, distance, or difficulty"
 					type="search"
 					value={query}
 				/>
 				<div className="grid grid-cols-2 gap-2">
-					<label className="sr-only" htmlFor="bikegpx-country">
-						Filter BikeGPX routes by country
+					<label className="sr-only" htmlFor="gpx-group">
+						Filter GPX routes by group
 					</label>
 					<select
 						className="h-9 min-w-0 rounded-lg border border-line bg-[#12171d] px-2 text-slate-300 text-xs outline-none focus:border-cyan-400/70"
-						id="bikegpx-country"
-						onChange={(event) => onCountryChange(event.currentTarget.value)}
-						value={country}
+						id="gpx-group"
+						onChange={(event) => onGroupChange(event.currentTarget.value)}
+						value={group}
 					>
-						<option value="">All countries</option>
-						{countries.map((countryName) => (
-							<option key={countryName} value={countryName}>
-								{countryName}
+						<option value="">All groups</option>
+						{groups.map((groupName) => (
+							<option key={groupName} value={groupName}>
+								{groupName}
 							</option>
 						))}
 					</select>
-					<label className="sr-only" htmlFor="bikegpx-difficulty">
-						Filter BikeGPX routes by estimated difficulty
+					<label className="sr-only" htmlFor="gpx-difficulty">
+						Filter GPX routes by estimated difficulty
 					</label>
 					<select
 						className="h-9 min-w-0 rounded-lg border border-line bg-[#12171d] px-2 text-slate-300 text-xs outline-none focus:border-cyan-400/70"
-						id="bikegpx-difficulty"
+						id="gpx-difficulty"
 						onChange={(event) => {
 							const { value } = event.currentTarget;
 							onDifficultyChange(isWorkoutDifficulty(value) ? value : undefined);
@@ -243,12 +242,12 @@ function RouteSidebar({
 					</select>
 				</div>
 				<div className="grid grid-cols-2 gap-2">
-					<label className="sr-only" htmlFor="bikegpx-minimum-distance">
+					<label className="sr-only" htmlFor="gpx-minimum-distance">
 						Minimum route distance in {distanceUnit}
 					</label>
 					<input
 						className="h-9 min-w-0 rounded-lg border border-line bg-[#12171d] px-2 text-slate-200 text-xs outline-none placeholder:text-slate-600 focus:border-cyan-400/70"
-						id="bikegpx-minimum-distance"
+						id="gpx-minimum-distance"
 						min="0"
 						onChange={(event) => onMinimumDistanceChange(event.currentTarget.value)}
 						placeholder={`Min ${distanceUnit}`}
@@ -256,12 +255,12 @@ function RouteSidebar({
 						type="number"
 						value={minimumDistance}
 					/>
-					<label className="sr-only" htmlFor="bikegpx-maximum-distance">
+					<label className="sr-only" htmlFor="gpx-maximum-distance">
 						Maximum route distance in {distanceUnit}
 					</label>
 					<input
 						className="h-9 min-w-0 rounded-lg border border-line bg-[#12171d] px-2 text-slate-200 text-xs outline-none placeholder:text-slate-600 focus:border-cyan-400/70"
-						id="bikegpx-maximum-distance"
+						id="gpx-maximum-distance"
 						min="0"
 						onChange={(event) => onMaximumDistanceChange(event.currentTarget.value)}
 						placeholder={`Max ${distanceUnit}`}
@@ -281,7 +280,7 @@ function RouteSidebar({
 			</div>
 			<div
 				className="min-h-0 flex-1 overflow-y-auto"
-				data-testid="bikegpx-route-list"
+				data-testid="gpx-route-list"
 				onScroll={routeListScroll.onScroll}
 				ref={setRouteListRef}
 			>
@@ -315,13 +314,13 @@ function RouteSidebar({
 				) : null}
 				{catalogLoading && !catalog ? (
 					<p className="px-4 py-10 text-center text-slate-400 text-sm" role="status">
-						Loading BikeGPX routes…
+						Loading GPX routes…
 					</p>
 				) : null}
 				{!catalogLoading && routes.length === 0 ? (
 					<div className="px-4 py-10 text-center text-sm">
 						<p className="text-slate-400">
-							{catalogError || 'No BikeGPX routes match these filters.'}
+							{catalogError || 'No GPX routes match these filters.'}
 						</p>
 						{catalogError ? (
 							<button
@@ -339,12 +338,12 @@ function RouteSidebar({
 	);
 }
 
-function useRoutePreview(route: BikeGpxRouteSummary | undefined) {
+function useRoutePreview(route: GpxRouteSummary | undefined) {
 	const activeRequest = useRef(0);
 	const [course, setCourse] = useState<WorkoutCourse>();
 	const [error, setError] = useState('');
 	const [loading, setLoading] = useState(false);
-	const load = useCallback((nextRoute: BikeGpxRouteSummary | undefined, useCache = true) => {
+	const load = useCallback((nextRoute: GpxRouteSummary | undefined, useCache = true) => {
 		const requestId = activeRequest.current + 1;
 		activeRequest.current = requestId;
 		if (!nextRoute) {
@@ -405,35 +404,41 @@ function RoutePreviewDetails({
 	speedUnit,
 }: {
 	alreadyImported: boolean;
-	analysis?: BikeGpxRouteAnalysis;
+	analysis?: GpxRouteAnalysis;
 	course?: WorkoutCourse;
 	importError: string;
 	importing: boolean;
 	onImport: () => void;
-	route: BikeGpxRouteSummary;
+	route: GpxRouteSummary;
 	speedUnit: SpeedUnit;
 }) {
-	const location = bikeGpxRouteLocation(route);
 	return (
 		<div className="absolute bottom-3 left-3 z-500 w-[calc(100%-1.5rem)] max-w-md rounded-lg border border-slate-600/50 bg-[#10151a]/88 p-3 shadow-black/30 shadow-lg backdrop-blur-sm">
 			<div className="flex items-start gap-3">
 				<div className="min-w-0 flex-1">
 					<h3 className="truncate font-bold text-sm">{route.name}</h3>
 					<p className="mt-0.5 line-clamp-2 text-[11px] text-slate-400 leading-relaxed">
-						{route.country}
-						{location ? ` · ${location}` : ''}
+						{route.group}
+						{route.location ? ` · ${route.location}` : ''}
 					</p>
 					<p className="mt-1 text-[11px] text-slate-300 tabular-nums">
-						{formatBikeGpxRouteStats(route, analysis, speedUnit)}
+						{formatGpxRouteStats(route, analysis, speedUnit)}
 					</p>
-					<div className="mt-1 text-[10px]">
+					<div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-[10px]">
 						<a
 							className="text-slate-400 underline decoration-slate-600 underline-offset-2 hover:text-slate-200"
-							href={bikeGpxRouteUrl(route.id)}
+							href={route.sourceUrl}
 							rel="noreferrer"
 							target="_blank"
 						>
 							View source route
+						</a>
+						<a
+							className="text-slate-400 underline decoration-slate-600 underline-offset-2 hover:text-slate-200"
+							download
+							href={gpxRouteAssetUrl(route, 'gpx')}
+						>
+							Download GPX
 						</a>
 						{importError ? (
 							<span
@@ -475,28 +480,28 @@ function RoutePreview({
 	route,
 	speedUnit,
 }: {
-	analysis?: BikeGpxRouteAnalysis;
+	analysis?: GpxRouteAnalysis;
 	customCourseIds: ReadonlySet<string>;
 	onImportCourse: (course: WorkoutCourse) => Promise<WorkoutCourse>;
-	route?: BikeGpxRouteSummary;
+	route?: GpxRouteSummary;
 	speedUnit: SpeedUnit;
 }) {
 	const preview = useRoutePreview(route);
 	const [feedback, setFeedback] = useState({ error: '', routeId: '' });
 	const [importing, setImporting] = useState(false);
 	const alreadyImported = preview.course ? customCourseIds.has(preview.course.id) : false;
-	const visibleFeedback = route?.id === feedback.routeId ? feedback : undefined;
+	const visibleFeedback = route && gpxRouteKey(route) === feedback.routeId ? feedback : undefined;
 
 	const importRoute = async () => {
 		if (!(preview.course && route)) {
 			return;
 		}
-		setFeedback({ error: '', routeId: route.id });
+		setFeedback({ error: '', routeId: gpxRouteKey(route) });
 		setImporting(true);
 		try {
 			await onImportCourse(preview.course);
 		} catch (error) {
-			setFeedback({ error: errorMessage(error), routeId: route.id });
+			setFeedback({ error: errorMessage(error), routeId: gpxRouteKey(route) });
 		} finally {
 			setImporting(false);
 		}
@@ -505,6 +510,22 @@ function RoutePreview({
 	return (
 		<div className="relative flex min-h-96 min-w-0 flex-1 flex-col bg-[#0e141a]">
 			{preview.course ? <WorkoutRouteMap course={preview.course} /> : null}
+			{route?.image ? (
+				<figure className="absolute top-3 right-3 z-400 hidden max-w-72 overflow-hidden rounded-lg border border-slate-600/50 bg-[#10151a]/92 shadow-black/30 shadow-lg sm:block">
+					<img
+						alt={route.image.alt}
+						className="h-28 w-full object-cover"
+						height="112"
+						src={route.image.url}
+						width="288"
+					/>
+					{route.image.attribution ? (
+						<figcaption className="px-2 py-1 text-[9px] text-slate-500">
+							Image: {route.image.attribution}
+						</figcaption>
+					) : null}
+				</figure>
+			) : null}
 			{preview.loading ? (
 				<div
 					className="absolute inset-0 grid place-items-center text-slate-400 text-sm"
@@ -547,55 +568,76 @@ function RoutePreview({
 	);
 }
 
-export function BikeGpxBrowserDialog({
-	catalog,
-	catalogError,
-	catalogLoading,
+export interface GpxBrowserSelection {
+	collectionId: string;
+	providerId: string;
+	routeId?: string;
+}
+
+export function GpxBrowserDialog({
 	customCourseIds,
 	onClose,
 	onImportCourse,
-	onRefreshCatalog,
-	onSelectRouteId,
+	onSelectRoute,
+	requestedCollectionId,
+	requestedProviderId,
 	requestedRouteId,
 	speedUnit,
 }: {
-	catalog?: BikeGpxCatalog;
-	catalogError: string;
-	catalogLoading: boolean;
 	customCourseIds: ReadonlySet<string>;
 	onClose: () => void;
 	onImportCourse: (course: WorkoutCourse) => Promise<WorkoutCourse>;
-	onRefreshCatalog: () => Promise<void>;
-	onSelectRouteId?: (routeId: string | undefined) => void;
+	onSelectRoute?: (selection: GpxBrowserSelection) => void;
+	requestedCollectionId?: string;
+	requestedProviderId?: string;
 	requestedRouteId?: string;
 	speedUnit: SpeedUnit;
 }) {
 	useCloseOnEscape(true, onClose);
 	const closeButtonRef = useDialogInitialFocus<HTMLButtonElement>();
-	const reportedRouteId = useRef<ReportedBikeGpxRouteId>(undefined);
-	const [search, setSearchState] = useState(() => initialBikeGpxBrowserSearch(requestedRouteId));
+	const reportedRouteId = useRef<ReportedGpxRouteId>(undefined);
+	const [search, setSearchState] = useState(() =>
+		initialGpxBrowserSearch({
+			collectionId: requestedCollectionId,
+			providerId: requestedProviderId,
+			routeId: requestedRouteId,
+		})
+	);
 	const setSearch = useCallback((update: (current: typeof search) => typeof search) => {
 		setSearchState((current) => {
 			const next = update(current);
-			persistBikeGpxBrowserSearch(next);
+			persistGpxBrowserSearch(next);
 			return next;
 		});
 	}, []);
-	const { country, difficulty, maximumDistance, minimumDistance, query, selectedRouteId } =
-		search;
+	const {
+		collectionId,
+		difficulty,
+		group,
+		maximumDistance,
+		minimumDistance,
+		providerId,
+		query,
+		selectedRouteId,
+	} = search;
+	const providersRequest = useGpxProviders(true);
+	const providers = providersRequest.providers ?? [];
+	const selectedProvider = providers.find((provider) => provider.id === providerId);
+	const selectedCollection = selectedProvider?.collections.find(
+		(collection) => collection.id === collectionId
+	);
+	const catalogRequest = useGpxCatalog(true, providerId, collectionId);
+	const { catalog } = catalogRequest;
 	const routes = catalog ? catalog.routes : [];
 	const analyses = catalog ? catalog.analyses : EMPTY_ROUTE_ANALYSES;
-	const countries = useMemo(
-		() => [...new Set(routes.map((route) => route.country))].sort(),
-		[routes]
-	);
+	const groups = useMemo(() => [...new Set(routes.map((route) => route.group))].sort(), [routes]);
 	const filteredRoutes = useMemo(
 		() =>
-			matchingBikeGpxRoutes(
+			matchingGpxRoutes(
 				routes,
 				{
-					country,
 					difficulty,
+					group,
 					maximumDistance,
 					minimumDistance,
 					query,
@@ -603,11 +645,54 @@ export function BikeGpxBrowserDialog({
 				speedUnit,
 				analyses
 			),
-		[analyses, country, difficulty, maximumDistance, minimumDistance, query, routes, speedUnit]
+		[analyses, difficulty, group, maximumDistance, minimumDistance, query, routes, speedUnit]
 	);
-	const selectedRoute = bikeGpxPreviewRoute(filteredRoutes, selectedRouteId);
+	const selectedRoute = gpxPreviewRoute(filteredRoutes, selectedRouteId);
+
 	useEffect(() => {
-		const reconciliation = reconcileBikeGpxBrowserRoute(
+		if (providers.length === 0) {
+			return;
+		}
+		const provider = providers.find((candidate) => candidate.id === providerId) ?? providers[0];
+		const collection =
+			provider.collections.find((candidate) => candidate.id === collectionId) ??
+			provider.collections[0];
+		if (collection && (provider.id !== providerId || collection.id !== collectionId)) {
+			const next = {
+				...search,
+				collectionId: collection.id,
+				group: '',
+				providerId: provider.id,
+				selectedRouteId: '',
+			};
+			setSearchState(next);
+			persistGpxBrowserSearch(next);
+			onSelectRoute?.({ collectionId: collection.id, providerId: provider.id });
+		}
+	}, [collectionId, onSelectRoute, providerId, providers, search]);
+
+	useEffect(() => {
+		if (
+			!(
+				requestedProviderId &&
+				requestedCollectionId &&
+				(requestedProviderId !== providerId || requestedCollectionId !== collectionId)
+			)
+		) {
+			return;
+		}
+		const next = initialGpxBrowserSearch({
+			collectionId: requestedCollectionId,
+			providerId: requestedProviderId,
+			routeId: requestedRouteId,
+		});
+		setSearchState(next);
+		persistGpxBrowserSearch(next);
+		reportedRouteId.current = undefined;
+	}, [collectionId, providerId, requestedCollectionId, requestedProviderId, requestedRouteId]);
+
+	useEffect(() => {
+		const reconciliation = reconcileGpxBrowserRoute(
 			search,
 			requestedRouteId,
 			reportedRouteId.current
@@ -617,14 +702,14 @@ export function BikeGpxBrowserDialog({
 			return;
 		}
 		setSearchState(reconciliation.search);
-		persistBikeGpxBrowserSearch(reconciliation.search);
+		persistGpxBrowserSearch(reconciliation.search);
 	}, [requestedRouteId, search]);
 	const reportSelectedRoute = useCallback(
 		(routeId: string | undefined) => {
 			reportedRouteId.current = routeId ?? null;
-			onSelectRouteId?.(routeId);
+			onSelectRoute?.({ collectionId, providerId, ...(routeId ? { routeId } : {}) });
 		},
-		[onSelectRouteId]
+		[collectionId, onSelectRoute, providerId]
 	);
 	useEffect(() => {
 		if (
@@ -637,22 +722,48 @@ export function BikeGpxBrowserDialog({
 		}
 	}, [reportSelectedRoute, requestedRouteId, selectedRoute, selectedRouteId]);
 
-	const selectRoute = (route: BikeGpxRouteSummary) => {
+	const selectRoute = (route: GpxRouteSummary) => {
 		setSearch((current) => ({ ...current, selectedRouteId: route.id }));
 		reportSelectedRoute(route.id);
 	};
 	const clearSelectedRoute = () => reportSelectedRoute(undefined);
+	const changeProvider = (nextProviderId: string) => {
+		const provider = providers.find((candidate) => candidate.id === nextProviderId);
+		const nextCollection = provider?.collections[0];
+		if (!nextCollection) {
+			return;
+		}
+		setSearch((current) => ({
+			...current,
+			collectionId: nextCollection.id,
+			group: '',
+			providerId: nextProviderId,
+			selectedRouteId: '',
+		}));
+		onSelectRoute?.({ collectionId: nextCollection.id, providerId: nextProviderId });
+	};
+	const changeCollection = (nextCollectionId: string) => {
+		setSearch((current) => ({
+			...current,
+			collectionId: nextCollectionId,
+			group: '',
+			selectedRouteId: '',
+		}));
+		onSelectRoute?.({ collectionId: nextCollectionId, providerId });
+	};
+	const catalogError = providersRequest.error || catalogRequest.error;
+	const catalogLoading = providersRequest.loading || catalogRequest.loading;
 
 	return (
 		<div className="fixed inset-0 z-50 bg-black/45 backdrop-blur-[2px]">
 			<button
-				aria-label="Dismiss BikeGPX browser"
+				aria-label="Dismiss GPX browser"
 				className="absolute inset-0 h-full w-full cursor-default"
 				onClick={onClose}
 				type="button"
 			/>
 			<section
-				aria-labelledby="bikegpx-browser-title"
+				aria-labelledby="gpx-browser-title"
 				aria-modal="true"
 				className="absolute inset-4 z-10 flex flex-col overflow-hidden rounded-2xl border border-slate-600 bg-panel shadow-2xl shadow-black/70 xl:top-6 xl:right-152 xl:bottom-6 xl:left-6"
 				role="dialog"
@@ -660,14 +771,16 @@ export function BikeGpxBrowserDialog({
 				<header className="flex items-start gap-4 border-line border-b bg-[#12171d] px-5 py-4 sm:px-6">
 					<div className="mr-auto min-w-0">
 						<div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-							<h2 className="font-bold text-xl" id="bikegpx-browser-title">
+							<h2 className="font-bold text-xl" id="gpx-browser-title">
 								<a
 									className="underline decoration-cyan-400/50 underline-offset-4 transition hover:text-cyan-300 hover:decoration-cyan-300"
-									href={BIKEGPX_ROUTES_URL}
+									href={
+										selectedCollection?.sourceUrl ?? selectedProvider?.sourceUrl
+									}
 									rel="noreferrer"
 									target="_blank"
 								>
-									Browse BikeGPX routes
+									Browse {selectedCollection?.name ?? 'GPX routes'}
 								</a>
 							</h2>
 							{catalog ? (
@@ -676,14 +789,52 @@ export function BikeGpxBrowserDialog({
 								</span>
 							) : null}
 						</div>
-						<p className="mt-1 text-slate-400 text-xs leading-relaxed">
-							Search thousands of public routes, preview the complete course, then
-							import it directly into Ride Control. Thanks to BikeGPX for making this
-							public route data available.
-						</p>
+						<div className="mt-2 flex flex-wrap items-center gap-2">
+							<label className="sr-only" htmlFor="gpx-provider">
+								Route provider
+							</label>
+							<select
+								className="h-8 rounded-lg border border-line bg-[#0e141a] px-2 text-slate-200 text-xs outline-none focus:border-cyan-400/70"
+								id="gpx-provider"
+								onChange={(event) => changeProvider(event.currentTarget.value)}
+								value={providerId}
+							>
+								{providers.map((provider) => (
+									<option key={provider.id} value={provider.id}>
+										{provider.name}
+									</option>
+								))}
+							</select>
+							<label className="sr-only" htmlFor="gpx-collection">
+								Route collection
+							</label>
+							<select
+								className="h-8 rounded-lg border border-line bg-[#0e141a] px-2 text-slate-200 text-xs outline-none focus:border-cyan-400/70"
+								id="gpx-collection"
+								onChange={(event) => changeCollection(event.currentTarget.value)}
+								value={collectionId}
+							>
+								{selectedProvider?.collections.map((collection) => {
+									const routeCount =
+										catalog?.provider.id === collection.providerId &&
+										catalog.collection.id === collection.id
+											? catalog.routes.length
+											: collection.routeCount;
+									return (
+										<option key={collection.id} value={collection.id}>
+											{collection.name} ({routeCount.toLocaleString()})
+										</option>
+									);
+								})}
+							</select>
+							<p className="text-slate-500 text-xs">
+								{selectedCollection?.description ??
+									'Choose a provider and route collection.'}
+							</p>
+						</div>
 					</div>
 					<button
-						aria-label="Close BikeGPX browser"
+						aria-label="Close GPX browser"
 						className="grid h-9 w-9 shrink-0 place-items-center rounded-lg text-slate-400 hover:bg-slate-700 hover:text-white"
 						onClick={onClose}
 						ref={closeButtonRef}
@@ -698,23 +849,23 @@ export function BikeGpxBrowserDialog({
 						catalog={catalog}
 						catalogError={catalogError}
 						catalogLoading={catalogLoading}
-						countries={countries}
-						country={country}
 						difficulty={difficulty}
+						group={group}
+						groups={groups}
 						maximumDistance={maximumDistance}
 						minimumDistance={minimumDistance}
-						onCountryChange={(nextCountry) => {
-							setSearch((current) => ({
-								...current,
-								country: nextCountry,
-								selectedRouteId: '',
-							}));
-							clearSelectedRoute();
-						}}
 						onDifficultyChange={(nextDifficulty) => {
 							setSearch((current) => ({
 								...current,
 								difficulty: nextDifficulty,
+								selectedRouteId: '',
+							}));
+							clearSelectedRoute();
+						}}
+						onGroupChange={(nextGroup) => {
+							setSearch((current) => ({
+								...current,
+								group: nextGroup,
 								selectedRouteId: '',
 							}));
 							clearSelectedRoute();
@@ -743,10 +894,14 @@ export function BikeGpxBrowserDialog({
 							}));
 							clearSelectedRoute();
 						}}
-						onRefreshCatalog={onRefreshCatalog}
+						onRefreshCatalog={catalogRequest.refresh}
 						onSelectRoute={selectRoute}
 						query={query}
 						routes={filteredRoutes}
+						scrollStorageKey={gpxRouteListScrollPositionStorageKey(
+							providerId,
+							collectionId
+						)}
 						selectedRouteId={selectedRoute ? selectedRoute.id : ''}
 						speedUnit={speedUnit}
 					/>

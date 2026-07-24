@@ -5,9 +5,12 @@ import { sessionCalendarMonthKeySchema } from './session-calendar';
 import { type SessionHistoryView, sessionHistoryViewSchema } from './session-history-view';
 
 export const APP_ROUTE_PATH = {
-	BIKEGPX: '/bikegpx',
-	BIKEGPX_ROUTE: '/bikegpx/$routeId',
+	BIKEGPX_LEGACY: '/bikegpx',
+	BIKEGPX_ROUTE_LEGACY: '/bikegpx/$routeId',
 	DEVICES: '/devices',
+	GPX: '/gpx',
+	GPX_COLLECTION: '/gpx/$providerId/$collectionId',
+	GPX_ROUTE: '/gpx/$providerId/$collectionId/$routeId',
 	HOME: '/',
 	PROFILE: '/profile',
 	SESSION: '/sessions/$sessionId',
@@ -17,8 +20,8 @@ export const APP_ROUTE_PATH = {
 } as const;
 
 export const APP_ROUTE_KIND = {
-	BIKEGPX: 'bikegpx',
 	DEVICES: 'devices',
+	GPX: 'gpx',
 	HOME: 'home',
 	PROFILE: 'profile',
 	SESSION: 'session',
@@ -26,8 +29,13 @@ export const APP_ROUTE_KIND = {
 } as const;
 
 export type AppRoute =
-	| { kind: typeof APP_ROUTE_KIND.BIKEGPX; routeId?: string }
 	| { kind: typeof APP_ROUTE_KIND.DEVICES }
+	| {
+			collectionId?: string;
+			kind: typeof APP_ROUTE_KIND.GPX;
+			providerId?: string;
+			routeId?: string;
+	  }
 	| { kind: typeof APP_ROUTE_KIND.HOME }
 	| { kind: typeof APP_ROUTE_KIND.PROFILE; profileTab?: ProfileTab }
 	| {
@@ -74,12 +82,40 @@ export function appRouteFromRouterMatch(
 		| undefined
 ): AppRoute {
 	switch (match?.routeId) {
-		case APP_ROUTE_PATH.BIKEGPX_ROUTE:
+		case APP_ROUTE_PATH.GPX_ROUTE:
+			return match.params.providerId && match.params.collectionId && match.params.routeId
+				? {
+						collectionId: match.params.collectionId,
+						kind: APP_ROUTE_KIND.GPX,
+						providerId: match.params.providerId,
+						routeId: match.params.routeId,
+					}
+				: { kind: APP_ROUTE_KIND.GPX };
+		case APP_ROUTE_PATH.GPX_COLLECTION:
+			return match.params.providerId && match.params.collectionId
+				? {
+						collectionId: match.params.collectionId,
+						kind: APP_ROUTE_KIND.GPX,
+						providerId: match.params.providerId,
+					}
+				: { kind: APP_ROUTE_KIND.GPX };
+		case APP_ROUTE_PATH.GPX:
+			return { kind: APP_ROUTE_KIND.GPX };
+		case APP_ROUTE_PATH.BIKEGPX_ROUTE_LEGACY:
 			return match.params.routeId
-				? { kind: APP_ROUTE_KIND.BIKEGPX, routeId: match.params.routeId }
-				: { kind: APP_ROUTE_KIND.BIKEGPX };
-		case APP_ROUTE_PATH.BIKEGPX:
-			return { kind: APP_ROUTE_KIND.BIKEGPX };
+				? {
+						collectionId: 'public-routes',
+						kind: APP_ROUTE_KIND.GPX,
+						providerId: 'bikegpx',
+						routeId: match.params.routeId,
+					}
+				: { kind: APP_ROUTE_KIND.GPX };
+		case APP_ROUTE_PATH.BIKEGPX_LEGACY:
+			return {
+				collectionId: 'public-routes',
+				kind: APP_ROUTE_KIND.GPX,
+				providerId: 'bikegpx',
+			};
 		case APP_ROUTE_PATH.DEVICES:
 			return { kind: APP_ROUTE_KIND.DEVICES };
 		case APP_ROUTE_PATH.PROFILE:
@@ -101,7 +137,7 @@ export function appRouteFromRouterMatch(
 
 export function appRouteSideTray(route: AppRoute): SideTrayOverlay | undefined {
 	switch (route.kind) {
-		case APP_ROUTE_KIND.BIKEGPX:
+		case APP_ROUTE_KIND.GPX:
 		case APP_ROUTE_KIND.WORKOUT:
 			return APP_OVERLAY.WORKOUTS;
 		case APP_ROUTE_KIND.DEVICES:
