@@ -68,26 +68,26 @@ export function WelcomeDialog({
 					</button>
 				</div>
 
-				<p className="mt-4 text-slate-300 text-sm leading-6" id="welcome-description">
-					Pair your trainer, heart rate monitor, and Zwift Click over Bluetooth, then
-					adjust resistance or shift virtual gears while keeping detailed records of every
-					ride—all from your browser.
-				</p>
 				{testedChromeBrowser ? null : (
-					<p className="mt-3 rounded-xl border border-amber-300/35 bg-amber-300/10 px-3.5 py-3 text-amber-100 text-sm leading-6">
-						Ride Control is only tested with Google Chrome and likely only works
-						correctly in Chrome.{' '}
+					<p className="mt-4 rounded-xl border border-amber-300/35 bg-amber-300/10 px-3.5 py-3 text-amber-100 text-sm leading-6">
+						Ride Control is only tested with Google Chrome and may not work correctly in
+						other browsers.{' '}
 						<a
 							className="font-bold text-amber-100 underline decoration-amber-200/50 underline-offset-2 hover:decoration-amber-100"
 							href="https://www.google.com/chrome/"
 							rel="noreferrer"
 							target="_blank"
 						>
-							Download Chrome
+							Download it
 						</a>
 						.
 					</p>
 				)}
+				<p className="mt-4 text-slate-300 text-sm leading-6" id="welcome-description">
+					Pair your trainer, heart rate monitor, and Zwift Click over Bluetooth, then
+					adjust resistance or shift virtual gears while keeping detailed records of every
+					ride—all from your browser.
+				</p>
 				<p className="mt-3 text-slate-400 text-sm leading-6">
 					Ride Control is a freely available, open-source GPLv3 application. View the{' '}
 					<a
@@ -102,8 +102,8 @@ export function WelcomeDialog({
 				</p>
 				<p className="mt-2 text-slate-400 text-sm leading-6">
 					Everything runs locally, and all ride data stays in your browser. We don't
-					upload it anywhere, although we may add an opt-in feature in the future that
-					would only upload data with your permission.
+					upload it anywhere. In the future, we plan to offer optional paid premium
+					features for storing and synchronizing your data in the cloud.
 				</p>
 				<p className="mt-2 text-slate-400 text-sm leading-6">
 					From the history, you can download your rides as Strava-compatible FIT files or

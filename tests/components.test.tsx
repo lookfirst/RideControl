@@ -138,7 +138,10 @@ describe('view components', () => {
 		expect(html).toContain('bg-yellow-400');
 		expect(html).toContain('<title>bolt</title>');
 		expect(html.match(/>W<\/span>/g)).toHaveLength(1);
+		expect(html).toContain('>AVG</span>');
+		expect(html).not.toContain('>AVERAGE</span>');
 		expect(html).toContain('MAX</strong>300');
+		expect(html).toContain('pr-1 text-right text-slate-400');
 		const averageOnly = render(
 			<SessionMetric
 				accent="mint"
@@ -763,14 +766,13 @@ describe('view components', () => {
 		expect(selectedPanel).not.toContain('Ride without a workout');
 
 		const terrain = workoutTerrainAtDistance(course, course.distance * 2 + 2);
-		const shiftedWorkoutResistance = 42.4;
 		const progress = render(
 			<WorkoutProgress
 				elevationTotals={{ ascent: 30, descent: 12 }}
 				isRiding
 				speedUnit="mph"
-				targetResistance={shiftedWorkoutResistance}
 				terrain={terrain}
+				variant="session"
 				workout={{ course }}
 			/>
 		);
@@ -792,13 +794,15 @@ describe('view components', () => {
 		expect(progress).toContain('Grade');
 		expect(progress).toContain(formatGrade(terrain.grade));
 		expect(progress).toContain('style="color:#e879f9"');
-		expect(progress).toContain('Resistance');
-		expect(progress).toContain(`${Math.round(shiftedWorkoutResistance)}%`);
-		expect(progress).toContain('style="color:#2dd4bf"');
-		expect(progress).not.toContain(`${terrain.resistance}%`);
-		expect(progress.match(/sm:text-4xl/g)).toHaveLength(3);
-		expect(progress.match(/sm:text-2xl/g)).toHaveLength(3);
-		expect(progress).toContain('sm:text-lg');
+		expect(progress).not.toContain('Resistance');
+		expect(progress).not.toContain('style="color:#2dd4bf"');
+		expect(progress).not.toContain('sm:text-4xl');
+		expect(progress.match(/sm:text-2xl/g)).toHaveLength(5);
+		expect(progress.match(/min-h-6 items-start justify-between/g)).toHaveLength(2);
+		expect(progress.match(/mt-3 min-h-16/g)).toHaveLength(2);
+		expect(progress).toContain('grid-cols-2');
+		expect(progress).toContain('grid-cols-3');
+		expect(progress.match(/text-\[9px\]/g)).toHaveLength(6);
 		expect(progress.match(/px-4 pt-4 pb-2 sm:px-5 sm:pt-5/g)).toHaveLength(2);
 		expect(progress.match(/mt-1 h-36/g)).toHaveLength(2);
 		expect(progress).toContain('Ridden this lap');
@@ -808,6 +812,26 @@ describe('view components', () => {
 		expect(progress.match(/data-route-progress="true"/g)).toHaveLength(2);
 		expect(progress).not.toContain('stroke-dasharray');
 		expect(progress).not.toContain('Terrain resistance');
+		const dashboardProgress = render(
+			<WorkoutProgress
+				elevationTotals={{ ascent: 30, descent: 12 }}
+				isRiding
+				speedUnit="mph"
+				targetResistance={42.4}
+				terrain={terrain}
+				workout={{ course }}
+			/>
+		);
+		expect(dashboardProgress).toContain('Resistance');
+		expect(dashboardProgress).toContain('42%');
+		expect(dashboardProgress).toContain('style="color:#2dd4bf"');
+		expect(dashboardProgress.match(/sm:text-4xl/g)).toHaveLength(3);
+		expect(dashboardProgress.match(/grid grid-cols-3 gap-5/g)).toHaveLength(2);
+		expect(dashboardProgress).not.toContain('grid w-full gap-2');
+		expect(dashboardProgress).not.toContain('min-h-6 items-start justify-between');
+		expect(dashboardProgress).toContain(
+			'flex min-h-14 flex-wrap items-start justify-between gap-3'
+		);
 		const metricProgress = render(
 			<WorkoutProgress
 				elevationTotals={{ ascent: 30, descent: 12 }}
@@ -994,6 +1018,9 @@ describe('view components', () => {
 		expect(html).toContain('Effective July 23, 2026');
 		expect(html).toContain('Ride Control does not create an account');
 		expect(html).toContain('does not use advertising or behavioral analytics cookies');
+		expect(html).toContain('Future premium cloud storage');
+		expect(html).toContain('optional paid premium features');
+		expect(html).toContain('We will expand this policy before they launch');
 		expect(html).toContain('href="mailto:hello@ridecontrol.xyz"');
 		expect(html).toContain('aria-label="Close privacy policy"');
 	});
@@ -1011,6 +1038,9 @@ describe('view components', () => {
 		expect(html).toContain('href="https://github.com/RideControlOrg/RideControl"');
 		expect(html).toContain('The backend component is closed source');
 		expect(html).toContain('optional paid additions');
+		expect(html).toContain('Future premium services');
+		expect(html).toContain('storing and synchronizing your data in the cloud');
+		expect(html).toContain('We will expand these terms before they launch');
 		expect(html).toContain('aria-label="Close terms of service"');
 	});
 
@@ -1301,17 +1331,22 @@ describe('view components', () => {
 		expect(html).toContain('href="https://github.com/RideControlOrg/RideControl"');
 		expect(html).toContain('all ride data stays in your browser');
 		expect(html).toContain('We don&#x27;t upload it anywhere');
-		expect(html).toContain('would only upload data with your permission');
+		expect(html).toContain('optional paid premium');
+		expect(html).toContain('storing and synchronizing your data in the cloud');
 		expect(html).toContain(
 			'From the history, you can download your rides as Strava-compatible FIT files'
 		);
 		expect(html).toContain('only tested with Google Chrome');
-		expect(html).toContain('likely only works correctly in Chrome');
+		expect(html).toContain('may not work correctly in');
+		expect(html.match(/Chrome/g)).toHaveLength(1);
 		expect(html).toContain('href="https://www.google.com/chrome/"');
-		expect(html).toContain('>Download Chrome</a>');
+		expect(html).toContain('>Download it</a>');
+		expect(html.indexOf('only tested with Google Chrome')).toBeLessThan(
+			html.indexOf('Pair your trainer')
+		);
 		expect(
 			render(<WelcomeDialog onClose={() => undefined} open testedChromeBrowser />)
-		).not.toContain('Download Chrome');
+		).not.toContain('Download it');
 	});
 
 	test('renders the keyboard controls reference', () => {
@@ -1381,7 +1416,9 @@ describe('view components', () => {
 		expect(html).toContain('pointer-events-none relative h-full w-12 shrink-0');
 		expect(html).toContain('h-full min-w-0 flex-1 overflow-hidden');
 		expect(html).toContain('class="block h-full w-full"');
-		expect(html).toContain('scrollbar-hidden flex w-full gap-1 overflow-x-auto');
+		expect(html).toContain(
+			'scrollbar-hidden flex w-full gap-1 overflow-x-auto rounded-lg bg-[#0d1217]'
+		);
 		expect(html).toContain('min-w-max flex-1');
 		expect(html).toContain('h-1.5 w-1.5 shrink-0 rounded-full');
 		expect(html).toContain('text-[11px] transition sm:text-[13px]');
@@ -1446,8 +1483,13 @@ describe('view components', () => {
 				]}
 				route={course.points}
 				speedUnit="kmh"
+				variant="session"
 			/>
 		);
+		expect(html).toContain('grid w-full gap-1 rounded-lg bg-[#0d1217]');
+		expect(html).toContain('grid-template-columns:repeat(8, minmax(0, 1fr))');
+		expect(html).toContain('min-w-0 w-full');
+		expect(html).toContain('text-[9px] transition sm:text-[11px] xl:text-[13px]');
 		expect(html).toContain('Elevation over time');
 		expect(html).toContain('Elevation</button>');
 		expect(html).toContain('28 m');
@@ -1929,6 +1971,29 @@ describe('view components', () => {
 			)
 		);
 		expect(html).toContain('11:00pm – 1:00am');
+		expect(html).toContain('data-session-date-time="true"');
+		expect(html).toContain('font-bold text-base text-mint tracking-widest');
+		expect(html).toContain('whitespace-nowrap font-bold text-base tabular-nums');
+	});
+
+	test('orders recorded totals, ride metrics, and the saved route map', () => {
+		const [course] = WORKOUT_COURSES;
+		if (!course) {
+			throw new Error('Expected a built-in workout course');
+		}
+		const html = render(
+			<SessionDetail
+				session={{
+					...savedSessionFixture,
+					workout: { course },
+				}}
+				speedUnit="mph"
+			/>
+		);
+		expect(html).toContain('Course map');
+		expect(html).toContain('RECORDED');
+		expect(html.indexOf('RECORDED')).toBeLessThan(html.indexOf('POWER'));
+		expect(html.indexOf('POWER')).toBeLessThan(html.indexOf('Course map'));
 	});
 
 	test('styles an unrecorded feeling like the comments value', () => {
@@ -1961,6 +2026,10 @@ describe('view components', () => {
 		expect(html).toContain('Start new session');
 		expect(html).toContain('Download TCX');
 		expect(html).toContain('Download FIT');
+		expect(html).toContain('data-session-file-downloads="true"');
+		expect(html).toContain('data-session-actions="true"');
+		expect(html).toContain('gap-x-4 gap-y-2 border-line border-t pt-4');
+		expect(html).toContain('ml-auto flex flex-wrap justify-end gap-2');
 		expect(html).toContain('No recorded samples to export');
 		expect(html).toContain('role="alertdialog"');
 		expect(html).not.toContain('until');
@@ -1969,13 +2038,14 @@ describe('view components', () => {
 		);
 	});
 
-	test('shows gear instead of resistance in a virtual shifting session summary', () => {
+	test('shows both gear and applied resistance in a virtual shifting session summary', () => {
 		const html = render(
 			<SessionDetail
 				session={{
 					aggregates: {
 						...emptySession.aggregates,
 						gear: { count: 2, maximum: 14, sum: 27 },
+						resistance: { count: 2, maximum: 42, sum: 80 },
 					},
 					calories: 0,
 					comments: '',
@@ -1994,6 +2064,8 @@ describe('view components', () => {
 		);
 		expect(html).toContain('GEAR');
 		expect(html).toContain('MAX</strong>14');
-		expect(html).not.toContain('RESISTANCE');
+		expect(html).toContain('RESISTANCE');
+		expect(html).toContain('MAX</strong>42');
+		expect(html).toContain('xl:grid-cols-5');
 	});
 });
