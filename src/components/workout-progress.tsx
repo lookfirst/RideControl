@@ -12,10 +12,14 @@ interface WorkoutStat {
 	color?: string;
 	label: string;
 	value: string;
+	valueClassName?: string;
 }
 
 const WORKOUT_MAP_PANEL_CLASS = 'bg-[#12171d] px-4 pt-4 pb-2 sm:px-5 sm:pt-5';
 const WORKOUT_MAP_VISUALIZATION_CLASS = 'mt-1 h-36';
+const WORKOUT_PANEL_HEADER_CLASS = 'flex min-h-6 items-start justify-between gap-3';
+const WORKOUT_PANEL_TITLE_CLASS =
+	'shrink-0 font-bold text-[10px] text-slate-500 uppercase tracking-[.14em]';
 
 function workoutCompletionLabels(routeType: WorkoutRouteType): {
 	completed: string;
@@ -35,26 +39,32 @@ function workoutCompletionLabels(routeType: WorkoutRouteType): {
 }
 
 function WorkoutStats({
+	compact = false,
 	highlighted = false,
 	stats,
 }: {
+	compact?: boolean;
 	highlighted?: boolean;
 	stats: WorkoutStat[];
 }) {
+	const columnClass = stats.length === 2 ? 'grid-cols-2' : 'grid-cols-3';
 	const labelSize = highlighted ? 'text-[10px]' : 'text-[9px]';
 	const valueSize = highlighted ? 'text-3xl sm:text-4xl' : 'text-xl sm:text-2xl';
 	const defaultValueColor = highlighted ? 'text-mint' : 'text-white';
+	const gridClassName = compact
+		? `grid w-full gap-2 text-center tabular-nums lg:gap-5 ${columnClass}`
+		: 'grid grid-cols-3 gap-5 text-center tabular-nums';
 	return (
-		<div className="grid grid-cols-3 gap-5 text-center tabular-nums">
+		<div className={gridClassName}>
 			{stats.map((stat) => (
-				<div key={stat.label}>
+				<div className={compact ? 'min-w-0' : undefined} key={stat.label}>
 					<p
-						className={`font-bold text-slate-500 uppercase tracking-widest ${labelSize}`}
+						className={`whitespace-nowrap font-bold text-slate-500 uppercase ${compact ? 'tracking-[.14em]' : 'tracking-widest'} ${labelSize}`}
 					>
 						{stat.label}
 					</p>
 					<p
-						className={`mt-1 whitespace-nowrap font-bold leading-none ${valueSize} ${stat.color ? '' : defaultValueColor}`}
+						className={`mt-1 whitespace-nowrap font-bold leading-none ${valueSize} ${stat.color ? '' : (stat.valueClassName ?? defaultValueColor)}`}
 						style={{ color: stat.color }}
 					>
 						{stat.value}
@@ -68,9 +78,10 @@ function WorkoutStats({
 export function WorkoutProgress({
 	elevationTotals,
 	isRiding,
-	targetResistance,
 	speedUnit,
+	targetResistance,
 	terrain,
+	variant = 'dashboard',
 	workout,
 }: {
 	elevationTotals: ElevationTotals;
@@ -78,9 +89,11 @@ export function WorkoutProgress({
 	speedUnit: SpeedUnit;
 	targetResistance?: number;
 	terrain: WorkoutTerrain;
+	variant?: 'dashboard' | 'session';
 	workout: SessionWorkout;
 }) {
 	const { course } = workout;
+	const sessionSummary = variant === 'session';
 	const completion = workoutCompletionLabels(course.routeType);
 	const elevationStats = [
 		{ label: 'Course climb', value: formatElevation(course.elevationGain, speedUnit) },
@@ -88,17 +101,25 @@ export function WorkoutProgress({
 		{ label: 'Downhill', value: formatElevation(elevationTotals.descent, speedUnit) },
 	];
 	const mapStats = [
-		{ label: 'Progress', value: `${Math.round(terrain.progress * 100)}%` },
+		{
+			label: 'Progress',
+			value: `${Math.round(terrain.progress * 100)}%`,
+			valueClassName: 'text-mint',
+		},
 		{
 			color: GRADE_METRIC_PRESENTATION.chartColor,
 			label: 'Grade',
 			value: formatGrade(terrain.grade),
 		},
-		{
-			color: RESISTANCE_METRIC_PRESENTATION.chartColor,
-			label: 'Resistance',
-			value: `${Math.round(targetResistance ?? terrain.resistance)}%`,
-		},
+		...(sessionSummary
+			? []
+			: [
+					{
+						color: RESISTANCE_METRIC_PRESENTATION.chartColor,
+						label: 'Resistance',
+						value: `${Math.round(targetResistance ?? terrain.resistance)}%`,
+					},
+				]),
 	];
 	return (
 		<section className="mt-6 overflow-hidden rounded-2xl border border-mint/20 bg-panel">
@@ -124,21 +145,39 @@ export function WorkoutProgress({
 			</header>
 			<div className="grid gap-px bg-line md:grid-cols-2">
 				<div className={WORKOUT_MAP_PANEL_CLASS}>
-					<div className="flex flex-wrap items-start justify-between gap-3">
-						<div>
-							<h3 className="font-bold text-[10px] text-slate-500 uppercase tracking-[.14em]">
-								Course map
-							</h3>
-							<p className="mt-1 whitespace-nowrap font-semibold text-base text-slate-300 tabular-nums sm:text-lg">
-								{formatDistanceProgress(
-									terrain.distance,
-									course.distance,
-									speedUnit
-								)}
-							</p>
+					{sessionSummary ? (
+						<>
+							<div className={WORKOUT_PANEL_HEADER_CLASS}>
+								<h3 className={WORKOUT_PANEL_TITLE_CLASS}>Course map</h3>
+								<p className="whitespace-nowrap font-semibold text-base text-slate-300 tabular-nums">
+									{formatDistanceProgress(
+										terrain.distance,
+										course.distance,
+										speedUnit
+									)}
+								</p>
+							</div>
+							<div className="mt-3 min-h-16">
+								<WorkoutStats compact stats={mapStats} />
+							</div>
+						</>
+					) : (
+						<div className="flex flex-wrap items-start justify-between gap-3">
+							<div>
+								<h3 className="font-bold text-[10px] text-slate-500 uppercase tracking-[.14em]">
+									Course map
+								</h3>
+								<p className="mt-1 whitespace-nowrap font-semibold text-base text-slate-300 tabular-nums sm:text-lg">
+									{formatDistanceProgress(
+										terrain.distance,
+										course.distance,
+										speedUnit
+									)}
+								</p>
+							</div>
+							<WorkoutStats highlighted stats={mapStats} />
 						</div>
-						<WorkoutStats highlighted stats={mapStats} />
-					</div>
+					)}
 					<WorkoutRouteVisualization
 						className={WORKOUT_MAP_VISUALIZATION_CLASS}
 						course={course}
@@ -148,12 +187,23 @@ export function WorkoutProgress({
 					/>
 				</div>
 				<div className={WORKOUT_MAP_PANEL_CLASS}>
-					<div className="flex flex-wrap items-start justify-between gap-3">
-						<h3 className="font-bold text-[10px] text-slate-500 uppercase tracking-[.14em]">
-							Elevation profile
-						</h3>
-						<WorkoutStats stats={elevationStats} />
-					</div>
+					{sessionSummary ? (
+						<>
+							<div className={WORKOUT_PANEL_HEADER_CLASS}>
+								<h3 className={WORKOUT_PANEL_TITLE_CLASS}>Elevation profile</h3>
+							</div>
+							<div className="mt-3 min-h-16">
+								<WorkoutStats compact stats={elevationStats} />
+							</div>
+						</>
+					) : (
+						<div className="flex min-h-14 flex-wrap items-start justify-between gap-3">
+							<h3 className="font-bold text-[10px] text-slate-500 uppercase tracking-[.14em]">
+								Elevation profile
+							</h3>
+							<WorkoutStats stats={elevationStats} />
+						</div>
+					)}
 					<WorkoutRouteVisualization
 						className={WORKOUT_MAP_VISUALIZATION_CLASS}
 						course={course}

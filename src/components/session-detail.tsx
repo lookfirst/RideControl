@@ -4,7 +4,6 @@ import { usePersistentScrollPosition } from '../hooks/use-persistent-scroll-posi
 import { CONTROL_MODE } from '../lib/control-mode';
 import { downloadSessionFit } from '../lib/fit';
 import { aggregateMaximum, formatAggregateAverage, formatWholeNumber } from '../lib/format';
-import { resistanceForVirtualGear } from '../lib/gears';
 import { METRIC_PRESENTATION, STANDARD_METRIC_KEYS } from '../lib/metric-presentation';
 import {
 	feelingLabel,
@@ -116,28 +115,28 @@ export function SessionDetail({
 	const workoutTerrain = session.workout
 		? workoutTerrainAtDistance(session.workout.course, session.distance)
 		: undefined;
-	const finalGear = session.history.findLast((sample) => sample.gear !== undefined)?.gear;
-	const workoutResistance =
-		workoutTerrain && finalGear !== undefined
-			? resistanceForVirtualGear(workoutTerrain.resistance, finalGear)
-			: undefined;
-	const controlMetric = usesGear
-		? {
-				accent: 'mint',
-				average: formatAggregateAverage(session.aggregates.gear, 0),
-				icon: 'controls',
-				label: 'GEAR',
-				maximum: formatWholeNumber(aggregateMaximum(session.aggregates.gear)),
-				unit: '',
-			}
-		: {
-				accent: 'mint',
-				average: formatAggregateAverage(session.aggregates.resistance, 0),
-				icon: 'resistance',
-				label: 'RESISTANCE',
-				maximum: formatWholeNumber(aggregateMaximum(session.aggregates.resistance)),
-				unit: '%',
-			};
+	const controlMetrics = [
+		...(usesGear
+			? [
+					{
+						accent: 'mint',
+						average: formatAggregateAverage(session.aggregates.gear, 0),
+						icon: 'controls',
+						label: 'GEAR',
+						maximum: formatWholeNumber(aggregateMaximum(session.aggregates.gear)),
+						unit: '',
+					},
+				]
+			: []),
+		{
+			accent: 'mint',
+			average: formatAggregateAverage(session.aggregates.resistance, 0),
+			icon: 'resistance',
+			label: 'RESISTANCE',
+			maximum: formatWholeNumber(aggregateMaximum(session.aggregates.resistance)),
+			unit: '%',
+		},
+	];
 	const standardMetrics = STANDARD_METRIC_KEYS.map((key) => {
 		const presentation = METRIC_PRESENTATION[key];
 		return {
@@ -157,10 +156,13 @@ export function SessionDetail({
 			onScroll={detailScroll.onScroll}
 			ref={detailScroll.ref}
 		>
-			<div className="relative flex items-start justify-between gap-4">
-				<div>
+			<div className="relative">
+				<div
+					className="flex flex-wrap items-center justify-between gap-x-6 gap-y-2"
+					data-session-date-time="true"
+				>
 					<div className="flex items-center gap-2">
-						<p className="font-bold text-[11px] text-mint tracking-[.14em]">
+						<p className="font-bold text-base text-mint tracking-widest">
 							{formatSessionDateRange(session)}
 						</p>
 						{imported ? (
@@ -172,52 +174,63 @@ export function SessionDetail({
 							</span>
 						) : null}
 					</div>
-					<h3 className="mt-1 font-bold text-2xl">{formatSessionTimeRange(session)}</h3>
+					<h3 className="whitespace-nowrap font-bold text-base tabular-nums">
+						{formatSessionTimeRange(session)}
+					</h3>
 				</div>
-				<div className="flex shrink-0 items-center gap-2">
-					<button
-						className="rounded-lg border border-slate-500/40 px-3 py-2 font-semibold text-slate-300 text-xs transition hover:border-slate-400 hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
-						disabled={session.history.length === 0}
-						onClick={() => downloadSessionFit(session)}
-						title={
-							session.history.length === 0
-								? 'No recorded samples to export'
-								: 'Download a FIT activity for Strava and other bike services'
-						}
-						type="button"
-					>
-						Download FIT
-					</button>
-					<button
-						className="rounded-lg border border-slate-500/40 px-3 py-2 font-semibold text-slate-300 text-xs transition hover:border-slate-400 hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
-						disabled={session.history.length === 0}
-						onClick={() => downloadSessionTcx(session)}
-						title={
-							session.history.length === 0
-								? 'No recorded samples to export'
-								: 'Download a TCX file for Strava and other bike services'
-						}
-						type="button"
-					>
-						Download TCX
-					</button>
-					{onStartNew ? (
+				<div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-2 border-line border-t pt-4">
+					<div className="flex flex-wrap gap-2" data-session-file-downloads="true">
 						<button
-							className="rounded-lg border border-mint/30 px-3 py-2 font-semibold text-mint text-xs transition hover:border-mint/60 hover:bg-mint/5"
-							onClick={onStartNew}
+							className="rounded-lg border border-slate-500/40 px-3 py-2 font-semibold text-slate-300 text-xs transition hover:border-slate-400 hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
+							disabled={session.history.length === 0}
+							onClick={() => downloadSessionFit(session)}
+							title={
+								session.history.length === 0
+									? 'No recorded samples to export'
+									: 'Download a FIT activity for Strava and other bike services'
+							}
 							type="button"
 						>
-							Start new session
+							Download FIT
 						</button>
-					) : null}
-					{onDelete ? (
 						<button
-							className="rounded-lg border border-rose-400/30 px-3 py-2 font-semibold text-rose-300 text-xs transition hover:border-rose-400/60 hover:bg-rose-400/5"
-							onClick={onDelete}
+							className="rounded-lg border border-slate-500/40 px-3 py-2 font-semibold text-slate-300 text-xs transition hover:border-slate-400 hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
+							disabled={session.history.length === 0}
+							onClick={() => downloadSessionTcx(session)}
+							title={
+								session.history.length === 0
+									? 'No recorded samples to export'
+									: 'Download a TCX file for Strava and other bike services'
+							}
 							type="button"
 						>
-							Delete session
+							Download TCX
 						</button>
+					</div>
+					{onStartNew || onDelete ? (
+						<div
+							className="ml-auto flex flex-wrap justify-end gap-2"
+							data-session-actions="true"
+						>
+							{onStartNew ? (
+								<button
+									className="rounded-lg border border-mint/30 px-3 py-2 font-semibold text-mint text-xs transition hover:border-mint/60 hover:bg-mint/5"
+									onClick={onStartNew}
+									type="button"
+								>
+									Start new session
+								</button>
+							) : null}
+							{onDelete ? (
+								<button
+									className="rounded-lg border border-rose-400/30 px-3 py-2 font-semibold text-rose-300 text-xs transition hover:border-rose-400/60 hover:bg-rose-400/5"
+									onClick={onDelete}
+									type="button"
+								>
+									Delete session
+								</button>
+							) : null}
+						</div>
 					) : null}
 				</div>
 				{onCancelDelete && onConfirmDelete ? (
@@ -238,21 +251,21 @@ export function SessionDetail({
 					timeLabel="RECORDED"
 				/>
 			</div>
+			<div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+				{[...standardMetrics, ...controlMetrics].map((metric) => (
+					<SessionMetric key={metric.label} {...metric} />
+				))}
+			</div>
 			{session.workout && workoutTerrain ? (
 				<WorkoutProgress
 					elevationTotals={session.elevationTotals}
 					isRiding={false}
 					speedUnit={speedUnit}
-					targetResistance={workoutResistance}
 					terrain={workoutTerrain}
+					variant="session"
 					workout={session.workout}
 				/>
 			) : null}
-			<div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-				{[...standardMetrics, controlMetric].map((metric) => (
-					<SessionMetric key={metric.label} {...metric} />
-				))}
-			</div>
 			<div className="mt-5 grid gap-4 sm:grid-cols-[.35fr_.65fr]">
 				<div className="rounded-xl border border-line bg-[#12171d] p-4">
 					<p className="font-bold text-[10px] text-slate-500 tracking-[.12em]">FELT</p>
@@ -277,6 +290,7 @@ export function SessionDetail({
 				route={session.workout ? session.workout.course.points : EMPTY_ROUTE}
 				selectedChartMode={selectedChartMode}
 				speedUnit={speedUnit}
+				variant="session"
 			/>
 		</div>
 	);

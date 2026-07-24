@@ -113,6 +113,7 @@ export function SessionChart({
 	route,
 	selectedChartMode,
 	speedUnit,
+	variant = 'dashboard',
 }: {
 	controlMode?: ControlMode;
 	history: MetricSample[];
@@ -121,6 +122,7 @@ export function SessionChart({
 	route: readonly RoutePoint[];
 	selectedChartMode?: ChartMode;
 	speedUnit: SpeedUnit;
+	variant?: 'dashboard' | 'session';
 }) {
 	const preferredChartMode = useSelector(
 		preferencesStore,
@@ -265,6 +267,13 @@ export function SessionChart({
 	const historyStart = chartHistory.at(0)?.elapsedSeconds ?? 0;
 	const historySeconds =
 		chartHistory.length > 1 ? (chartHistory.at(-1)?.elapsedSeconds ?? 0) - historyStart : 0;
+	const sessionControls = variant === 'session';
+	const controlsClassName = sessionControls
+		? 'grid w-full gap-1 rounded-lg bg-[#0d1217] p-1'
+		: 'scrollbar-hidden flex w-full gap-1 overflow-x-auto rounded-lg bg-[#0d1217] p-1';
+	const controlClassName = sessionControls
+		? 'inline-flex min-w-0 w-full items-center justify-center gap-1 whitespace-nowrap rounded-md px-1 py-2 font-semibold text-[9px] transition sm:text-[11px] xl:text-[13px]'
+		: 'inline-flex min-w-max flex-1 items-center justify-center gap-1 whitespace-nowrap rounded-md px-1.5 py-2 font-semibold text-[11px] transition sm:text-[13px]';
 
 	const selectMode = useCallback(
 		(mode: ChartMode) => (onSelectChartMode ?? preferencesStore.actions.selectChartMode)(mode),
@@ -302,10 +311,19 @@ export function SessionChart({
 
 	return (
 		<div className="mt-4 min-w-0 overflow-hidden rounded-xl border border-line bg-[#12171d] p-2 sm:mt-6 sm:p-4">
-			<div className="scrollbar-hidden flex w-full gap-1 overflow-x-auto rounded-lg bg-[#0d1217] p-1">
+			<div
+				className={controlsClassName}
+				style={
+					sessionControls
+						? {
+								gridTemplateColumns: `repeat(${availableModes.length}, minmax(0, 1fr))`,
+							}
+						: undefined
+				}
+			>
 				{availableModes.map((mode) => (
 					<button
-						className={`inline-flex min-w-max flex-1 items-center justify-center gap-1 whitespace-nowrap rounded-md px-1.5 py-2 font-semibold text-[11px] transition sm:text-[13px] ${effectiveMode === mode.value ? 'bg-slate-700 text-white' : 'text-slate-500 hover:text-slate-200'}`}
+						className={`${controlClassName} ${effectiveMode === mode.value ? 'bg-slate-700 text-white' : 'text-slate-500 hover:text-slate-200'}`}
 						key={mode.value}
 						onClick={() => selectMode(mode.value)}
 						type="button"

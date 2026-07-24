@@ -114,9 +114,9 @@ export function SessionMetric({
 				<span className="text-slate-400 text-xs">{unit}</span>
 			</div>
 			<div className="mt-2 flex items-center justify-between gap-3 text-[11px]">
-				<span className="font-bold text-slate-600 tracking-[.08em]">AVERAGE</span>
+				<span className="font-bold text-slate-600 tracking-[.08em]">AVG</span>
 				{maximum === undefined ? null : (
-					<span className="text-right text-slate-400">
+					<span className="pr-1 text-right text-slate-400">
 						<strong className="mr-1 font-bold text-slate-600 tracking-[.08em]">
 							MAX
 						</strong>

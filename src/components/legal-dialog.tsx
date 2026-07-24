@@ -110,6 +110,17 @@ export function PrivacyPolicyDialog({ onClose, open }: { onClose: () => void; op
 			</section>
 
 			<section className={sectionClass}>
+				<h3 className={headingClass}>Future premium cloud storage</h3>
+				<p>
+					Ride Control plans to offer optional paid premium features for storing and
+					synchronizing profile and ride data in the cloud. These features are not
+					available today. We will expand this policy before they launch to explain what
+					data is uploaded, how it is protected, how long it is retained, and the choices
+					available to you.
+				</p>
+			</section>
+
+			<section className={sectionClass}>
 				<h3 className={headingClass}>Optional features and external services</h3>
 				<ul className="list-disc space-y-1 pl-5">
 					<li>
@@ -222,6 +233,16 @@ export function TermsOfServiceDialog({ onClose, open }: { onClose: () => void; o
 					Ride data is generally stored in your browser. You are responsible for exporting
 					any records you want to preserve. Clearing site data, changing browsers, or
 					device failure may permanently remove unexported data.
+				</p>
+			</section>
+
+			<section className={sectionClass}>
+				<h3 className={headingClass}>Future premium services</h3>
+				<p>
+					Ride Control plans to offer optional paid premium features for storing and
+					synchronizing your data in the cloud. These services are not available today. We
+					will expand these terms before they launch with the applicable storage, pricing,
+					billing, cancellation, and data provisions.
 				</p>
 			</section>
 
