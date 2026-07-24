@@ -1,6 +1,6 @@
 import { useNavigate, useRouterState } from '@tanstack/react-router';
 import { useSelector } from '@tanstack/react-store';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AppFooter } from './components/app-footer';
 import { BuildDetailsDialog } from './components/build-details-dialog';
 import { Dashboard, DashboardToolbar, DashboardWorkspace } from './components/dashboard-layout';
@@ -152,13 +152,13 @@ function initialNavigation(linkedRoute: AppRoute, pathname: string): InitialNavi
 }
 
 export function App({ initialSession = emptySession }: { initialSession?: StoredSession }) {
-	const routerNavigation = useRouterState({
-		select: (state) => ({
-			pathname: state.location.pathname,
-			route: appRouteFromRouterMatch(state.matches.at(-1)),
-		}),
+	const pathname = useRouterState({
+		select: (state) => state.location.pathname,
 	});
-	const { pathname, route: matchedAppRoute } = routerNavigation;
+	const routerMatch = useRouterState({
+		select: (state) => state.matches.at(-1),
+	});
+	const matchedAppRoute = useMemo(() => appRouteFromRouterMatch(routerMatch), [routerMatch]);
 	const navigate = useNavigate();
 	const [initialAppNavigation] = useState(() => initialNavigation(matchedAppRoute, pathname));
 	const restoringRoute = useRef(
