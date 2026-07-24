@@ -32,6 +32,7 @@ export function useSessionHistory(open: boolean, preferredSessionId?: string) {
 	const [historyStatus, setHistoryStatus] = useState('');
 	const [highlightedSessionIds, setHighlightedSessionIds] = useState<string[]>([]);
 	const [error, setError] = useState('');
+	const [revision, setRevision] = useState(0);
 	const deleteInProgress = useRef(false);
 	const historyLoadGeneration = useRef(0);
 	const historyInitialized = useRef(false);
@@ -71,6 +72,7 @@ export function useSessionHistory(open: boolean, preferredSessionId?: string) {
 			}
 			setSummaries(sessions);
 			setTotal(count);
+			setRevision((current) => current + 1);
 			setError('');
 			const nextSessionId = sessions.some((session) => session.id === requestedSessionId)
 				? requestedSessionId
@@ -168,6 +170,7 @@ export function useSessionHistory(open: boolean, preferredSessionId?: string) {
 			const updated = sessionListAfterDelete(summaries, selected.id);
 			setSummaries(updated.sessions);
 			setTotal((current) => Math.max(0, current - 1));
+			setRevision((current) => current + 1);
 			setError('');
 			if (updated.next) {
 				await selectSession(updated.next.id);
@@ -211,6 +214,7 @@ export function useSessionHistory(open: boolean, preferredSessionId?: string) {
 		importing,
 		loading,
 		loadMore,
+		revision,
 		selected,
 		selectedId,
 		selectSession,

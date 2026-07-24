@@ -38,10 +38,13 @@ describe('application deep links', () => {
 			workoutId: 'prairie roll',
 		});
 
-		const session = await loadedRoute('/sessions/ride%2Fmorning');
+		const session = await loadedRoute('/sessions/ride%2Fmorning?date=2026-07&view=statistics');
 		expect(session.match?.routeId).toBe(APP_ROUTE_PATH.SESSION);
 		expect(session.match?.params).toEqual({ sessionId: 'ride/morning' });
+		expect(session.match?.search).toEqual({ date: '2026-07', view: 'statistics' });
 		expect(appRouteFromRouterMatch(session.match)).toEqual({
+			calendarMonth: '2026-07',
+			historyView: 'statistics',
 			kind: APP_ROUTE_KIND.SESSION,
 			sessionId: 'ride/morning',
 		});
@@ -57,6 +60,23 @@ describe('application deep links', () => {
 		expect((await loadedRoute('/bikegpx')).match?.routeId).toBe(APP_ROUTE_PATH.BIKEGPX);
 		expect((await loadedRoute('/workouts')).match?.routeId).toBe(APP_ROUTE_PATH.WORKOUTS);
 		expect((await loadedRoute('/sessions')).match?.routeId).toBe(APP_ROUTE_PATH.SESSIONS);
+		const calendar = await loadedRoute('/sessions?date=2025-12&view=calendar');
+		expect(appRouteFromRouterMatch(calendar.match)).toEqual({
+			calendarMonth: '2025-12',
+			historyView: 'calendar',
+			kind: APP_ROUTE_KIND.SESSION,
+		});
+		expect(
+			appRouteFromRouterMatch((await loadedRoute('/sessions?date=2025-13')).match)
+		).toEqual({ kind: APP_ROUTE_KIND.SESSION });
+		expect(
+			appRouteFromRouterMatch(
+				(await loadedRoute('/sessions?date=2025-12&view=unknown')).match
+			)
+		).toEqual({
+			calendarMonth: '2025-12',
+			kind: APP_ROUTE_KIND.SESSION,
+		});
 		expect((await loadedRoute('/unknown/path')).redirectHref).toBe(APP_ROUTE_PATH.HOME);
 		expect((await loadedRoute('/devices/trainer')).redirectHref).toBe(APP_ROUTE_PATH.HOME);
 	});
@@ -81,9 +101,16 @@ describe('application deep links', () => {
 		expect(
 			router.buildLocation({
 				params: { sessionId: 'ride#1' },
+				search: { date: '2026-07', view: 'list' },
 				to: APP_ROUTE_PATH.SESSION,
 			}).href
-		).toBe('/sessions/ride%231');
+		).toBe('/sessions/ride%231?date=2026-07&view=list');
+		expect(
+			router.buildLocation({
+				search: { date: '2026-07', view: 'calendar' },
+				to: APP_ROUTE_PATH.SESSIONS,
+			}).href
+		).toBe('/sessions?date=2026-07&view=calendar');
 
 		expect(appRouteSideTray({ kind: APP_ROUTE_KIND.BIKEGPX })).toBe(APP_OVERLAY.WORKOUTS);
 		expect(appRouteSideTray({ kind: APP_ROUTE_KIND.WORKOUT })).toBe(APP_OVERLAY.WORKOUTS);
@@ -105,5 +132,51 @@ describe('application deep links', () => {
 		router.history.forward();
 		await router.load();
 		expect(router.state.location.pathname).toBe(APP_ROUTE_PATH.DEVICES);
+	});
+
+	test('moves calendar months through linkable browser history', async () => {
+		const history = createMemoryHistory({
+			initialEntries: ['/sessions?date=2025-12'],
+		});
+		const router = createAppRouter({ history });
+		await router.load();
+		await router.navigate({
+			search: { date: '2026-01' },
+			to: APP_ROUTE_PATH.SESSIONS,
+		});
+		expect(router.state.location.href).toBe('/sessions?date=2026-01');
+
+		router.history.back();
+		await router.load();
+		expect(router.state.location.href).toBe('/sessions?date=2025-12');
+
+		router.history.forward();
+		await router.load();
+		expect(router.state.location.href).toBe('/sessions?date=2026-01');
+	});
+
+	test('moves session views through linkable browser history', async () => {
+		const history = createMemoryHistory({
+			initialEntries: ['/sessions?date=2025-12&view=calendar'],
+		});
+		const router = createAppRouter({ history });
+		await router.load();
+		await router.navigate({
+			search: { date: '2025-12', view: 'list' },
+			to: APP_ROUTE_PATH.SESSIONS,
+		});
+		await router.navigate({
+			search: { date: '2025-12', view: 'statistics' },
+			to: APP_ROUTE_PATH.SESSIONS,
+		});
+		expect(router.state.location.href).toBe('/sessions?date=2025-12&view=statistics');
+
+		router.history.back();
+		await router.load();
+		expect(router.state.location.href).toBe('/sessions?date=2025-12&view=list');
+
+		router.history.back();
+		await router.load();
+		expect(router.state.location.href).toBe('/sessions?date=2025-12&view=calendar');
 	});
 });

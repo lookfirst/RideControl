@@ -42,6 +42,7 @@
     "@types/react-dom": "^19.2.3",
     "@types/web-bluetooth": "^0.0.21",
     "@xmldom/xmldom": "^0.9.10",
+    "fake-indexeddb": "^6.2.5",
     "typescript": "^7.0.2",
     "ultracite": "^7.9.4",
     "vite": "^8.1.5",

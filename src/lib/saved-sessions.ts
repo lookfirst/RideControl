@@ -19,6 +19,17 @@ import {
 	restoreStoredSession,
 } from './session';
 import {
+	buildSessionAnalyticsCache,
+	rebuildSessionAnalyticsPeaks,
+	restoreSessionAnalyticsCache,
+	restoreSessionAnalyticsContribution,
+	SESSION_ANALYTICS_CACHE_ID,
+	type SessionAnalyticsCache,
+	type SessionAnalyticsContribution,
+	sessionAnalyticsContribution,
+	updateSessionAnalyticsCache,
+} from './session-analytics';
+import {
 	createSessionWorkoutSnapshot,
 	restoreSessionWorkoutSnapshot,
 	restoreSnapshotWorkout,
@@ -29,15 +40,18 @@ import { isFiniteNumber, isRecord, isString } from './type-guards';
 import { restoreSessionWorkout } from './workouts';
 
 const DATABASE_NAME = 'ridecontrol-sessions';
-const DATABASE_VERSION = 3;
+const DATABASE_VERSION = 4;
 const ACTIVE_SESSION_ID = 'current';
 const ACTIVE_SESSION_STORE = 'active-session';
 const ACTIVE_SESSION_SAMPLE_STORE = 'active-session-samples';
 const ACTIVE_SESSION_SAMPLE_CHUNK_SIZE = 100;
+const ANALYTICS_CACHE_STORE = 'session-analytics-cache';
+const ANALYTICS_STORE = 'session-analytics';
 const SESSION_STORE = 'sessions';
 const SUMMARY_STORE = 'session-summaries';
 const WORKOUT_STORE = 'session-workouts';
 const ENDED_AT_INDEX = 'endedAt';
+const STARTED_AT_INDEX = 'startedAt';
 const WORKOUT_SNAPSHOT_INDEX = 'workoutSnapshotId';
 const MERIDIEM_SUFFIX = /\s*(AM|PM)$/i;
 const SESSION_DATE_FORMATTER = new Intl.DateTimeFormat(undefined, { dateStyle: 'full' });
@@ -127,26 +141,76 @@ function workoutStoreForUpgrade(request: IDBOpenDBRequest): IDBObjectStore | und
 		: request.result.createObjectStore(WORKOUT_STORE, { keyPath: 'id' });
 }
 
-function createMissingDatabaseStores(database: IDBDatabase): void {
-	if (!database.objectStoreNames.contains(SUMMARY_STORE)) {
-		const summaries = database.createObjectStore(SUMMARY_STORE, { keyPath: 'id' });
+function summaryStoreForUpgrade(request: IDBOpenDBRequest): IDBObjectStore | undefined {
+	const summaries = request.result.objectStoreNames.contains(SUMMARY_STORE)
+		? request.transaction?.objectStore(SUMMARY_STORE)
+		: request.result.createObjectStore(SUMMARY_STORE, { keyPath: 'id' });
+	if (summaries && !summaries.indexNames.contains(ENDED_AT_INDEX)) {
 		summaries.createIndex(ENDED_AT_INDEX, ENDED_AT_INDEX);
 	}
+	if (summaries && !summaries.indexNames.contains(STARTED_AT_INDEX)) {
+		summaries.createIndex(STARTED_AT_INDEX, STARTED_AT_INDEX);
+	}
+	return summaries;
+}
+
+function createMissingDatabaseStores(database: IDBDatabase): void {
 	if (!database.objectStoreNames.contains(ACTIVE_SESSION_STORE)) {
 		database.createObjectStore(ACTIVE_SESSION_STORE, { keyPath: 'id' });
 	}
 	if (!database.objectStoreNames.contains(ACTIVE_SESSION_SAMPLE_STORE)) {
 		database.createObjectStore(ACTIVE_SESSION_SAMPLE_STORE, { keyPath: 'id' });
 	}
+	if (!database.objectStoreNames.contains(ANALYTICS_STORE)) {
+		database.createObjectStore(ANALYTICS_STORE, { keyPath: 'id' });
+	}
+	if (!database.objectStoreNames.contains(ANALYTICS_CACHE_STORE)) {
+		database.createObjectStore(ANALYTICS_CACHE_STORE, { keyPath: 'id' });
+	}
 }
 
 function upgradeDatabase(request: IDBOpenDBRequest, oldVersion: number): void {
 	const sessions = sessionStoreForUpgrade(request);
+	summaryStoreForUpgrade(request);
 	createMissingDatabaseStores(request.result);
 	const workouts = workoutStoreForUpgrade(request);
 	if (oldVersion < 2 && sessions && workouts) {
 		migrateLegacySessionWorkouts(sessions, workouts);
 	}
+}
+
+async function initializeSessionAnalytics(database: IDBDatabase): Promise<void> {
+	const transaction = database.transaction(
+		[SESSION_STORE, ANALYTICS_STORE, ANALYTICS_CACHE_STORE],
+		'readwrite'
+	);
+	const completed = indexedDbTransactionComplete(transaction);
+	const sessionStore = transaction.objectStore(SESSION_STORE);
+	const analyticsStore = transaction.objectStore(ANALYTICS_STORE);
+	const cacheStore = transaction.objectStore(ANALYTICS_CACHE_STORE);
+	const [cacheValue, sessionRecords, contributionValues] = await Promise.all([
+		indexedDbRequestResult(cacheStore.get(SESSION_ANALYTICS_CACHE_ID)),
+		indexedDbRequestResult(sessionStore.getAll() as IDBRequest<SavedSessionRecord[]>),
+		indexedDbRequestResult(analyticsStore.getAll()),
+	]);
+	const cache = restoreSessionAnalyticsCache(cacheValue);
+	const contributions = (contributionValues as unknown[]).flatMap((value) => {
+		const contribution = restoreSessionAnalyticsContribution(value);
+		return contribution ? [contribution] : [];
+	});
+	if (cache && contributions.length === sessionRecords.length) {
+		await completed;
+		return;
+	}
+	const rebuiltContributions = sessionRecords.map((record) =>
+		sessionAnalyticsContribution(normalizeSavedSessionRecord(record))
+	);
+	analyticsStore.clear();
+	for (const contribution of rebuiltContributions) {
+		analyticsStore.put(contribution);
+	}
+	cacheStore.put(buildSessionAnalyticsCache(rebuiltContributions));
+	await completed;
 }
 
 function openDatabase(): Promise<IDBDatabase> {
@@ -162,7 +226,15 @@ function openDatabase(): Promise<IDBDatabase> {
 			},
 			{ once: true }
 		);
-		request.addEventListener('success', () => resolve(request.result), { once: true });
+		request.addEventListener(
+			'success',
+			() => {
+				initializeSessionAnalytics(request.result)
+					.then(() => resolve(request.result))
+					.catch(reject);
+			},
+			{ once: true }
+		);
 		request.addEventListener('error', () => reject(request.error), { once: true });
 	});
 	return databasePromise;
@@ -391,18 +463,61 @@ export function deleteSessionRecords(
 	getStore(SUMMARY_STORE).delete(id);
 }
 
+function storedContribution(
+	value: unknown,
+	record: SavedSessionRecord | undefined
+): SessionAnalyticsContribution | undefined {
+	return (
+		restoreSessionAnalyticsContribution(value) ??
+		(record ? sessionAnalyticsContribution(normalizeSavedSessionRecord(record)) : undefined)
+	);
+}
+
+async function updatedAnalyticsCache(
+	analyticsStore: IDBObjectStore,
+	current: SessionAnalyticsCache | undefined,
+	previous: SessionAnalyticsContribution | undefined,
+	next: SessionAnalyticsContribution | undefined
+): Promise<SessionAnalyticsCache> {
+	const update = updateSessionAnalyticsCache(current, previous, next);
+	if (!update.peaksNeedRebuild) {
+		return update.cache;
+	}
+	const values: unknown[] = await indexedDbRequestResult(analyticsStore.getAll());
+	const contributions = values.flatMap((value) => {
+		const contribution = restoreSessionAnalyticsContribution(value);
+		return contribution ? [contribution] : [];
+	});
+	return rebuildSessionAnalyticsPeaks(update.cache, contributions);
+}
+
 export async function saveSession(session: SavedSession): Promise<void> {
 	const database = await openDatabase();
 	const transaction = database.transaction(
-		[SESSION_STORE, SUMMARY_STORE, WORKOUT_STORE],
+		[SESSION_STORE, SUMMARY_STORE, WORKOUT_STORE, ANALYTICS_STORE, ANALYTICS_CACHE_STORE],
 		'readwrite'
 	);
 	const completed = indexedDbTransactionComplete(transaction);
 	const sessions = transaction.objectStore(SESSION_STORE);
-	const previous = await indexedDbRequestResult(
-		sessions.get(session.id) as IDBRequest<SavedSessionRecord | undefined>
-	);
+	const analytics = transaction.objectStore(ANALYTICS_STORE);
+	const analyticsCache = transaction.objectStore(ANALYTICS_CACHE_STORE);
+	const [previous, previousContributionValue, cacheValue] = await Promise.all([
+		indexedDbRequestResult(
+			sessions.get(session.id) as IDBRequest<SavedSessionRecord | undefined>
+		),
+		indexedDbRequestResult(analytics.get(session.id)),
+		indexedDbRequestResult(analyticsCache.get(SESSION_ANALYTICS_CACHE_ID)),
+	]);
 	const { snapshotId } = saveSessionRecords((name) => transaction.objectStore(name), session);
+	const contribution = sessionAnalyticsContribution(session);
+	analytics.put(contribution);
+	const cache = await updatedAnalyticsCache(
+		analytics,
+		restoreSessionAnalyticsCache(cacheValue),
+		storedContribution(previousContributionValue, previous),
+		contribution
+	);
+	analyticsCache.put(cache);
 	if (previous?.workoutSnapshotId && previous.workoutSnapshotId !== snapshotId) {
 		const remaining = await indexedDbRequestResult(
 			sessions.index(WORKOUT_SNAPSHOT_INDEX).count(previous.workoutSnapshotId)
@@ -417,15 +532,30 @@ export async function saveSession(session: SavedSession): Promise<void> {
 export async function deleteSavedSession(id: string): Promise<void> {
 	const database = await openDatabase();
 	const transaction = database.transaction(
-		[SESSION_STORE, SUMMARY_STORE, WORKOUT_STORE],
+		[SESSION_STORE, SUMMARY_STORE, WORKOUT_STORE, ANALYTICS_STORE, ANALYTICS_CACHE_STORE],
 		'readwrite'
 	);
 	const completed = indexedDbTransactionComplete(transaction);
 	const sessions = transaction.objectStore(SESSION_STORE);
-	const record = await indexedDbRequestResult(
-		sessions.get(id) as IDBRequest<SavedSessionRecord | undefined>
-	);
+	const analytics = transaction.objectStore(ANALYTICS_STORE);
+	const analyticsCache = transaction.objectStore(ANALYTICS_CACHE_STORE);
+	const [record, contributionValue, cacheValue] = await Promise.all([
+		indexedDbRequestResult(sessions.get(id) as IDBRequest<SavedSessionRecord | undefined>),
+		indexedDbRequestResult(analytics.get(id)),
+		indexedDbRequestResult(analyticsCache.get(SESSION_ANALYTICS_CACHE_ID)),
+	]);
 	deleteSessionRecords((name) => transaction.objectStore(name), id);
+	analytics.delete(id);
+	const contribution = storedContribution(contributionValue, record);
+	if (contribution) {
+		const cache = await updatedAnalyticsCache(
+			analytics,
+			restoreSessionAnalyticsCache(cacheValue),
+			contribution,
+			undefined
+		);
+		analyticsCache.put(cache);
+	}
 	if (record?.workoutSnapshotId) {
 		const remaining = await indexedDbRequestResult(
 			sessions.index(WORKOUT_SNAPSHOT_INDEX).count(record.workoutSnapshotId)
@@ -511,6 +641,54 @@ export async function listSavedSessions(
 	});
 	await completed;
 	return summaries;
+}
+
+export async function listSavedSessionsForMonth(
+	year: number,
+	month: number
+): Promise<SavedSessionSummary[]> {
+	const database = await openDatabase();
+	const transaction = database.transaction(SUMMARY_STORE, 'readonly');
+	const completed = indexedDbTransactionComplete(transaction);
+	const summaries = transaction.objectStore(SUMMARY_STORE);
+	const start = new Date(year, month, 1).getTime();
+	const end = new Date(year, month + 1, 1).getTime();
+	const [startedInMonth, endedInMonth] = await Promise.all([
+		indexedDbRequestResult(
+			summaries
+				.index(STARTED_AT_INDEX)
+				.getAll(IDBKeyRange.bound(start, end, false, true)) as IDBRequest<
+				SavedSessionSummary[]
+			>
+		),
+		indexedDbRequestResult(
+			summaries
+				.index(ENDED_AT_INDEX)
+				.getAll(IDBKeyRange.bound(start, end, false, true)) as IDBRequest<
+				SavedSessionSummary[]
+			>
+		),
+	]);
+	await completed;
+	return [
+		...new Map(
+			[...startedInMonth, ...endedInMonth].map((summary) => [summary.id, summary])
+		).values(),
+	]
+		.filter((summary) => summary.startedAt < end && summary.endedAt >= start)
+		.map(normalizeSavedSessionSummary)
+		.sort((left, right) => right.startedAt - left.startedAt);
+}
+
+export async function getSessionAnalytics(): Promise<SessionAnalyticsCache> {
+	const database = await openDatabase();
+	const transaction = database.transaction(ANALYTICS_CACHE_STORE, 'readonly');
+	const completed = indexedDbTransactionComplete(transaction);
+	const value: unknown = await indexedDbRequestResult(
+		transaction.objectStore(ANALYTICS_CACHE_STORE).get(SESSION_ANALYTICS_CACHE_ID)
+	);
+	await completed;
+	return restoreSessionAnalyticsCache(value) ?? buildSessionAnalyticsCache([]);
 }
 
 export async function listAllSavedSessions(): Promise<SavedSession[]> {

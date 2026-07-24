@@ -1,6 +1,7 @@
-import type { ReactNode } from 'react';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import type { KeyboardEvent as ReactKeyboardEvent, ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSessionHistory } from '../hooks/use-session-history';
+import { useSessionInsights } from '../hooks/use-session-insights';
 import {
 	ACTIVITY_FILE_FORMAT,
 	type ActivityFileFormat,
@@ -17,11 +18,29 @@ import {
 	historyShortcutForKey,
 } from '../lib/keyboard';
 import { adjacentSession } from '../lib/saved-sessions';
+import {
+	sessionCalendarMonth,
+	sessionCalendarMonthFromKey,
+	sessionCalendarMonthKey,
+} from '../lib/session-calendar';
+import {
+	loadSessionDownloadFormat,
+	saveSessionDownloadFormat,
+} from '../lib/session-history-preferences';
+import {
+	loadSessionHistoryView,
+	SESSION_HISTORY_VIEW,
+	SESSION_HISTORY_VIEW_OPTIONS,
+	type SessionHistoryView,
+	saveSessionHistoryView,
+} from '../lib/session-history-view';
 import { preferencesStore } from '../stores/preferences-store';
 import type { ChartMode, SavedSession, SpeedUnit } from '../types';
 import { KeyboardShortcutsDialog } from './keyboard-shortcuts-dialog';
+import { SessionCalendar } from './session-calendar';
 import { SessionDetail } from './session-detail';
 import { SessionHistoryList } from './session-history-list';
+import { SessionStatistics } from './session-statistics';
 import { SideTray } from './side-tray';
 
 function shouldIgnoreHistoryAction(event: KeyboardEvent) {
@@ -34,17 +53,25 @@ function shouldIgnoreHistoryAction(event: KeyboardEvent) {
 
 export function SessionHistory({
 	onClose,
+	onSelectCalendarMonth,
 	onSelectSessionId,
+	onSelectView,
 	onStartNew,
 	open,
 	requestedSessionId,
+	requestedSessionMonth,
+	requestedView,
 	speedUnit,
 }: {
 	onClose: () => void;
+	onSelectCalendarMonth: (month: string) => void;
 	onSelectSessionId?: (sessionId: string) => void;
+	onSelectView: (view: SessionHistoryView) => void;
 	onStartNew: (session: SavedSession) => void;
 	open: boolean;
 	requestedSessionId?: string;
+	requestedSessionMonth?: string;
+	requestedView?: SessionHistoryView;
 	speedUnit: SpeedUnit;
 }) {
 	const {
@@ -59,22 +86,39 @@ export function SessionHistory({
 		importing,
 		loading,
 		loadMore,
+		revision,
 		selected,
 		selectedId,
 		selectSession: selectHistorySession,
 		summaries,
 		total,
 	} = useSessionHistory(open, requestedSessionId);
+	const [storedHistoryView, setStoredHistoryView] =
+		useState<SessionHistoryView>(loadSessionHistoryView);
+	const historyView = requestedView ?? storedHistoryView;
+	const calendarMonth = useMemo(
+		() =>
+			sessionCalendarMonthFromKey(requestedSessionMonth) ??
+			sessionCalendarMonth(selected ? new Date(selected.startedAt) : new Date()),
+		[requestedSessionMonth, selected]
+	);
+	const {
+		analytics,
+		calendarSummaries,
+		error: insightsError,
+		loading: insightsLoading,
+	} = useSessionInsights(open, calendarMonth, revision);
 	const [deleteConfirmationOpen, setDeleteConfirmationOpen] = useState(false);
 	const [historyHelpOpen, setHistoryHelpOpen] = useState(false);
 	const [selectedChartMode, setSelectedChartMode] = useState<ChartMode>(
 		() => preferencesStore.get().chartMode
 	);
-	const [downloadFormat, setDownloadFormat] = useState<ActivityFileFormat>(
-		ACTIVITY_FILE_FORMAT.FIT
-	);
+	const [downloadFormat, setDownloadFormat] =
+		useState<ActivityFileFormat>(loadSessionDownloadFormat);
 	const importInput = useRef<HTMLInputElement>(null);
 	const transferring = exporting || importing;
+	const navigationSummaries =
+		historyView === SESSION_HISTORY_VIEW.CALENDAR ? calendarSummaries : summaries;
 
 	useEffect(() => {
 		if (open && selected) {
@@ -97,6 +141,10 @@ export function SessionHistory({
 		},
 		[selectHistorySession]
 	);
+	const selectCalendarMonth = useCallback(
+		(month: Date) => onSelectCalendarMonth(sessionCalendarMonthKey(month)),
+		[onSelectCalendarMonth]
+	);
 
 	const deleteSelectedSession = useCallback(async () => {
 		if (await deleteHistorySession()) {
@@ -109,11 +157,15 @@ export function SessionHistory({
 			return;
 		}
 		const selectAdjacent = (event: KeyboardEvent, direction: 'next' | 'previous') => {
-			if (deleteConfirmationOpen || historyHelpOpen) {
+			if (
+				deleteConfirmationOpen ||
+				historyHelpOpen ||
+				historyView === SESSION_HISTORY_VIEW.STATISTICS
+			) {
 				return;
 			}
 			event.preventDefault();
-			const next = adjacentSession(summaries, selectedId, direction);
+			const next = adjacentSession(navigationSummaries, selectedId, direction);
 			if (next) {
 				selectSession(next.id);
 			}
@@ -130,14 +182,23 @@ export function SessionHistory({
 				}
 			},
 			confirmDelete: (event) => {
-				if (!deleteConfirmationOpen || eventTargetsInteractiveControl(event)) {
+				if (
+					historyView === SESSION_HISTORY_VIEW.STATISTICS ||
+					!deleteConfirmationOpen ||
+					eventTargetsInteractiveControl(event)
+				) {
 					return;
 				}
 				event.preventDefault();
 				deleteSelectedSession();
 			},
 			deleteSession: (event) => {
-				if (deleteConfirmationOpen || historyHelpOpen || !selected) {
+				if (
+					deleteConfirmationOpen ||
+					historyHelpOpen ||
+					historyView === SESSION_HISTORY_VIEW.STATISTICS ||
+					!selected
+				) {
 					return;
 				}
 				event.preventDefault();
@@ -166,13 +227,65 @@ export function SessionHistory({
 		deleteConfirmationOpen,
 		deleteSelectedSession,
 		historyHelpOpen,
+		historyView,
 		onClose,
 		open,
 		selectSession,
 		selected,
 		selectedId,
-		summaries,
+		navigationSummaries,
 	]);
+
+	const selectHistoryView = useCallback(
+		(view: SessionHistoryView) => {
+			setDeleteConfirmationOpen(false);
+			setHistoryHelpOpen(false);
+			setStoredHistoryView(view);
+			saveSessionHistoryView(view);
+			onSelectView(view);
+		},
+		[onSelectView]
+	);
+	const selectHistoryViewFromKeyboard = useCallback(
+		(event: ReactKeyboardEvent<HTMLButtonElement>, view: SessionHistoryView) => {
+			const currentIndex = SESSION_HISTORY_VIEW_OPTIONS.findIndex(
+				(option) => option.value === view
+			);
+			let nextIndex: number | undefined;
+			if (event.key === 'ArrowLeft') {
+				nextIndex =
+					(currentIndex - 1 + SESSION_HISTORY_VIEW_OPTIONS.length) %
+					SESSION_HISTORY_VIEW_OPTIONS.length;
+			} else if (event.key === 'ArrowRight') {
+				nextIndex = (currentIndex + 1) % SESSION_HISTORY_VIEW_OPTIONS.length;
+			} else if (event.key === 'Home') {
+				nextIndex = 0;
+			} else if (event.key === 'End') {
+				nextIndex = SESSION_HISTORY_VIEW_OPTIONS.length - 1;
+			}
+			const nextView =
+				nextIndex === undefined
+					? undefined
+					: SESSION_HISTORY_VIEW_OPTIONS[nextIndex]?.value;
+			if (!nextView) {
+				return;
+			}
+			event.preventDefault();
+			selectHistoryView(nextView);
+			event.currentTarget.ownerDocument
+				.getElementById(`session-history-tab-${nextView}`)
+				?.focus();
+		},
+		[selectHistoryView]
+	);
+
+	const selectStatisticsSession = useCallback(
+		(id: string) => {
+			selectHistorySession(id);
+			selectHistoryView(SESSION_HISTORY_VIEW.LIST);
+		},
+		[selectHistorySession, selectHistoryView]
+	);
 
 	let detail: ReactNode = null;
 	if (loading) {
@@ -202,6 +315,18 @@ export function SessionHistory({
 		detail = (
 			<div className="grid min-h-64 flex-1 place-items-center text-slate-500 text-sm">
 				Select a session
+			</div>
+		);
+	} else {
+		detail = (
+			<div className="grid min-h-64 flex-1 place-items-center p-6 text-center">
+				<div>
+					<p className="font-bold text-lg">No saved sessions yet</p>
+					<p className="mt-1 max-w-sm text-slate-500 text-sm">
+						End a session or import a FIT or TCX file to fill your calendar and build
+						ride statistics.
+					</p>
+				</div>
 			</div>
 		);
 	}
@@ -276,6 +401,7 @@ export function SessionHistory({
 									const format = event.currentTarget.value;
 									if (isActivityFileFormat(format)) {
 										setDownloadFormat(format);
+										saveSessionDownloadFormat(format);
 									}
 								}}
 								value={downloadFormat}
@@ -305,19 +431,77 @@ export function SessionHistory({
 						</button>
 					</div>
 				</header>
-				<div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden md:flex-row">
-					<SessionHistoryList
-						error={error}
-						highlightedSessionIds={highlightedSessionIds}
-						onLoadMore={loadMore}
-						onSelect={selectSession}
-						open={open}
-						selectedId={selectedId}
-						speedUnit={speedUnit}
-						summaries={summaries}
-						total={total}
-					/>
-					{detail}
+				<div
+					aria-label="Session history views"
+					className="flex items-end gap-5 border-line border-b bg-[#12171d] px-3 sm:px-5"
+					role="tablist"
+				>
+					{SESSION_HISTORY_VIEW_OPTIONS.map((option) => (
+						<button
+							aria-controls={`session-history-panel-${option.value}`}
+							aria-selected={historyView === option.value}
+							className={`-mb-px border-b-2 px-1 py-3 font-semibold text-sm transition ${
+								historyView === option.value
+									? 'border-cyan-400 text-white'
+									: 'border-transparent text-slate-400 hover:border-slate-600 hover:text-white'
+							}`}
+							id={`session-history-tab-${option.value}`}
+							key={option.value}
+							onClick={() => selectHistoryView(option.value)}
+							onKeyDown={(event) =>
+								selectHistoryViewFromKeyboard(event, option.value)
+							}
+							role="tab"
+							tabIndex={historyView === option.value ? 0 : -1}
+							type="button"
+						>
+							{option.label}
+						</button>
+					))}
+				</div>
+				<div
+					aria-labelledby={`session-history-tab-${historyView}`}
+					className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden outline-none md:flex-row"
+					id={`session-history-panel-${historyView}`}
+					role="tabpanel"
+				>
+					{historyView === SESSION_HISTORY_VIEW.STATISTICS ? (
+						<SessionStatistics
+							analytics={analytics}
+							error={insightsError}
+							loading={insightsLoading}
+							onSelectSession={selectStatisticsSession}
+							speedUnit={speedUnit}
+						/>
+					) : (
+						<>
+							{historyView === SESSION_HISTORY_VIEW.CALENDAR ? (
+								<SessionCalendar
+									error={insightsError}
+									loading={insightsLoading}
+									month={calendarMonth}
+									onChangeMonth={selectCalendarMonth}
+									onSelect={selectSession}
+									selectedId={selectedId}
+									speedUnit={speedUnit}
+									summaries={calendarSummaries}
+								/>
+							) : (
+								<SessionHistoryList
+									error={error}
+									highlightedSessionIds={highlightedSessionIds}
+									onLoadMore={loadMore}
+									onSelect={selectSession}
+									open={open}
+									selectedId={selectedId}
+									speedUnit={speedUnit}
+									summaries={summaries}
+									total={total}
+								/>
+							)}
+							{detail}
+						</>
+					)}
 				</div>
 			</SideTray>
 			<KeyboardShortcutsDialog

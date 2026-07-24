@@ -13,12 +13,14 @@ import { Notification } from '../src/components/notification';
 import { ProfileDialog } from '../src/components/profile-dialog';
 import { RenameWorkoutDialog } from '../src/components/rename-workout-dialog';
 import { ResistanceControl } from '../src/components/resistance-control';
+import { SessionCalendar } from '../src/components/session-calendar';
 import { SessionChart } from '../src/components/session-chart';
 import { SessionControls } from '../src/components/session-controls';
 import { DeleteSessionDialog, SessionDetail } from '../src/components/session-detail';
 import { SessionHistory } from '../src/components/session-history';
 import { SessionHistoryList } from '../src/components/session-history-list';
 import { SessionSaveDialog } from '../src/components/session-save-dialog';
+import { SessionStatistics } from '../src/components/session-statistics';
 import { TrainingControl } from '../src/components/training-control';
 import { WelcomeDialog } from '../src/components/welcome-dialog';
 import { WorkoutPanel } from '../src/components/workout-panel';
@@ -33,6 +35,11 @@ import { formatGrade } from '../src/lib/format';
 import { historyKeyboardShortcuts } from '../src/lib/keyboard';
 import { metricAccentClass, metricIconClass } from '../src/lib/metric-presentation';
 import { formatSessionImportTime, sessionSummary } from '../src/lib/saved-sessions';
+import {
+	buildSessionAnalyticsCache,
+	SESSION_TREND_METRIC,
+	sessionAnalyticsContribution,
+} from '../src/lib/session-analytics';
 import { SESSION_WORKFLOW_INTENT } from '../src/lib/session-workflow';
 import { WORKOUT_DESCRIPTION_ATTRIBUTION } from '../src/lib/workout-description';
 import { WORKOUT_ROUTE_TYPE } from '../src/lib/workout-schema';
@@ -1322,6 +1329,8 @@ describe('view components', () => {
 		const html = render(
 			<SessionHistory
 				onClose={() => undefined}
+				onSelectCalendarMonth={() => undefined}
+				onSelectView={() => undefined}
 				onStartNew={() => undefined}
 				open
 				speedUnit="kmh"
@@ -1331,23 +1340,135 @@ describe('view components', () => {
 		expect(html).toContain('0 sessions');
 		expect(html).not.toContain('Saved on this device');
 		expect(html).toContain('data-side-tray="true"');
-		expect(html).toContain('No saved sessions yet');
-		expect(html).toContain('data-testid="session-list"');
+		expect(html).toContain('data-testid="session-calendar"');
+		expect(html).toContain('No rides on this day');
+		expect(html).toContain('Calendar');
+		expect(html).toContain('List');
+		expect(html).toContain('Statistics');
+		expect(html).toContain('role="tablist"');
+		expect(html.match(/role="tab"/g)).toHaveLength(3);
+		expect(html).toContain('aria-selected="true"');
+		expect(html).toContain('role="tabpanel"');
+		expect(html).toContain('border-cyan-400 text-white');
 		expect(html).toContain('min-h-0 min-w-0 flex-1 flex-col overflow-hidden');
 		expect(html).toContain('overflow-y-auto overflow-x-hidden');
 		expect(html).toContain('Import FIT/TCX');
 		expect(html).toContain('data-testid="download-all-sessions"');
-		expect(html).toContain('aria-label="Download all sessions as FIT"');
+		expect(html).toContain('aria-label="Download all sessions as TCX"');
 		expect(html).toContain('aria-label="Download all format"');
 		expect(html).toContain('Download all');
 		expect(html).toContain('.tcx,.zip');
-		expect(html).toContain('End a session or import a FIT or TCX file to add it here.');
 		expect(html).toContain('ml-auto');
 		expect(html).toContain('translate-x-0');
 		expect(html).toContain('Show history keyboard controls');
 		expect(html).toContain('absolute top-3 right-14 grid h-9 w-9');
 		expect(html).toContain('absolute top-3 right-3 grid h-9 w-9');
 		expect(html.match(/hover:text-white sm:static/g)).toHaveLength(2);
+	});
+
+	test('renders a monthly ride calendar with selectable events', () => {
+		const month = new Date(2026, 6, 1);
+		const morning = {
+			...sessionSummary({
+				...savedSessionFixture,
+				id: 'morning-ride',
+				startedAt: new Date(2026, 6, 18, 8).getTime(),
+			}),
+			workoutName: 'Prairie Roll',
+		};
+		const evening = {
+			...sessionSummary({
+				...savedSessionFixture,
+				id: 'evening-ride',
+				startedAt: new Date(2026, 6, 18, 18).getTime(),
+			}),
+			workoutName: 'Harbor Ring',
+		};
+		const html = render(
+			<SessionCalendar
+				error=""
+				loading={false}
+				month={month}
+				onChangeMonth={() => undefined}
+				onSelect={() => undefined}
+				selectedId={morning.id}
+				speedUnit="mph"
+				summaries={[evening, morning]}
+			/>
+		);
+
+		expect(html).toContain('July 2026');
+		expect(html).toContain('2 rides');
+		expect(html).toContain('Prairie Roll');
+		expect(html).toContain('Harbor Ring');
+		expect(html).toContain('aria-label="Previous month"');
+		expect(html).toContain('aria-label="Next month"');
+		expect(html).toContain('aria-pressed="true"');
+	});
+
+	test('renders cached all-time statistics and per-period metric charts', () => {
+		const analytics = buildSessionAnalyticsCache([
+			sessionAnalyticsContribution({
+				...savedSessionFixture,
+				distance: 32,
+				elapsedSeconds: 3600,
+				elevationTotals: { ascent: 500, descent: 480 },
+			}),
+		]);
+		const html = render(
+			<SessionStatistics
+				analytics={analytics}
+				error=""
+				initialTrendMetric={SESSION_TREND_METRIC.DISTANCE}
+				loading={false}
+				onSelectSession={() => undefined}
+				speedUnit="mph"
+				trendEndTimestamp={new Date(2026, 6, 23, 12).getTime()}
+			/>
+		);
+
+		expect(html).toContain('All-time totals');
+		expect(html).toContain('Personal bests');
+		expect(html).toContain('Trends');
+		expect(html).toContain('Distance');
+		expect(html).toContain('Ride time');
+		expect(html).toContain('Climbing');
+		expect(html).toContain('Downhill');
+		expect(html).toContain('Calories');
+		expect(html).toContain('Average speed');
+		expect(html).toContain('Average power');
+		expect(html).toContain('Average cadence');
+		expect(html).toContain('Average heart rate');
+		expect(html).toContain('Open this session');
+		expect(html).toContain('data-testid="session-statistics"');
+		expect(html).toContain('aria-label="Trend metric"');
+		expect(html).toContain('value="all">All</option>');
+		expect(html.match(/>All</g)).toHaveLength(2);
+		expect(html.match(/data-analytics-bar="value"/g)).toHaveLength(1);
+		expect(html.match(/data-analytics-bar="empty"/g)).toHaveLength(11);
+		expect(html).toContain('Active years');
+		expect(html.match(/sm:text-5xl/g)).toHaveLength(18);
+		expect(html.match(/sm:text-2xl/g)).toHaveLength(9);
+		expect(html).toContain('max-w-12');
+		expect(html).toContain('height:85%');
+
+		const overview = render(
+			<SessionStatistics
+				analytics={analytics}
+				error=""
+				initialTrendRange="all"
+				loading={false}
+				onSelectSession={() => undefined}
+				speedUnit="mph"
+				trendEndTimestamp={new Date(2026, 6, 23, 12).getTime()}
+			/>
+		);
+		expect(overview).toContain('data-testid="trend-overview"');
+		expect(overview).toContain('All trends');
+		expect(overview).toContain('12 metrics');
+		expect(overview).toContain('Complete ride history');
+		expect(overview).toContain('aria-label="Distance trend"');
+		expect(overview.match(/data-analytics-overview-bar=/g)).toHaveLength(12);
 	});
 
 	test('virtualizes a large session history list', () => {

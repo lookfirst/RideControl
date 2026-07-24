@@ -6,10 +6,26 @@ import {
 	redirect,
 } from '@tanstack/react-router';
 import { createElement } from 'react';
+import { z } from 'zod';
 import { App } from './app';
 import { emptySession } from './constants';
 import { APP_ROUTE_PATH } from './lib/app-route';
+import { sessionCalendarMonthKeySchema } from './lib/session-calendar';
+import { sessionHistoryViewSchema } from './lib/session-history-view';
 import type { StoredSession } from './types';
+
+const sessionSearchSchema = z.object({
+	date: sessionCalendarMonthKeySchema.optional(),
+	view: sessionHistoryViewSchema.optional(),
+});
+
+function validateSessionSearch(search: unknown): {
+	date?: string;
+	view?: z.infer<typeof sessionHistoryViewSchema>;
+} {
+	const parsed = sessionSearchSchema.safeParse(search);
+	return parsed.success ? parsed.data : {};
+}
 
 export interface AppRouterOptions {
 	history?: RouterHistory;
@@ -27,8 +43,16 @@ export function createAppRouter({ history, initialSession = emptySession }: AppR
 		createRoute({ getParentRoute: () => rootRoute, path: APP_ROUTE_PATH.WORKOUT }),
 		createRoute({ getParentRoute: () => rootRoute, path: APP_ROUTE_PATH.BIKEGPX }),
 		createRoute({ getParentRoute: () => rootRoute, path: APP_ROUTE_PATH.BIKEGPX_ROUTE }),
-		createRoute({ getParentRoute: () => rootRoute, path: APP_ROUTE_PATH.SESSIONS }),
-		createRoute({ getParentRoute: () => rootRoute, path: APP_ROUTE_PATH.SESSION }),
+		createRoute({
+			getParentRoute: () => rootRoute,
+			path: APP_ROUTE_PATH.SESSIONS,
+			validateSearch: validateSessionSearch,
+		}),
+		createRoute({
+			getParentRoute: () => rootRoute,
+			path: APP_ROUTE_PATH.SESSION,
+			validateSearch: validateSessionSearch,
+		}),
 		createRoute({
 			beforeLoad: () => {
 				throw redirect({ replace: true, to: APP_ROUTE_PATH.HOME });

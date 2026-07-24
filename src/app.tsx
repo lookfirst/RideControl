@@ -61,6 +61,7 @@ import { maximumGear, resistanceForVirtualGear } from './lib/gears';
 import { type AppShortcut, appShortcutForKey, gearingKeyboardShortcuts } from './lib/keyboard';
 import { profileTotalMassKg, type RiderProfile } from './lib/profile';
 import { sessionNeedsUnloadWarning } from './lib/session';
+import { loadSessionHistoryView, type SessionHistoryView } from './lib/session-history-view';
 import { requestUnloadConfirmation } from './lib/unload';
 import { rememberWelcomeDismissal, shouldShowWelcome } from './lib/welcome';
 import {
@@ -122,7 +123,10 @@ function restoredRoute(overlay: AppOverlay | undefined): AppRoute {
 		return { kind: APP_ROUTE_KIND.DEVICES };
 	}
 	if (overlay === APP_OVERLAY.HISTORY) {
-		return { kind: APP_ROUTE_KIND.SESSION };
+		return {
+			historyView: loadSessionHistoryView(),
+			kind: APP_ROUTE_KIND.SESSION,
+		};
 	}
 	if (overlay === APP_OVERLAY.WORKOUTS) {
 		if (loadBikeGpxBrowserOpen()) {
@@ -149,6 +153,24 @@ function initialNavigation(linkedRoute: AppRoute, pathname: string): InitialNavi
 		overlay: restoredOverlay ?? (shouldShowWelcome() ? APP_OVERLAY.WELCOME : undefined),
 		route: restoredRoute(restoredOverlay),
 	};
+}
+
+function sessionRouteSearch(
+	calendarMonth?: string,
+	historyView?: SessionHistoryView
+): { date?: string; view?: SessionHistoryView } {
+	return {
+		...(calendarMonth ? { date: calendarMonth } : {}),
+		...(historyView ? { view: historyView } : {}),
+	};
+}
+
+function sessionRouteRequest(route: AppRoute): {
+	calendarMonth?: string;
+	historyView?: SessionHistoryView;
+	sessionId?: string;
+} {
+	return route.kind === APP_ROUTE_KIND.SESSION ? route : {};
 }
 
 export function App({ initialSession = emptySession }: { initialSession?: StoredSession }) {
@@ -201,10 +223,15 @@ export function App({ initialSession = emptySession }: { initialSession?: Stored
 						navigate({
 							params: { sessionId: route.sessionId },
 							replace,
+							search: sessionRouteSearch(route.calendarMonth, route.historyView),
 							to: APP_ROUTE_PATH.SESSION,
 						}).catch(() => undefined);
 					} else {
-						navigate({ replace, to: APP_ROUTE_PATH.SESSIONS }).catch(() => undefined);
+						navigate({
+							replace,
+							search: sessionRouteSearch(route.calendarMonth, route.historyView),
+							to: APP_ROUTE_PATH.SESSIONS,
+						}).catch(() => undefined);
 					}
 					return;
 				case APP_ROUTE_KIND.WORKOUT:
@@ -231,7 +258,10 @@ export function App({ initialSession = emptySession }: { initialSession?: Stored
 				return;
 			}
 			if (overlay === APP_OVERLAY.HISTORY) {
-				navigateToAppRoute({ kind: APP_ROUTE_KIND.SESSION });
+				navigateToAppRoute({
+					historyView: loadSessionHistoryView(),
+					kind: APP_ROUTE_KIND.SESSION,
+				});
 				return;
 			}
 			if (overlay === APP_OVERLAY.WORKOUTS) {
@@ -478,8 +508,11 @@ export function App({ initialSession = emptySession }: { initialSession?: Stored
 	const bikeGpxRouteId = bikeGpxBrowserOpen ? appRoute.routeId : undefined;
 	const focusedWorkoutId =
 		appRoute.kind === APP_ROUTE_KIND.WORKOUT ? appRoute.workoutId : undefined;
-	const requestedSessionId =
-		appRoute.kind === APP_ROUTE_KIND.SESSION ? appRoute.sessionId : undefined;
+	const {
+		calendarMonth: requestedSessionCalendarMonth,
+		historyView: requestedSessionHistoryView,
+		sessionId: requestedSessionId,
+	} = sessionRouteRequest(appRoute);
 	const focusWorkout = useCallback(
 		(courseId: string | undefined) => {
 			navigateToAppRoute({ kind: APP_ROUTE_KIND.WORKOUT, workoutId: courseId }, true);
@@ -500,9 +533,39 @@ export function App({ initialSession = emptySession }: { initialSession?: Stored
 	);
 	const selectHistorySession = useCallback(
 		(sessionId: string) => {
-			navigateToAppRoute({ kind: APP_ROUTE_KIND.SESSION, sessionId }, true);
+			navigateToAppRoute(
+				{
+					calendarMonth: requestedSessionCalendarMonth,
+					historyView: requestedSessionHistoryView,
+					kind: APP_ROUTE_KIND.SESSION,
+					sessionId,
+				},
+				true
+			);
 		},
-		[navigateToAppRoute]
+		[navigateToAppRoute, requestedSessionCalendarMonth, requestedSessionHistoryView]
+	);
+	const selectHistoryCalendarMonth = useCallback(
+		(calendarMonth: string) => {
+			navigateToAppRoute({
+				calendarMonth,
+				historyView: requestedSessionHistoryView,
+				kind: APP_ROUTE_KIND.SESSION,
+				sessionId: requestedSessionId,
+			});
+		},
+		[navigateToAppRoute, requestedSessionHistoryView, requestedSessionId]
+	);
+	const selectHistoryView = useCallback(
+		(historyView: SessionHistoryView) => {
+			navigateToAppRoute({
+				calendarMonth: requestedSessionCalendarMonth,
+				historyView,
+				kind: APP_ROUTE_KIND.SESSION,
+				sessionId: requestedSessionId,
+			});
+		},
+		[navigateToAppRoute, requestedSessionCalendarMonth, requestedSessionId]
 	);
 	useEffect(() => {
 		if (!selectedWorkoutCourse) {
@@ -637,10 +700,14 @@ export function App({ initialSession = emptySession }: { initialSession?: Stored
 			/>
 			<SessionHistory
 				onClose={() => setActiveOverlay(undefined)}
+				onSelectCalendarMonth={selectHistoryCalendarMonth}
 				onSelectSessionId={selectHistorySession}
+				onSelectView={selectHistoryView}
 				onStartNew={continueFromHistory}
 				open={activeOverlay === APP_OVERLAY.HISTORY}
 				requestedSessionId={requestedSessionId}
+				requestedSessionMonth={requestedSessionCalendarMonth}
+				requestedView={requestedSessionHistoryView}
 				speedUnit={speedUnit}
 			/>
 			<WorkoutPanel
