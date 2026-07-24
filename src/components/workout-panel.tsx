@@ -124,8 +124,7 @@ function WorkoutCourseCard({
 			className={`relative overflow-hidden rounded-2xl border bg-[#12171d] transition-colors ${emphasis} ${dragged ? 'cursor-grabbing opacity-95 shadow-[0_20px_50px_rgba(0,0,0,.5)]' : ''}`}
 			data-focused={focused ? 'true' : undefined}
 			id={`workout-${encodeURIComponent(course.id)}`}
-			onFocusCapture={onFocus}
-			onPointerDownCapture={onFocus}
+			onClickCapture={onFocus}
 			ref={setNodeRef}
 			style={style}
 		>
