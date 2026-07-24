@@ -53,6 +53,7 @@ export const MAXIMUM_VIRTUAL_DRIVE_RATIO = Math.max(
 
 const RESISTANCE_PRECISION = 10;
 const VIRTUAL_GEAR_LOAD_EXPONENT = 2;
+const HARD_GEAR_RESISTANCE_FLOOR_SCALE = 18.5;
 const DEFAULT_TOTAL_MASS_KG = DEFAULT_RIDER_WEIGHT_KG + DEFAULT_BIKE_WEIGHT_KG;
 
 export function maximumGear(drivetrain: VirtualDrivetrain = DEFAULT_VIRTUAL_DRIVETRAIN): number {
@@ -122,6 +123,19 @@ function gearLoadMultiplierFromCombinations(
 	return relativeRatio ** VIRTUAL_GEAR_LOAD_EXPONENT;
 }
 
+function hardGearResistanceFloor(
+	gear: number,
+	combinations: readonly VirtualGearCombination[]
+): number {
+	// Descending terrain can approach zero load, but a large virtual ratio still
+	// represents substantial wheel speed and aerodynamic load at normal cadence.
+	return Math.max(
+		0,
+		(gearLoadMultiplierFromCombinations(gear, combinations) - 1) *
+			HARD_GEAR_RESISTANCE_FLOOR_SCALE
+	);
+}
+
 export function systemMassLoadMultiplier(totalMassKg = DEFAULT_TOTAL_MASS_KG): number {
 	return clamp(totalMassKg / DEFAULT_TOTAL_MASS_KG, 0.25, 5);
 }
@@ -132,10 +146,14 @@ export function resistanceForVirtualGear(
 	drivetrain: VirtualDrivetrain = DEFAULT_VIRTUAL_DRIVETRAIN,
 	totalMassKg = DEFAULT_TOTAL_MASS_KG
 ): number {
+	const combinations = virtualGearCombinations(drivetrain);
 	return roundedResistance(
-		clampResistance(terrainResistance) *
-			virtualGearLoadMultiplier(gear, drivetrain) *
-			systemMassLoadMultiplier(totalMassKg)
+		Math.max(
+			clampResistance(terrainResistance) *
+				gearLoadMultiplierFromCombinations(gear, combinations) *
+				systemMassLoadMultiplier(totalMassKg),
+			hardGearResistanceFloor(gear, combinations)
+		)
 	);
 }
 
@@ -147,8 +165,11 @@ export function resistanceAfterGearShift(
 ): number {
 	const combinations = virtualGearCombinations(drivetrain);
 	return roundedResistance(
-		resistance *
-			(gearLoadMultiplierFromCombinations(toGear, combinations) /
-				gearLoadMultiplierFromCombinations(fromGear, combinations))
+		Math.max(
+			resistance *
+				(gearLoadMultiplierFromCombinations(toGear, combinations) /
+					gearLoadMultiplierFromCombinations(fromGear, combinations)),
+			hardGearResistanceFloor(toGear, combinations)
+		)
 	);
 }

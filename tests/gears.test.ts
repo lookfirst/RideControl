@@ -87,6 +87,16 @@ describe('virtual gears', () => {
 		expect(virtualGearLoadMultiplier(DEFAULT_GEAR)).toBe(1);
 	});
 
+	test('keeps the hardest gears loaded through a descent', () => {
+		const lightRiderAndBikeKg = 68;
+		expect(resistanceForVirtualGear(4, MIN_GEAR, undefined, lightRiderAndBikeKg)).toBe(1.3);
+		expect(resistanceForVirtualGear(4, DEFAULT_GEAR, undefined, lightRiderAndBikeKg)).toBe(3.2);
+		expect(resistanceForVirtualGear(4, 22, undefined, lightRiderAndBikeKg)).toBe(20.7);
+		expect(resistanceForVirtualGear(4, 23, undefined, lightRiderAndBikeKg)).toBe(27);
+		expect(resistanceForVirtualGear(4, MAX_GEAR, undefined, lightRiderAndBikeKg)).toBe(34.9);
+		expect(resistanceAfterGearShift(4, DEFAULT_GEAR, MAX_GEAR)).toBe(34.9);
+	});
+
 	test('keeps a modest Prairie Roll climb easy in gear one', () => {
 		const prairieRoll = WORKOUT_COURSES.find((course) => course.id === 'prairie-roll');
 		if (!prairieRoll) {
