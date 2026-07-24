@@ -105,9 +105,11 @@ export function SessionMetric({
 }) {
 	return (
 		<div className="rounded-xl border border-line bg-[#12171d] p-4">
-			<div className="flex items-center justify-between gap-3">
-				<p className="font-bold text-[10px] text-slate-500 tracking-[.14em]">{label}</p>
-				<Icon className={`h-4 w-4 ${metricIconClass(accent)}`} name={icon} />
+			<div className="flex items-center justify-between gap-2">
+				<p className="whitespace-nowrap font-bold text-[9px] text-slate-500 tracking-widest">
+					{label}
+				</p>
+				<Icon className={`h-4 w-4 shrink-0 ${metricIconClass(accent)}`} name={icon} />
 			</div>
 			<div className="mt-3 flex items-baseline gap-2">
 				<span className="font-semibold text-3xl tracking-tight sm:text-4xl">{average}</span>

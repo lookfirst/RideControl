@@ -27,6 +27,7 @@ import {
 import { useBikeGpxCatalog } from '../hooks/use-bikegpx-catalog';
 import { useFileDrop } from '../hooks/use-file-drop';
 import { usePersistentScrollPosition } from '../hooks/use-persistent-scroll-position';
+import { APP_OVERLAY } from '../lib/app-overlay';
 import { errorMessage } from '../lib/errors';
 import { descriptionWithoutDistance, formatDistance, formatElevation } from '../lib/units';
 import {
@@ -472,6 +473,7 @@ export function WorkoutPanel({
 				onClose={closePanel}
 				open={open}
 				panelClassName="max-w-xl"
+				tray={APP_OVERLAY.WORKOUTS}
 			>
 				<div
 					className="relative flex h-full flex-col"

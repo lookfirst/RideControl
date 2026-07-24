@@ -142,6 +142,20 @@ describe('view components', () => {
 		expect(html).not.toContain('>AVERAGE</span>');
 		expect(html).toContain('MAX</strong>300');
 		expect(html).toContain('pr-1 text-right text-slate-400');
+		const heartRate = render(
+			<SessionMetric
+				accent="rose"
+				average="113"
+				icon="heart"
+				label="HEART RATE"
+				maximum="131"
+				unit="bpm"
+			/>
+		);
+		expect(heartRate).toContain(
+			'whitespace-nowrap font-bold text-[9px] text-slate-500 tracking-widest'
+		);
+		expect(heartRate).toContain('h-4 w-4 shrink-0');
 		const averageOnly = render(
 			<SessionMetric
 				accent="mint"
@@ -365,6 +379,9 @@ describe('view components', () => {
 		expect(panel).toContain('transition-opacity duration-200');
 		expect(panel).toContain('transition-transform duration-200');
 		expect(panel).toContain('translate-x-0');
+		expect(panel).toContain('aria-label="Resize paired devices"');
+		expect(panel).toContain('<hr aria-label="Resize paired devices"');
+		expect(panel).toContain('cursor-col-resize');
 		expect(panel).toContain('Smart trainer');
 		expect(panel).toContain('Heart rate');
 		expect(panel).toContain('Zwift Click V2');
@@ -1749,6 +1766,10 @@ describe('view components', () => {
 		);
 
 		expect(html).toContain('All-time totals');
+		expect(html).toContain('data-testid="all-time-totals"');
+		expect(html).not.toContain(
+			'Updated locally whenever a session is saved, imported, changed, or deleted.'
+		);
 		expect(html).toContain('Personal bests');
 		expect(html).toContain('Trends');
 		expect(html).toContain('Distance');
@@ -1775,9 +1796,10 @@ describe('view components', () => {
 		expect(html.match(/data-weight-point="true"/g)).toHaveLength(2);
 		expect(html.match(/sm:text-5xl/g)).toHaveLength(18);
 		expect(html.match(/sm:text-2xl/g)).toHaveLength(9);
-		expect(html).toContain('mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3');
-		expect(html).toContain('mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-3');
+		expect(html).toContain('mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3');
+		expect(html).toContain('mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3');
 		expect(html).toContain('mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-3');
+		expect(html).toContain('mt-3 p-5');
 		expect(html).not.toContain('mt-2 truncate font-bold text-4xl');
 		expect(html).toContain('<span class="whitespace-nowrap">');
 		expect(html).toContain('max-w-12');

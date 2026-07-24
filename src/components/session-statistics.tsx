@@ -15,6 +15,16 @@ import {
 	sessionAnalyticsTrendRollups,
 } from '../lib/session-analytics';
 import {
+	loadSessionTrendMetric,
+	loadSessionTrendRange,
+	SESSION_TREND_METRIC_SELECTION,
+	SESSION_TREND_RANGE,
+	type SessionTrendMetricSelection,
+	type SessionTrendRange,
+	saveSessionTrendMetric,
+	saveSessionTrendRange,
+} from '../lib/session-history-preferences';
+import {
 	convertDistance,
 	convertElevation,
 	convertSpeed,
@@ -32,18 +42,14 @@ const INTEGER_FORMATTER = new Intl.NumberFormat(undefined, {
 	maximumFractionDigits: 0,
 });
 const PERIOD_OPTIONS: { label: string; value: SessionAnalyticsPeriod }[] = [
-	{ label: 'Week', value: SESSION_ANALYTICS_PERIOD.WEEK },
-	{ label: 'Month', value: SESSION_ANALYTICS_PERIOD.MONTH },
-	{ label: 'Year', value: SESSION_ANALYTICS_PERIOD.YEAR },
+	{ label: 'Week', value: SESSION_TREND_RANGE.WEEK },
+	{ label: 'Month', value: SESSION_TREND_RANGE.MONTH },
+	{ label: 'Year', value: SESSION_TREND_RANGE.YEAR },
 ];
-const ALL_TREND_RANGE = 'all';
-type SessionTrendRange = SessionAnalyticsPeriod | typeof ALL_TREND_RANGE;
 const TREND_RANGE_OPTIONS: { label: string; value: SessionTrendRange }[] = [
 	...PERIOD_OPTIONS,
-	{ label: 'All', value: ALL_TREND_RANGE },
+	{ label: 'All', value: SESSION_TREND_RANGE.ALL },
 ];
-const ALL_TREND_METRICS = 'all';
-type TrendMetricSelection = SessionTrendMetric | typeof ALL_TREND_METRICS;
 
 interface ChartDatum {
 	key: string;
@@ -435,8 +441,8 @@ function PeakCard({
 export function SessionStatistics({
 	analytics,
 	error,
-	initialTrendMetric = ALL_TREND_METRICS,
-	initialTrendRange = SESSION_ANALYTICS_PERIOD.MONTH,
+	initialTrendMetric,
+	initialTrendRange,
 	loading,
 	onSelectSession,
 	speedUnit,
@@ -445,7 +451,7 @@ export function SessionStatistics({
 }: {
 	analytics: SessionAnalyticsCache;
 	error: string;
-	initialTrendMetric?: TrendMetricSelection;
+	initialTrendMetric?: SessionTrendMetricSelection;
 	initialTrendRange?: SessionTrendRange;
 	loading: boolean;
 	onSelectSession: (id: string) => void;
@@ -453,18 +459,23 @@ export function SessionStatistics({
 	trendEndTimestamp?: number;
 	weightHistory?: readonly RiderWeightEntry[];
 }) {
-	const [trendRange, setTrendRange] = useState<SessionTrendRange>(initialTrendRange);
-	const [trendMetricKey, setTrendMetricKey] = useState<TrendMetricSelection>(initialTrendMetric);
+	const [trendRange, setTrendRange] = useState<SessionTrendRange>(
+		() => initialTrendRange ?? loadSessionTrendRange()
+	);
+	const [trendMetricKey, setTrendMetricKey] = useState<SessionTrendMetricSelection>(
+		() => initialTrendMetric ?? loadSessionTrendMetric()
+	);
 	const [trendEnd] = useState(() => trendEndTimestamp ?? Date.now());
 	const trendMetrics = useMemo(() => trendMetricDefinitions(speedUnit), [speedUnit]);
 	const activeTrendMetric =
-		trendMetricKey === ALL_TREND_METRICS
+		trendMetricKey === SESSION_TREND_METRIC_SELECTION.ALL
 			? undefined
 			: selectedTrendMetric(trendMetrics, trendMetricKey);
-	const chartPeriod = trendRange === ALL_TREND_RANGE ? SESSION_ANALYTICS_PERIOD.YEAR : trendRange;
+	const chartPeriod =
+		trendRange === SESSION_TREND_RANGE.ALL ? SESSION_ANALYTICS_PERIOD.YEAR : trendRange;
 	const chartData = useMemo<ChartDatum[]>(
 		() =>
-			(trendRange === ALL_TREND_RANGE
+			(trendRange === SESSION_TREND_RANGE.ALL
 				? sessionAnalyticsCompleteTrendRollups(analytics)
 				: sessionAnalyticsTrendRollups(analytics, trendRange, trendEnd)
 			).map(([key, rollup]) => ({
@@ -556,107 +567,117 @@ export function SessionStatistics({
 			{error ? (
 				<p className="mb-4 rounded-lg bg-rose-400/10 p-3 text-rose-300 text-sm">{error}</p>
 			) : null}
-			<div className="flex flex-wrap items-end justify-between gap-3">
-				<div>
-					<h3 className="font-bold text-xl">All-time totals</h3>
-					<p className="mt-1 text-slate-500 text-xs">
-						Updated locally whenever a session is saved, imported, changed, or deleted.
-					</p>
+			<section
+				className="rounded-xl border border-line bg-[#12171d] p-4"
+				data-testid="all-time-totals"
+			>
+				<div className="flex items-center justify-between gap-3">
+					<h3 className="font-bold text-base">All-time totals</h3>
+					{loading ? <span className="text-cyan-300 text-xs">Updating…</span> : null}
 				</div>
-				{loading ? <span className="text-cyan-300 text-xs">Updating…</span> : null}
-			</div>
-			<div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-				<StatisticsCard
-					label="Rides"
-					value={INTEGER_FORMATTER.format(totals.sessionCount)}
-				/>
-				<StatisticsCard
-					label="Distance"
-					unit={distanceUnitLabel(speedUnit)}
-					value={NUMBER_FORMATTER.format(convertDistance(totals.distance, speedUnit))}
-				/>
-				<StatisticsCard
-					label="Ride time"
-					value={analyticsDuration(totals.elapsedSeconds)}
-				/>
-				<StatisticsCard
-					label="Climbed"
-					unit={elevationUnitLabel(speedUnit)}
-					value={INTEGER_FORMATTER.format(convertElevation(totals.ascent, speedUnit))}
-				/>
-				<StatisticsCard
-					label="Downhill"
-					unit={elevationUnitLabel(speedUnit)}
-					value={INTEGER_FORMATTER.format(convertElevation(totals.descent, speedUnit))}
-				/>
-				<StatisticsCard
-					label="Calories"
-					unit="kcal"
-					value={INTEGER_FORMATTER.format(totals.calories)}
-				/>
-			</div>
-			<div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-				<StatisticsCard
-					label="Average speed"
-					unit={speedUnitLabel(speedUnit)}
-					value={NUMBER_FORMATTER.format(
-						convertSpeed(sessionAnalyticsAverageSpeed(totals), speedUnit)
-					)}
-				/>
-				<StatisticsCard
-					label="Average power"
-					unit="W"
-					value={INTEGER_FORMATTER.format(averagePower)}
-				/>
-				<StatisticsCard
-					label="Average cadence"
-					unit="rpm"
-					value={INTEGER_FORMATTER.format(averageCadence)}
-				/>
-				<StatisticsCard
-					label="Average heart rate"
-					unit="bpm"
-					value={INTEGER_FORMATTER.format(averageHeartRate)}
-				/>
-				<StatisticsCard
-					label="Average gear"
-					value={totals.gear.count > 0 ? NUMBER_FORMATTER.format(averageGear) : '—'}
-				/>
-				<StatisticsCard
-					label="Average resistance"
-					unit="%"
-					value={
-						totals.resistance.count > 0
-							? NUMBER_FORMATTER.format(averageResistance)
-							: '—'
-					}
-				/>
-				<StatisticsCard
-					label="Average ride"
-					unit={distanceUnitLabel(speedUnit)}
-					value={NUMBER_FORMATTER.format(convertDistance(averageRideDistance, speedUnit))}
-				/>
-				<StatisticsCard
-					label="Average duration"
-					value={analyticsDuration(averageRideDuration)}
-				/>
-				<StatisticsCard
-					label="Active days"
-					value={INTEGER_FORMATTER.format(Object.keys(analytics.periods.days).length)}
-				/>
-				<StatisticsCard
-					label="Active weeks"
-					value={INTEGER_FORMATTER.format(Object.keys(analytics.periods.weeks).length)}
-				/>
-				<StatisticsCard
-					label="Active months"
-					value={INTEGER_FORMATTER.format(Object.keys(analytics.periods.months).length)}
-				/>
-				<StatisticsCard
-					label="Active years"
-					value={INTEGER_FORMATTER.format(Object.keys(analytics.periods.years).length)}
-				/>
-			</div>
+				<div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+					<StatisticsCard
+						label="Rides"
+						value={INTEGER_FORMATTER.format(totals.sessionCount)}
+					/>
+					<StatisticsCard
+						label="Distance"
+						unit={distanceUnitLabel(speedUnit)}
+						value={NUMBER_FORMATTER.format(convertDistance(totals.distance, speedUnit))}
+					/>
+					<StatisticsCard
+						label="Ride time"
+						value={analyticsDuration(totals.elapsedSeconds)}
+					/>
+					<StatisticsCard
+						label="Climbed"
+						unit={elevationUnitLabel(speedUnit)}
+						value={INTEGER_FORMATTER.format(convertElevation(totals.ascent, speedUnit))}
+					/>
+					<StatisticsCard
+						label="Downhill"
+						unit={elevationUnitLabel(speedUnit)}
+						value={INTEGER_FORMATTER.format(
+							convertElevation(totals.descent, speedUnit)
+						)}
+					/>
+					<StatisticsCard
+						label="Calories"
+						unit="kcal"
+						value={INTEGER_FORMATTER.format(totals.calories)}
+					/>
+				</div>
+				<div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+					<StatisticsCard
+						label="Average speed"
+						unit={speedUnitLabel(speedUnit)}
+						value={NUMBER_FORMATTER.format(
+							convertSpeed(sessionAnalyticsAverageSpeed(totals), speedUnit)
+						)}
+					/>
+					<StatisticsCard
+						label="Average power"
+						unit="W"
+						value={INTEGER_FORMATTER.format(averagePower)}
+					/>
+					<StatisticsCard
+						label="Average cadence"
+						unit="rpm"
+						value={INTEGER_FORMATTER.format(averageCadence)}
+					/>
+					<StatisticsCard
+						label="Average heart rate"
+						unit="bpm"
+						value={INTEGER_FORMATTER.format(averageHeartRate)}
+					/>
+					<StatisticsCard
+						label="Average gear"
+						value={totals.gear.count > 0 ? NUMBER_FORMATTER.format(averageGear) : '—'}
+					/>
+					<StatisticsCard
+						label="Average resistance"
+						unit="%"
+						value={
+							totals.resistance.count > 0
+								? NUMBER_FORMATTER.format(averageResistance)
+								: '—'
+						}
+					/>
+					<StatisticsCard
+						label="Average ride"
+						unit={distanceUnitLabel(speedUnit)}
+						value={NUMBER_FORMATTER.format(
+							convertDistance(averageRideDistance, speedUnit)
+						)}
+					/>
+					<StatisticsCard
+						label="Average duration"
+						value={analyticsDuration(averageRideDuration)}
+					/>
+					<StatisticsCard
+						label="Active days"
+						value={INTEGER_FORMATTER.format(Object.keys(analytics.periods.days).length)}
+					/>
+					<StatisticsCard
+						label="Active weeks"
+						value={INTEGER_FORMATTER.format(
+							Object.keys(analytics.periods.weeks).length
+						)}
+					/>
+					<StatisticsCard
+						label="Active months"
+						value={INTEGER_FORMATTER.format(
+							Object.keys(analytics.periods.months).length
+						)}
+					/>
+					<StatisticsCard
+						label="Active years"
+						value={INTEGER_FORMATTER.format(
+							Object.keys(analytics.periods.years).length
+						)}
+					/>
+				</div>
+			</section>
 			<section className="mt-5 rounded-xl border border-line bg-[#12171d] p-4">
 				<h3 className="font-bold text-base">Personal bests</h3>
 				<div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
@@ -687,7 +708,7 @@ export function SessionStatistics({
 				<div>
 					<h3 className="font-bold text-xl">Trends</h3>
 					<p className="mt-1 text-slate-500 text-xs">
-						{trendRange === ALL_TREND_RANGE
+						{trendRange === SESSION_TREND_RANGE.ALL
 							? 'Complete ride history'
 							: `The latest ${
 									trendRange === SESSION_ANALYTICS_PERIOD.YEAR
@@ -701,8 +722,9 @@ export function SessionStatistics({
 						aria-label="Trend metric"
 						className="h-10 min-w-44 rounded-lg border border-line bg-[#12171d] px-3 font-semibold text-slate-200 text-xs outline-none focus:border-cyan-400/60"
 						onChange={(event) => {
-							if (event.currentTarget.value === ALL_TREND_METRICS) {
-								setTrendMetricKey(ALL_TREND_METRICS);
+							if (event.currentTarget.value === SESSION_TREND_METRIC_SELECTION.ALL) {
+								setTrendMetricKey(SESSION_TREND_METRIC_SELECTION.ALL);
+								saveSessionTrendMetric(SESSION_TREND_METRIC_SELECTION.ALL);
 								return;
 							}
 							const selected = trendMetrics.find(
@@ -710,11 +732,12 @@ export function SessionStatistics({
 							);
 							if (selected) {
 								setTrendMetricKey(selected.key);
+								saveSessionTrendMetric(selected.key);
 							}
 						}}
 						value={trendMetricKey}
 					>
-						<option value={ALL_TREND_METRICS}>All</option>
+						<option value={SESSION_TREND_METRIC_SELECTION.ALL}>All</option>
 						{trendMetrics.map((definition) => (
 							<option key={definition.key} value={definition.key}>
 								{definition.label}
@@ -731,7 +754,10 @@ export function SessionStatistics({
 										: 'text-slate-400 hover:text-white'
 								}`}
 								key={option.value}
-								onClick={() => setTrendRange(option.value)}
+								onClick={() => {
+									setTrendRange(option.value);
+									saveSessionTrendRange(option.value);
+								}}
 								type="button"
 							>
 								{option.label}

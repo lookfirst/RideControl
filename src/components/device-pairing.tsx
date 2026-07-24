@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { CHROME_BLUETOOTH_FLAGS_URL } from '../constants';
 import { useDialogInitialFocus } from '../hooks/use-dialog-behavior';
+import { APP_OVERLAY } from '../lib/app-overlay';
 import { automaticBluetoothReconnectConfigured, bluetoothBrowserNotice } from '../lib/browser';
 import type { DeviceConnectionView } from '../lib/device-connection';
 import {
@@ -449,6 +450,7 @@ export function DevicePairingPanel({
 			onClose={onClose}
 			open={open}
 			panelClassName="max-w-md overflow-y-auto overflow-x-hidden p-5 sm:p-6"
+			tray={APP_OVERLAY.DEVICES}
 		>
 			<div className="flex items-start justify-between gap-4">
 				<div>

@@ -114,7 +114,7 @@ export function RiderWeightChart({
 		<figure
 			aria-label={`Weight over time from ${first.date} to ${latest.date}`}
 			className={`min-w-0 overflow-hidden rounded-2xl border border-line bg-[#10151a] ${
-				compact ? 'mt-3 p-4' : 'p-5'
+				compact ? 'mt-3 p-4' : 'mt-3 p-5'
 			}`}
 			data-testid="rider-weight-chart"
 			data-weight-chart-size={compact ? 'compact' : 'full'}

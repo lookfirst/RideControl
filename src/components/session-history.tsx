@@ -7,6 +7,7 @@ import {
 	type ActivityFileFormat,
 	isActivityFileFormat,
 } from '../lib/activity-file';
+import { APP_OVERLAY } from '../lib/app-overlay';
 import {
 	eventTargetsEditableControl,
 	eventTargetsInteractiveControl,
@@ -311,6 +312,7 @@ export function SessionHistory({
 				onClose={onClose}
 				open={open}
 				panelClassName="flex max-w-6xl flex-col overflow-hidden sm:w-[min(72rem,calc(100vw-2rem))]"
+				tray={APP_OVERLAY.HISTORY}
 			>
 				<header className="relative flex flex-wrap items-center gap-x-4 gap-y-2 border-line border-b py-3 pr-24 pl-5 sm:px-5">
 					<div className="mr-auto flex min-w-0 items-center gap-2">

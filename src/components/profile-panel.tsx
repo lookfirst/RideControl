@@ -1,6 +1,7 @@
 import { useForm, useSelector } from '@tanstack/react-form';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useCloseOnEscape, useDialogInitialFocus } from '../hooks/use-dialog-behavior';
+import { APP_OVERLAY } from '../lib/app-overlay';
 import { errorMessage, unreachable } from '../lib/errors';
 import {
 	drivetrainGearCount,
@@ -634,6 +635,7 @@ export function ProfilePanel({
 			}}
 			open={open}
 			panelClassName="flex max-w-3xl flex-col overflow-hidden sm:w-[min(48rem,calc(100vw-2rem))]"
+			tray={APP_OVERLAY.PROFILE}
 		>
 			<header className="flex shrink-0 items-center justify-between gap-4 border-line border-b px-5 py-3 sm:px-6">
 				<div className="flex min-w-0 items-baseline gap-3">
