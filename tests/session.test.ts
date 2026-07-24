@@ -6,12 +6,12 @@ import {
 	addMetricAggregates,
 	aggregateResistance,
 	loadStoredSession,
-	requestUnloadConfirmation,
 	restoreAggregate,
 	sessionContinuation,
 	sessionNeedsUnloadWarning,
 	storedResistance,
 } from '../src/lib/session';
+import { requestUnloadConfirmation } from '../src/lib/unload';
 import { WORKOUT_COURSES } from '../src/lib/workouts';
 
 const storageWith = (value: string | null) => ({
@@ -46,6 +46,12 @@ describe('session utilities', () => {
 				},
 			],
 			maximums: emptySession.maximums,
+			profileSnapshot: {
+				bikeWeightKg: 8,
+				frontChainringTeeth: [50, 34],
+				rearCassetteTeeth: [11, 13, 15, 17],
+				riderWeightKg: 68,
+			},
 			startedAt: 1000,
 		};
 		const continued = sessionContinuation(snapshot);
@@ -165,6 +171,12 @@ describe('session utilities', () => {
 			],
 			maximums: { cadence: 95, heartRate: 160, power: 250, speed: 35 },
 			plannedWorkout: { course: workout },
+			profileSnapshot: {
+				bikeWeightKg: 8,
+				frontChainringTeeth: [50, 34],
+				rearCassetteTeeth: [11, 13, 15, 17],
+				riderWeightKg: 68,
+			},
 			savedSessionId: 'saved-session',
 			startedAt: 1000,
 			workout: { course: workout },
@@ -189,6 +201,12 @@ describe('session utilities', () => {
 		expect(session.aggregates.power).toEqual({ count: 1, maximum: 200, sum: 200 });
 		expect(session.aggregates.resistance).toEqual({ count: 1, maximum: 42, sum: 42 });
 		expect(session.maximums.speed).toBe(35);
+		expect(session.profileSnapshot).toEqual({
+			bikeWeightKg: 8,
+			frontChainringTeeth: [50, 34],
+			rearCassetteTeeth: [11, 13, 15, 17],
+			riderWeightKg: 68,
+		});
 		const { plannedWorkout } = session;
 		if (!plannedWorkout) {
 			throw new Error('Expected the planned workout to be restored');

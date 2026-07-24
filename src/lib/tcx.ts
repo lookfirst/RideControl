@@ -8,6 +8,7 @@ import { CONTROL_MODE } from './control-mode';
 import { downloadBrowserFile } from './download';
 import { aggregateAverage, aggregateMaximum } from './format';
 import { nonNegativeNumber } from './numbers';
+import type { RiderPhysicsProfile } from './profile';
 import {
 	RIDECONTROL_TCX_EXTENSION_NAMESPACE,
 	TCX_ACTIVITY_EXTENSION_NAMESPACE,
@@ -93,6 +94,19 @@ function workoutSummaryXml(workout?: SessionWorkout): string {
 						</rc:Workout>`;
 }
 
+function profileSummaryXml(profile?: RiderPhysicsProfile): string {
+	if (!profile) {
+		return '';
+	}
+	return `
+						<rc:ProfileSnapshot>
+							<rc:RiderWeightKilograms>${profile.riderWeightKg.toFixed(3)}</rc:RiderWeightKilograms>
+							<rc:BikeWeightKilograms>${profile.bikeWeightKg.toFixed(3)}</rc:BikeWeightKilograms>
+							<rc:FrontChainrings>${profile.frontChainringTeeth.join('/')}</rc:FrontChainrings>
+							<rc:RearCassette>${profile.rearCassetteTeeth.join('/')}</rc:RearCassette>
+						</rc:ProfileSnapshot>`;
+}
+
 export function sessionToTcx(session: SavedSession): string {
 	const startedAt = new Date(session.startedAt).toISOString();
 	const distances = sessionSampleDistances(session);
@@ -169,7 +183,7 @@ export function sessionToTcx(session: SavedSession): string {
 						<rc:SessionId>${xmlEscape(session.id)}</rc:SessionId>
 						<rc:TotalAscentMeters>${nonNegativeNumber(session.elevationTotals.ascent).toFixed(2)}</rc:TotalAscentMeters>
 						<rc:TotalDescentMeters>${nonNegativeNumber(session.elevationTotals.descent).toFixed(2)}</rc:TotalDescentMeters>
-						${controlSummary}${workoutSummaryXml(session.workout)}
+						${controlSummary}${profileSummaryXml(session.profileSnapshot)}${workoutSummaryXml(session.workout)}
 					</rc:Summary>
 				</Extensions>
 			</Lap>${

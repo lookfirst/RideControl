@@ -45,12 +45,15 @@ export interface VirtualDrivetrain {
 	rearCassetteTeeth: readonly number[];
 }
 
-export interface RiderProfile extends VirtualDrivetrain {
+export interface RiderPhysicsProfile extends VirtualDrivetrain {
 	bikeWeightKg: number;
+	riderWeightKg: number;
+}
+
+export interface RiderProfile extends RiderPhysicsProfile {
 	identity: string;
 	image?: Blob;
 	name: string;
-	riderWeightKg: number;
 }
 
 interface StoredRiderProfile extends RiderProfile {
@@ -115,23 +118,21 @@ function isProfileImage(value: unknown): value is Blob {
 	return value instanceof Blob && PROFILE_IMAGE_TYPES.some((type) => type === value.type);
 }
 
-export function profileFromStoredValue(value: unknown): RiderProfile | undefined {
-	if (!(isRecord(value) && value.version === PROFILE_VERSION)) {
+export function riderPhysicsProfileFromStoredValue(
+	value: unknown
+): RiderPhysicsProfile | undefined {
+	if (!isRecord(value)) {
 		return;
 	}
 	const frontChainringTeeth = numericArray(value.frontChainringTeeth);
 	const rearCassetteTeeth = numericArray(value.rearCassetteTeeth);
 	if (
 		!(
-			isString(value.name) &&
-			isString(value.identity) &&
 			isFiniteNumber(value.riderWeightKg) &&
 			isFiniteNumber(value.bikeWeightKg) &&
 			frontChainringTeeth &&
 			rearCassetteTeeth
 		) ||
-		value.name.length > MAXIMUM_PROFILE_NAME_LENGTH ||
-		value.identity.length > MAXIMUM_PROFILE_IDENTITY_LENGTH ||
 		value.riderWeightKg < MINIMUM_RIDER_WEIGHT_KG ||
 		value.riderWeightKg > MAXIMUM_RIDER_WEIGHT_KG ||
 		value.bikeWeightKg < MINIMUM_BIKE_WEIGHT_KG ||
@@ -141,15 +142,61 @@ export function profileFromStoredValue(value: unknown): RiderProfile | undefined
 	) {
 		return;
 	}
-	const image = isProfileImage(value.image) ? value.image : undefined;
 	return {
 		bikeWeightKg: value.bikeWeightKg,
 		frontChainringTeeth,
+		rearCassetteTeeth,
+		riderWeightKg: value.riderWeightKg,
+	};
+}
+
+export function snapshotRiderPhysicsProfile(profile: RiderPhysicsProfile): RiderPhysicsProfile {
+	return {
+		bikeWeightKg: profile.bikeWeightKg,
+		frontChainringTeeth: [...profile.frontChainringTeeth],
+		rearCassetteTeeth: [...profile.rearCassetteTeeth],
+		riderWeightKg: profile.riderWeightKg,
+	};
+}
+
+export function sameRiderPhysicsProfile(
+	left: RiderPhysicsProfile | undefined,
+	right: RiderPhysicsProfile
+): boolean {
+	return (
+		left?.bikeWeightKg === right.bikeWeightKg &&
+		left.riderWeightKg === right.riderWeightKg &&
+		left.frontChainringTeeth.length === right.frontChainringTeeth.length &&
+		left.rearCassetteTeeth.length === right.rearCassetteTeeth.length &&
+		left.frontChainringTeeth.every(
+			(tooth, index) => tooth === right.frontChainringTeeth[index]
+		) &&
+		left.rearCassetteTeeth.every((tooth, index) => tooth === right.rearCassetteTeeth[index])
+	);
+}
+
+export function profileFromStoredValue(value: unknown): RiderProfile | undefined {
+	if (!(isRecord(value) && value.version === PROFILE_VERSION)) {
+		return;
+	}
+	const physicsProfile = riderPhysicsProfileFromStoredValue(value);
+	if (
+		!(
+			physicsProfile &&
+			isString(value.name) &&
+			isString(value.identity) &&
+			value.name.length <= MAXIMUM_PROFILE_NAME_LENGTH &&
+			value.identity.length <= MAXIMUM_PROFILE_IDENTITY_LENGTH
+		)
+	) {
+		return;
+	}
+	const image = isProfileImage(value.image) ? value.image : undefined;
+	return {
+		...physicsProfile,
 		identity: value.identity,
 		image,
 		name: value.name,
-		rearCassetteTeeth,
-		riderWeightKg: value.riderWeightKg,
 	};
 }
 

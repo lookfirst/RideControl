@@ -1,5 +1,5 @@
 import { useVirtualizer } from '@tanstack/react-virtual';
-import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useCloseOnEscape, useDialogInitialFocus } from '../hooks/use-dialog-behavior';
 import { usePersistentScrollPosition } from '../hooks/use-persistent-scroll-position';
 import {
@@ -10,20 +10,20 @@ import {
 	type BikeGpxRouteSummary,
 	bikeGpxPreviewRoute,
 	bikeGpxRouteLocation,
-	bikeGpxRouteMatchesQuery,
 	bikeGpxRouteUrl,
 	fetchBikeGpxRoute,
 	formatBikeGpxRouteStats,
 } from '../lib/bikegpx';
+import { matchingBikeGpxRoutes } from '../lib/bikegpx-browser-form';
 import {
 	BIKEGPX_ROUTE_LIST_SCROLL_POSITION_STORAGE_KEY,
-	bikeGpxBrowserSearchForRoute,
-	bikeGpxBrowserSearchWithSelectedRoute,
-	loadBikeGpxBrowserSearch,
+	initialBikeGpxBrowserSearch,
 	persistBikeGpxBrowserSearch,
+	type ReportedBikeGpxRouteId,
+	reconcileBikeGpxBrowserRoute,
 } from '../lib/bikegpx-browser-preferences';
 import { errorMessage } from '../lib/errors';
-import { convertDistance, distanceUnitLabel } from '../lib/units';
+import { distanceUnitLabel } from '../lib/units';
 import {
 	isWorkoutDifficulty,
 	WORKOUT_DIFFICULTY,
@@ -66,40 +66,6 @@ function requestRouteCourse(
 		});
 	routeResultRequests.set(route.id, request);
 	return request;
-}
-
-function matchingRoutes(
-	routes: BikeGpxRouteSummary[],
-	query: string,
-	country: string,
-	difficulty: WorkoutDifficulty | undefined,
-	minimumDistance: string,
-	maximumDistance: string,
-	speedUnit: SpeedUnit,
-	analyses: Record<string, BikeGpxRouteAnalysis>
-): BikeGpxRouteSummary[] {
-	const minimum = optionalDistance(minimumDistance);
-	const maximum = optionalDistance(maximumDistance);
-	return routes.filter((route) => {
-		const displayedDistance = convertDistance(route.distanceKm, speedUnit);
-		const analysis = analyses[route.id];
-		return (
-			(!country || route.country === country) &&
-			(!(difficulty && analysis) || analysis.difficulty === difficulty) &&
-			(minimum === undefined || displayedDistance >= minimum) &&
-			(maximum === undefined || displayedDistance <= maximum) &&
-			bikeGpxRouteMatchesQuery(route, query, analysis)
-		);
-	});
-}
-
-function optionalDistance(value: string): number | undefined {
-	const normalized = value.trim();
-	if (!normalized) {
-		return;
-	}
-	const distance = Number(normalized);
-	return Number.isFinite(distance) && distance >= 0 ? distance : undefined;
 }
 
 function RouteListItem({
@@ -606,12 +572,8 @@ export function BikeGpxBrowserDialog({
 }) {
 	useCloseOnEscape(true, onClose);
 	const closeButtonRef = useDialogInitialFocus<HTMLButtonElement>();
-	const reportedRouteId = useRef<string | undefined>(undefined);
-	const [search, setSearchState] = useState(() =>
-		requestedRouteId
-			? bikeGpxBrowserSearchForRoute(requestedRouteId)
-			: loadBikeGpxBrowserSearch()
-	);
+	const reportedRouteId = useRef<ReportedBikeGpxRouteId>(undefined);
+	const [search, setSearchState] = useState(() => initialBikeGpxBrowserSearch(requestedRouteId));
 	const setSearch = useCallback((update: (current: typeof search) => typeof search) => {
 		setSearchState((current) => {
 			const next = update(current);
@@ -621,7 +583,6 @@ export function BikeGpxBrowserDialog({
 	}, []);
 	const { country, difficulty, maximumDistance, minimumDistance, query, selectedRouteId } =
 		search;
-	const deferredQuery = useDeferredValue(query);
 	const routes = catalog ? catalog.routes : [];
 	const analyses = catalog ? catalog.analyses : EMPTY_ROUTE_ANALYSES;
 	const countries = useMemo(
@@ -630,55 +591,44 @@ export function BikeGpxBrowserDialog({
 	);
 	const filteredRoutes = useMemo(
 		() =>
-			matchingRoutes(
+			matchingBikeGpxRoutes(
 				routes,
-				deferredQuery,
-				country,
-				difficulty,
-				minimumDistance,
-				maximumDistance,
+				{
+					country,
+					difficulty,
+					maximumDistance,
+					minimumDistance,
+					query,
+				},
 				speedUnit,
 				analyses
 			),
-		[
-			analyses,
-			country,
-			deferredQuery,
-			difficulty,
-			maximumDistance,
-			minimumDistance,
-			routes,
-			speedUnit,
-		]
+		[analyses, country, difficulty, maximumDistance, minimumDistance, query, routes, speedUnit]
 	);
 	const selectedRoute = bikeGpxPreviewRoute(filteredRoutes, selectedRouteId);
 	useEffect(() => {
-		if (requestedRouteId === selectedRouteId) {
-			if (reportedRouteId.current === requestedRouteId) {
-				reportedRouteId.current = undefined;
-			}
+		const reconciliation = reconcileBikeGpxBrowserRoute(
+			search,
+			requestedRouteId,
+			reportedRouteId.current
+		);
+		reportedRouteId.current = reconciliation.reportedRouteId;
+		if (reconciliation.search === search) {
 			return;
 		}
-		if (!(requestedRouteId && requestedRouteId !== selectedRouteId)) {
-			return;
-		}
-		const next =
-			reportedRouteId.current === requestedRouteId
-				? bikeGpxBrowserSearchWithSelectedRoute(search, requestedRouteId)
-				: bikeGpxBrowserSearchForRoute(requestedRouteId);
-		reportedRouteId.current = undefined;
-		setSearchState(next);
-		persistBikeGpxBrowserSearch(next);
-	}, [requestedRouteId, search, selectedRouteId]);
+		setSearchState(reconciliation.search);
+		persistBikeGpxBrowserSearch(reconciliation.search);
+	}, [requestedRouteId, search]);
 	const reportSelectedRoute = useCallback(
 		(routeId: string | undefined) => {
-			reportedRouteId.current = routeId;
+			reportedRouteId.current = routeId ?? null;
 			onSelectRouteId?.(routeId);
 		},
 		[onSelectRouteId]
 	);
 	useEffect(() => {
 		if (
+			reportedRouteId.current === undefined &&
 			!(requestedRouteId && requestedRouteId !== selectedRouteId) &&
 			selectedRoute &&
 			selectedRoute.id !== requestedRouteId

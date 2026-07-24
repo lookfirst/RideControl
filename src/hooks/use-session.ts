@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { RECORDING_PAUSE_DELAY_MS } from '../constants';
 import { createActiveSessionWriter } from '../lib/active-session';
 import { CONTROL_MODE, trainingControlMode } from '../lib/control-mode';
+import type { RiderPhysicsProfile } from '../lib/profile';
 import { MILLISECONDS_PER_SECOND, secondsForMilliseconds } from '../lib/units';
 import {
 	createSessionStore,
@@ -52,6 +53,7 @@ interface SessionController {
 	markDiscarded: () => void;
 	markSaved: (id: string) => void;
 	maximums: Metrics;
+	profileSnapshot?: RiderPhysicsProfile;
 	rideCalories: number;
 	rideDistance: number;
 	savedSessionId?: string;
@@ -69,7 +71,8 @@ export function useSession(
 	control: SessionControlState,
 	lastPedalingAt: ActivityRef,
 	trainerReportsDistance: FlagRef,
-	initialSession: StoredSession
+	initialSession: StoredSession,
+	profileSnapshot?: RiderPhysicsProfile
 ): SessionController {
 	const store = useMemo(() => createSessionStore(initialSession), [initialSession]);
 	const persistActive = useMemo(() => createActiveSessionWriter(), []);
@@ -83,6 +86,7 @@ export function useSession(
 		: control;
 	const latestMetrics = useRef(metrics);
 	const latestControl = useRef(activeControl);
+	const latestProfileSnapshot = useRef(profileSnapshot);
 	const lastTrainerDistance = useRef<number | undefined>(undefined);
 
 	useEffect(() => {
@@ -94,6 +98,13 @@ export function useSession(
 		latestControl.current = activeControl;
 		store.actions.observeControlMode(activeControl.mode);
 	}, [activeControl, store]);
+
+	useEffect(() => {
+		latestProfileSnapshot.current = profileSnapshot;
+		if (profileSnapshot) {
+			store.actions.observeProfileSnapshot(profileSnapshot);
+		}
+	}, [profileSnapshot, store]);
 
 	useEffect(() => {
 		const checkpoint = () => {
@@ -149,6 +160,7 @@ export function useSession(
 				control: liveControl,
 				distanceDelta,
 				metrics: live,
+				profileSnapshot: latestProfileSnapshot.current,
 				seconds,
 			});
 		}, MILLISECONDS_PER_SECOND);
@@ -213,6 +225,7 @@ export function useSession(
 		markDiscarded,
 		markSaved,
 		maximums: state.maximums,
+		profileSnapshot: state.profileSnapshot,
 		rideCalories: state.calories,
 		rideDistance: state.distance,
 		savedSessionId: state.savedSessionId,

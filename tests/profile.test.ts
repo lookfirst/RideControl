@@ -12,6 +12,9 @@ import {
 	poundsForKilograms,
 	profileFromStoredValue,
 	profileTotalMassKg,
+	riderPhysicsProfileFromStoredValue,
+	sameRiderPhysicsProfile,
+	snapshotRiderPhysicsProfile,
 } from '../src/lib/profile';
 
 describe('rider profile', () => {
@@ -39,6 +42,41 @@ describe('rider profile', () => {
 
 	test('round trips pounds and kilograms', () => {
 		expect(kilogramsForPounds(poundsForKilograms(84))).toBeCloseTo(84, 10);
+	});
+
+	test('validates and independently copies the physics-only session profile', () => {
+		const profile = riderPhysicsProfileFromStoredValue({
+			bikeWeightKg: 8.5,
+			frontChainringTeeth: [50, 34],
+			rearCassetteTeeth: [11, 13, 15, 17],
+			riderWeightKg: 68,
+		});
+		expect(profile).toEqual({
+			bikeWeightKg: 8.5,
+			frontChainringTeeth: [50, 34],
+			rearCassetteTeeth: [11, 13, 15, 17],
+			riderWeightKg: 68,
+		});
+		if (!profile) {
+			return;
+		}
+		const snapshot = snapshotRiderPhysicsProfile(profile);
+		expect(snapshot).toEqual(profile);
+		expect(snapshot.frontChainringTeeth).not.toBe(profile.frontChainringTeeth);
+		expect(snapshot.rearCassetteTeeth).not.toBe(profile.rearCassetteTeeth);
+		expect(sameRiderPhysicsProfile(snapshot, profile)).toBe(true);
+		expect(
+			sameRiderPhysicsProfile(snapshot, {
+				...profile,
+				riderWeightKg: 69,
+			})
+		).toBe(false);
+		expect(
+			riderPhysicsProfileFromStoredValue({
+				...profile,
+				riderWeightKg: -1,
+			})
+		).toBeUndefined();
 	});
 
 	test('validates a versioned IndexedDB profile record', () => {

@@ -1,6 +1,6 @@
 import { useNavigate, useRouterState } from '@tanstack/react-router';
 import { useSelector } from '@tanstack/react-store';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AppFooter } from './components/app-footer';
 import { BuildDetailsDialog } from './components/build-details-dialog';
 import { Dashboard, DashboardToolbar, DashboardWorkspace } from './components/dashboard-layout';
@@ -60,7 +60,8 @@ import { unreachable } from './lib/errors';
 import { maximumGear, resistanceForVirtualGear } from './lib/gears';
 import { type AppShortcut, appShortcutForKey, gearingKeyboardShortcuts } from './lib/keyboard';
 import { profileTotalMassKg, type RiderProfile } from './lib/profile';
-import { requestUnloadConfirmation, sessionNeedsUnloadWarning } from './lib/session';
+import { sessionNeedsUnloadWarning } from './lib/session';
+import { requestUnloadConfirmation } from './lib/unload';
 import { rememberWelcomeDismissal, shouldShowWelcome } from './lib/welcome';
 import {
 	workoutDashboardPreview,
@@ -151,13 +152,13 @@ function initialNavigation(linkedRoute: AppRoute, pathname: string): InitialNavi
 }
 
 export function App({ initialSession = emptySession }: { initialSession?: StoredSession }) {
-	const routerNavigation = useRouterState({
-		select: (state) => ({
-			pathname: state.location.pathname,
-			route: appRouteFromRouterMatch(state.matches.at(-1)),
-		}),
+	const pathname = useRouterState({
+		select: (state) => state.location.pathname,
 	});
-	const { pathname, route: matchedAppRoute } = routerNavigation;
+	const routerMatch = useRouterState({
+		select: (state) => state.matches.at(-1),
+	});
+	const matchedAppRoute = useMemo(() => appRouteFromRouterMatch(routerMatch), [routerMatch]);
 	const navigate = useNavigate();
 	const [initialAppNavigation] = useState(() => initialNavigation(matchedAppRoute, pathname));
 	const restoringRoute = useRef(
@@ -306,7 +307,8 @@ export function App({ initialSession = emptySession }: { initialSession?: Stored
 		},
 		trainer.lastPedalingAt,
 		trainer.trainerReportsDistance,
-		initialSession
+		initialSession,
+		riderProfile.ready ? riderProfile.profile : undefined
 	);
 	const dashboardWorkout = workoutDashboardPreview({
 		distance: session.rideDistance,
@@ -556,10 +558,9 @@ export function App({ initialSession = emptySession }: { initialSession?: Stored
 						devicesConnecting={devicesConnecting}
 						onOpenDevices={() => setActiveOverlay(APP_OVERLAY.DEVICES)}
 						onOpenHistory={() => setActiveOverlay(APP_OVERLAY.HISTORY)}
+						onOpenProfile={() => setActiveOverlay(APP_OVERLAY.PROFILE)}
 						onOpenShortcuts={() => setActiveOverlay(APP_OVERLAY.SHORTCUTS)}
-						onSelectSpeedUnit={preferencesStore.actions.selectSpeedUnit}
 						pairedDeviceCount={pairedDeviceCount}
-						speedUnit={speedUnit}
 					/>
 				</DashboardToolbar>
 				<RideMetrics
@@ -615,7 +616,6 @@ export function App({ initialSession = emptySession }: { initialSession?: Stored
 			</Dashboard>
 			<AppFooter
 				onOpenPrivacy={() => setActiveOverlay(APP_OVERLAY.PRIVACY)}
-				onOpenProfile={() => setActiveOverlay(APP_OVERLAY.PROFILE)}
 				onOpenTerms={() => setActiveOverlay(APP_OVERLAY.TERMS)}
 				onOpenVersion={() => setActiveOverlay(APP_OVERLAY.BUILD)}
 				onOpenWelcome={() => setActiveOverlay(APP_OVERLAY.WELCOME)}
@@ -720,7 +720,9 @@ export function App({ initialSession = emptySession }: { initialSession?: Stored
 			<ProfileDialog
 				onClose={() => setActiveOverlay(undefined)}
 				onSave={riderProfile.save}
+				onSelectSpeedUnit={preferencesStore.actions.selectSpeedUnit}
 				open={activeOverlay === APP_OVERLAY.PROFILE}
+				physicsSettingsLocked={warnBeforeUnload}
 				profile={riderProfile.profile}
 				speedUnit={speedUnit}
 				storageError={riderProfile.storageError}

@@ -847,6 +847,13 @@ describe('view components', () => {
 		expect(html).toContain('text-slate-500 text-xs');
 		expect(html).toContain('type="button">Ride Control</button>');
 		expect(html).toContain('type="button">Profile</button>');
+		expect(html.indexOf('type="button">Sessions</button>')).toBeLessThan(
+			html.indexOf('type="button">Profile</button>')
+		);
+		expect(html.indexOf('type="button">Profile</button>')).toBeLessThan(
+			html.indexOf('aria-label="Show keyboard controls"')
+		);
+		expect(html.slice(html.indexOf('<footer')).includes('>Profile</button>')).toBeFalse();
 		expect(html).toContain('mx-auto w-full min-w-0 max-w-7xl flex-1 px-3 py-3');
 		expect(html).toContain('mb-4 flex flex-wrap items-center justify-between gap-3');
 		expect(html).toContain('mt-4 grid min-w-0 gap-4 *:min-w-0');
@@ -854,7 +861,8 @@ describe('view components', () => {
 		expect(html).not.toContain('fixed right-4 bottom-3 left-4');
 		expect(html).toContain('rounded-2xl border border-line bg-panel p-4');
 		expect(html).toContain('xl:grid-cols-[1.45fr_.55fr]');
-		expect(html.indexOf('KM/H')).toBeLessThan(html.indexOf('Show keyboard controls'));
+		expect(html).not.toContain('>KM/H</button>');
+		expect(html).not.toContain('>MPH</button>');
 		expect(html).toMatch(enabledEndSessionButton);
 	});
 
@@ -939,7 +947,9 @@ describe('view components', () => {
 				<ProfileDialog
 					onClose={() => undefined}
 					onSave={async () => undefined}
+					onSelectSpeedUnit={() => undefined}
 					open={false}
+					physicsSettingsLocked={false}
 					profile={profile}
 					speedUnit="mph"
 					storageError=""
@@ -950,7 +960,9 @@ describe('view components', () => {
 			<ProfileDialog
 				onClose={() => undefined}
 				onSave={async () => undefined}
+				onSelectSpeedUnit={() => undefined}
 				open
+				physicsSettingsLocked={false}
 				profile={profile}
 				speedUnit="mph"
 				storageError=""
@@ -963,12 +975,32 @@ describe('view components', () => {
 		expect(html).toContain('value="Non-binary"');
 		expect(html).toContain('value="Two-Spirit"');
 		expect(html).toContain('never used in workout calculations');
+		expect(html).toContain('Display units');
+		expect(html).toContain('aria-pressed="true"');
+		expect(html).toContain('>KM/H</button>');
+		expect(html).toContain('>MPH</button>');
+		expect(html).toContain('Controls speed, distance, elevation, and weight units.');
 		expect(html).toContain('Your weight (lb)');
 		expect(html).toContain('Bike weight (lb)');
 		expect(html).toContain('value="53/39"');
 		expect(html).toContain('This setup creates 24 virtual gears');
 		expect(html).toContain('IndexedDB');
 		expect(html).toContain('aria-label="Close profile"');
+		const lockedHtml = render(
+			<ProfileDialog
+				onClose={() => undefined}
+				onSave={async () => undefined}
+				onSelectSpeedUnit={() => undefined}
+				open
+				physicsSettingsLocked
+				profile={profile}
+				speedUnit="mph"
+				storageError=""
+			/>
+		);
+		expect(lockedHtml).toContain('Weight and drivetrain settings are locked');
+		expect(lockedHtml).toContain('id="profile-rider-weight"');
+		expect(lockedHtml).toContain('disabled=""');
 	});
 
 	test('shows manual virtual shifting for a terrain workout without Click controllers', async () => {
@@ -1316,6 +1348,37 @@ describe('view components', () => {
 		expect(html).toContain('absolute top-3 right-14 grid h-9 w-9');
 		expect(html).toContain('absolute top-3 right-3 grid h-9 w-9');
 		expect(html.match(/hover:text-white sm:static/g)).toHaveLength(2);
+	});
+
+	test('virtualizes a large session history list', () => {
+		const summaries = Array.from({ length: 100 }, (_, index) => ({
+			...sessionSummary({
+				...savedSessionFixture,
+				endedAt: savedSessionFixture.endedAt - index * 1000,
+				id: `session-${index}`,
+				startedAt: savedSessionFixture.startedAt - index * 1000,
+			}),
+			workoutName: `Workout ${index}`,
+		}));
+		const html = render(
+			<SessionHistoryList
+				error=""
+				highlightedSessionIds={[]}
+				onLoadMore={() => undefined}
+				onSelect={() => undefined}
+				open
+				selectedId={summaries[0]?.id}
+				speedUnit="kmh"
+				summaries={summaries}
+				total={summaries.length}
+			/>
+		);
+		const renderedSessionCount = html.match(/aria-pressed=/g)?.length ?? 0;
+		expect(html).toContain('data-session-history-virtualized="true"');
+		expect(html).toContain('Workout 0');
+		expect(renderedSessionCount).toBeGreaterThan(0);
+		expect(renderedSessionCount).toBeLessThan(summaries.length);
+		expect(html).not.toContain('Workout 99');
 	});
 
 	test('highlights every session from the latest import in history navigation', () => {

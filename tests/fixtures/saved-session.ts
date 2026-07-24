@@ -46,5 +46,11 @@ export const savedSessionFixture: SavedSession = {
 		power: 210,
 		speed: 30,
 	},
+	profileSnapshot: {
+		bikeWeightKg: 9,
+		frontChainringTeeth: [53, 39],
+		rearCassetteTeeth: [12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 24],
+		riderWeightKg: 75,
+	},
 	startedAt: SAVED_SESSION_STARTED_AT,
 };

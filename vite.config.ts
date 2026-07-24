@@ -73,7 +73,7 @@ export default defineConfig(async () => {
 		process.env.VITE_BUILD_RECENT_PRS ?? (await cloudflareRecentPullRequests());
 	return {
 		build: {
-			chunkSizeWarningLimit: 550,
+			chunkSizeWarningLimit: 700,
 		},
 		define: {
 			'import.meta.env.RIDE_CONTROL_BUILD_PR_URL': JSON.stringify(buildPrUrl),

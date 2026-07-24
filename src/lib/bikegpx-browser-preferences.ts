@@ -1,18 +1,19 @@
-import { isRecord, isString } from './type-guards';
-import { isWorkoutDifficulty, type WorkoutDifficulty } from './workout-schema';
+import { z } from 'zod';
+import { type BikeGpxBrowserFormValues, bikeGpxBrowserFormSchema } from './bikegpx-browser-form';
 
 const BIKEGPX_BROWSER_OPEN_STORAGE_KEY = 'ride-control-bikegpx-browser-open';
 const BIKEGPX_BROWSER_OPEN_VALUE = 'open';
 const BIKEGPX_BROWSER_SEARCH_STORAGE_KEY = 'ride-control-bikegpx-browser-search';
 
-export interface BikeGpxBrowserSearch {
-	country: string;
-	difficulty?: WorkoutDifficulty;
-	maximumDistance: string;
-	minimumDistance: string;
-	query: string;
+export interface BikeGpxBrowserSearch extends BikeGpxBrowserFormValues {
 	selectedRouteId: string;
 }
+
+export type ReportedBikeGpxRouteId = string | null | undefined;
+
+const bikeGpxBrowserSearchSchema = bikeGpxBrowserFormSchema.extend({
+	selectedRouteId: z.string(),
+});
 
 const EMPTY_BIKEGPX_BROWSER_SEARCH: BikeGpxBrowserSearch = {
 	country: '',
@@ -26,11 +27,48 @@ export function bikeGpxBrowserSearchForRoute(routeId: string): BikeGpxBrowserSea
 	return { ...EMPTY_BIKEGPX_BROWSER_SEARCH, selectedRouteId: routeId };
 }
 
+export function initialBikeGpxBrowserSearch(
+	requestedRouteId: string | undefined,
+	storage?: Pick<Storage, 'getItem'>
+): BikeGpxBrowserSearch {
+	const saved = loadBikeGpxBrowserSearch(storage);
+	return requestedRouteId && requestedRouteId !== saved.selectedRouteId
+		? bikeGpxBrowserSearchForRoute(requestedRouteId)
+		: saved;
+}
+
 export function bikeGpxBrowserSearchWithSelectedRoute(
 	search: BikeGpxBrowserSearch,
 	routeId: string
 ): BikeGpxBrowserSearch {
 	return { ...search, selectedRouteId: routeId };
+}
+
+export function reconcileBikeGpxBrowserRoute(
+	search: BikeGpxBrowserSearch,
+	requestedRouteId: string | undefined,
+	reportedRouteId: ReportedBikeGpxRouteId
+): { reportedRouteId: ReportedBikeGpxRouteId; search: BikeGpxBrowserSearch } {
+	if (reportedRouteId !== undefined) {
+		const reportedRequest = reportedRouteId ?? undefined;
+		if (requestedRouteId !== reportedRequest) {
+			return { reportedRouteId, search };
+		}
+		return {
+			reportedRouteId: undefined,
+			search:
+				requestedRouteId && requestedRouteId !== search.selectedRouteId
+					? bikeGpxBrowserSearchWithSelectedRoute(search, requestedRouteId)
+					: search,
+		};
+	}
+	if (!(requestedRouteId && requestedRouteId !== search.selectedRouteId)) {
+		return { reportedRouteId, search };
+	}
+	return {
+		reportedRouteId,
+		search: bikeGpxBrowserSearchForRoute(requestedRouteId),
+	};
 }
 
 export const BIKEGPX_ROUTE_LIST_SCROLL_POSITION_STORAGE_KEY =
@@ -70,27 +108,11 @@ export function loadBikeGpxBrowserSearch(storage?: Pick<Storage, 'getItem'>): Bi
 			BIKEGPX_BROWSER_SEARCH_STORAGE_KEY
 		);
 		const value: unknown = saved ? JSON.parse(saved) : undefined;
-		if (
-			!(
-				isRecord(value) &&
-				isString(value.country) &&
-				(value.difficulty === undefined || isWorkoutDifficulty(value.difficulty)) &&
-				isString(value.maximumDistance) &&
-				isString(value.minimumDistance) &&
-				isString(value.query) &&
-				isString(value.selectedRouteId)
-			)
-		) {
+		const parsed = bikeGpxBrowserSearchSchema.safeParse(value);
+		if (!parsed.success) {
 			return EMPTY_BIKEGPX_BROWSER_SEARCH;
 		}
-		return {
-			country: value.country,
-			difficulty: value.difficulty,
-			maximumDistance: value.maximumDistance,
-			minimumDistance: value.minimumDistance,
-			query: value.query,
-			selectedRouteId: value.selectedRouteId,
-		};
+		return parsed.data;
 	} catch {
 		return EMPTY_BIKEGPX_BROWSER_SEARCH;
 	}

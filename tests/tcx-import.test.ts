@@ -50,6 +50,7 @@ describe('TCX import', () => {
 		expect(imported.feeling).toBe('good');
 		expect(imported.comments).toBe('Imported ride notes');
 		expect(imported.aggregates.gear.maximum).toBe(10);
+		expect(imported.profileSnapshot).toEqual(session.profileSnapshot);
 	});
 
 	test('imports every TCX trackpoint from a ride longer than the former sample limit', () => {

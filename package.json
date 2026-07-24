@@ -20,6 +20,7 @@
     "@dnd-kit/sortable": "10.0.0",
     "@garmin/fitsdk": "^21.208.0",
     "@tailwindcss/vite": "^4.3.3",
+    "@tanstack/react-form": "^1.33.2",
     "@tanstack/react-router": "^1.170.18",
     "@tanstack/react-store": "^0.11.0",
     "@tanstack/react-virtual": "^3.14.7",
@@ -28,7 +29,8 @@
     "leaflet": "^1.9.4",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
-    "tailwindcss": "^4.3.3"
+    "tailwindcss": "^4.3.3",
+    "zod": "^4.4.3"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.5",

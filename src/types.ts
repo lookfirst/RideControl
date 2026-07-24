@@ -1,4 +1,5 @@
 import type { ControlMode } from './lib/control-mode';
+import type { RiderPhysicsProfile } from './lib/profile';
 import type { WorkoutDescriptionAttribution } from './lib/workout-description';
 import type { WorkoutDifficulty, WorkoutRouteType } from './lib/workout-schema';
 
@@ -120,6 +121,7 @@ export interface StoredSession {
 	history: MetricSample[];
 	maximums: Metrics;
 	plannedWorkout?: SessionWorkout;
+	profileSnapshot?: RiderPhysicsProfile;
 	savedSessionId?: string;
 	startedAt: number;
 	workout?: SessionWorkout;
@@ -142,6 +144,7 @@ export interface SessionSnapshot {
 	endedAt: number;
 	history: MetricSample[];
 	maximums: Metrics;
+	profileSnapshot?: RiderPhysicsProfile;
 	startedAt: number;
 	workout?: SessionWorkout;
 }
