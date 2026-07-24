@@ -1,8 +1,16 @@
-import { useEffect, useState } from 'react';
+import { useForm, useSelector } from '@tanstack/react-form';
+import { useEffect } from 'react';
 import { unreachable } from '../lib/errors';
 import { formatSessionTime, SESSION_FEELING_OPTIONS } from '../lib/saved-sessions';
+import {
+	emptySessionSaveFormValues,
+	MAXIMUM_SESSION_COMMENTS_LENGTH,
+	sessionMetadataFromFormValues,
+	sessionSaveFormSchema,
+} from '../lib/session-save-form';
 import { SESSION_WORKFLOW_INTENT, type SessionWorkflowIntent } from '../lib/session-workflow';
-import type { SessionFeeling, SessionMetadata, SessionSnapshot, SpeedUnit } from '../types';
+import type { SessionMetadata, SessionSnapshot, SpeedUnit } from '../types';
+import { FormFieldError } from './form-field-error';
 import { SessionSummary } from './session-summary';
 
 function actionLabels(intent: SessionWorkflowIntent['kind']) {
@@ -49,16 +57,25 @@ export function SessionSaveDialog({
 	session: SessionSnapshot;
 	speedUnit: SpeedUnit;
 }) {
-	const [comments, setComments] = useState('');
-	const [feeling, setFeeling] = useState<SessionFeeling>();
 	const labels = actionLabels(intent);
+	const form = useForm({
+		defaultValues: emptySessionSaveFormValues(),
+		onSubmit: async ({ value }) => {
+			await onSave(sessionMetadataFromFormValues(value));
+		},
+		validators: {
+			onChange: sessionSaveFormSchema,
+			onSubmit: sessionSaveFormSchema,
+		},
+	});
+	const canSubmit = useSelector(form.store, (state) => state.canSubmit);
+	const isSubmitting = useSelector(form.store, (state) => state.isSubmitting);
 
 	useEffect(() => {
 		if (open) {
-			setComments('');
-			setFeeling(undefined);
+			form.reset(emptySessionSaveFormValues());
 		}
-	}, [open]);
+	}, [form, open]);
 
 	if (!open) {
 		return null;
@@ -66,10 +83,15 @@ export function SessionSaveDialog({
 
 	return (
 		<div className="fixed inset-0 z-40 grid place-items-center bg-black/65 p-4 backdrop-blur-sm">
-			<section
+			<form
 				aria-labelledby="save-session-title"
 				aria-modal="true"
 				className="w-full max-w-xl rounded-2xl border border-slate-600 bg-panel p-5 shadow-2xl shadow-black/50 sm:p-6"
+				onSubmit={(event) => {
+					event.preventDefault();
+					event.stopPropagation();
+					form.handleSubmit();
+				}}
 				role="dialog"
 			>
 				<div className="flex items-start justify-between gap-4">
@@ -101,39 +123,53 @@ export function SessionSaveDialog({
 					/>
 				</div>
 
-				<fieldset className="mt-5">
-					<legend className="font-semibold text-sm">How did it feel?</legend>
-					<div className="mt-2 grid grid-cols-5 gap-1.5">
-						{SESSION_FEELING_OPTIONS.map((option) => (
-							<button
-								aria-pressed={feeling === option.value}
-								className={`rounded-lg border px-2 py-2 font-semibold text-xs transition ${feeling === option.value ? 'border-mint bg-mint/10 text-mint' : 'border-line bg-[#12171d] text-slate-400 hover:border-slate-500 hover:text-slate-200'}`}
-								key={option.value}
-								onClick={() => setFeeling(option.value)}
-								type="button"
-							>
-								{option.label}
-							</button>
-						))}
-					</div>
-				</fieldset>
+				<form.Field name="feeling">
+					{(field) => (
+						<fieldset className="mt-5">
+							<legend className="font-semibold text-sm">How did it feel?</legend>
+							<div className="mt-2 grid grid-cols-5 gap-1.5">
+								{SESSION_FEELING_OPTIONS.map((option) => (
+									<button
+										aria-pressed={field.state.value === option.value}
+										className={`rounded-lg border px-2 py-2 font-semibold text-xs transition ${field.state.value === option.value ? 'border-mint bg-mint/10 text-mint' : 'border-line bg-[#12171d] text-slate-400 hover:border-slate-500 hover:text-slate-200'}`}
+										key={option.value}
+										onClick={() => field.handleChange(option.value)}
+										type="button"
+									>
+										{option.label}
+									</button>
+								))}
+							</div>
+							<FormFieldError field={field} />
+						</fieldset>
+					)}
+				</form.Field>
 
-				<label className="mt-5 block font-semibold text-sm" htmlFor="session-comments">
-					Comments <span className="font-normal text-slate-500">(optional)</span>
-				</label>
-				<textarea
-					className="mt-2 min-h-24 w-full resize-y rounded-xl border border-line bg-[#10151a] px-3 py-2.5 text-sm outline-none placeholder:text-slate-600 focus:border-mint"
-					id="session-comments"
-					maxLength={2000}
-					onChange={(event) => setComments(event.target.value)}
-					placeholder="Anything worth remembering about this ride?"
-					value={comments}
-				/>
+				<form.Field name="comments">
+					{(field) => (
+						<label
+							className="mt-5 block font-semibold text-sm"
+							htmlFor="session-comments"
+						>
+							Comments <span className="font-normal text-slate-500">(optional)</span>
+							<textarea
+								className="mt-2 min-h-24 w-full resize-y rounded-xl border border-line bg-[#10151a] px-3 py-2.5 text-sm outline-none placeholder:text-slate-600 focus:border-mint"
+								id="session-comments"
+								maxLength={MAXIMUM_SESSION_COMMENTS_LENGTH}
+								onBlur={field.handleBlur}
+								onChange={(event) => field.handleChange(event.target.value)}
+								placeholder="Anything worth remembering about this ride?"
+								value={field.state.value}
+							/>
+							<FormFieldError field={field} />
+						</label>
+					)}
+				</form.Field>
 
 				<div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
 					<button
 						className={`rounded-lg px-4 py-2.5 font-semibold text-sm ${labels.secondaryClass}`}
-						disabled={saving}
+						disabled={saving || isSubmitting}
 						onClick={onStartWithoutSaving}
 						type="button"
 					>
@@ -141,14 +177,13 @@ export function SessionSaveDialog({
 					</button>
 					<button
 						className="rounded-lg bg-lime px-5 py-2.5 font-bold text-ink text-sm hover:bg-[#e4ff9c] disabled:opacity-50"
-						disabled={saving}
-						onClick={() => onSave({ comments, feeling })}
-						type="button"
+						disabled={saving || isSubmitting || !canSubmit}
+						type="submit"
 					>
-						{saving ? 'Saving…' : labels.primary}
+						{saving || isSubmitting ? 'Saving…' : labels.primary}
 					</button>
 				</div>
-			</section>
+			</form>
 		</div>
 	);
 }
